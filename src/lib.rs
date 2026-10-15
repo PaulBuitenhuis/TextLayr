@@ -8,6 +8,7 @@
 pub mod audio;
 pub mod chunk;
 pub mod config;
+pub mod deps;
 pub mod export;
 pub mod model;
 pub mod pipeline;

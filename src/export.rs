@@ -30,13 +30,27 @@ use std::sync::{Arc, Mutex};
 /// Encoder choice for [`export_pipe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Encoder {
-    /// VAAPI when the device probes OK, else libx264.
+    /// Best hardware encoder this platform offers, else x264: VAAPI on Linux
+    /// (when the device probes OK). `Auto` stays x264 on macOS — VideoToolbox
+    /// is available but opt-in (see [`Encoder::Videotoolbox`]).
     #[default]
     Auto,
     /// Software x264 (crf 18) — always available.
     X264,
-    /// VAAPI hardware encode (Intel/AMD, needs /dev/dri + a working driver).
+    /// VAAPI hardware encode (Linux; needs /dev/dri + a working driver).
     Vaapi,
+    /// VideoToolbox hardware encode (macOS). Experimental and opt-in: not
+    /// selected by `Auto`, because its rate control (bitrate, not crf) and
+    /// full-range handling differ from the x264/VAAPI paths.
+    Videotoolbox,
+}
+
+/// The encoder [`export_pipe`] actually ends up using after probing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Active {
+    X264,
+    Vaapi,
+    VideoToolbox,
 }
 
 /// Device used for VAAPI. Linux-only; [`vaapi_works`] checks it first.
@@ -49,7 +63,10 @@ fn vaapi_works(tools: &Fftools) -> bool {
     static OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OK.get_or_init(|| {
         #[cfg(not(target_os = "linux"))]
-        return false;
+        {
+            let _ = tools;
+            false
+        }
         #[cfg(target_os = "linux")]
         {
             if !Path::new(VAAPI_DEVICE).exists() {
@@ -84,6 +101,84 @@ fn vaapi_works(tools: &Fftools) -> bool {
                 .unwrap_or(false)
         }
     })
+}
+
+/// Probe once per process whether VideoToolbox can encode on this machine.
+/// macOS-only; one 1-frame null encode decides it.
+fn videotoolbox_works(tools: &Fftools) -> bool {
+    static OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OK.get_or_init(|| {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = tools;
+            false
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Command::new(&tools.ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=black:s=256x256:r=30:d=0.2",
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-b:v",
+                    "2000k",
+                    "-f",
+                    "null",
+                    "-",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    })
+}
+
+/// Resolve the requested [`Encoder`] to one that actually works here.
+///
+/// `Auto` prefers VAAPI on Linux and stays on x264 elsewhere; a requested
+/// hardware encoder that fails its probe silently falls back to x264 so an
+/// export never dies just because a hardware path is unavailable.
+fn active_encoder(tools: &Fftools, encoder: Encoder) -> Active {
+    match encoder {
+        Encoder::X264 => Active::X264,
+        Encoder::Vaapi => {
+            if vaapi_works(tools) {
+                Active::Vaapi
+            } else {
+                Active::X264
+            }
+        }
+        Encoder::Videotoolbox => {
+            if videotoolbox_works(tools) {
+                Active::VideoToolbox
+            } else {
+                Active::X264
+            }
+        }
+        Encoder::Auto => {
+            if vaapi_works(tools) {
+                Active::Vaapi
+            } else {
+                Active::X264
+            }
+        }
+    }
+}
+
+/// Bitrate for the VideoToolbox path (it has no crf), scaled by resolution and
+/// frame rate so the same setting fits 1080p portrait and 4K alike.
+fn videotoolbox_bitrate_kbps(w: u32, h: u32, fps: f64) -> u32 {
+    let kbps = w as f64 * h as f64 * fps * 0.12 / 1000.0;
+    kbps.round().clamp(2_000.0, 40_000.0) as u32
 }
 
 /// Map an ffprobe color-matrix name onto `scale`'s `out_color_matrix` value.
@@ -361,11 +456,9 @@ pub fn export_pipe(
 
     // Honor the source's color tags: full-range sources encode to yuvj420p
     // (what the Milestone 2 graph produced), limited sources to yuv420p.
-    let use_vaapi = match encoder {
-        Encoder::X264 => false,
-        Encoder::Vaapi => true,
-        Encoder::Auto => vaapi_works(tools),
-    };
+    let active = active_encoder(tools, encoder);
+    let use_vaapi = active == Active::Vaapi;
+    let use_vt = active == Active::VideoToolbox;
     let full_range = info.color_range == "pc"
         || info.color_range == "jpeg"
         || info.pix_fmt.starts_with("yuvj");
@@ -375,7 +468,11 @@ pub fn export_pipe(
         "      pipe export: {} states, {} frames total, encoder={} ({out_range} range, {matrix})",
         states.len(),
         (total_secs * fps).round() as u64,
-        if use_vaapi { "vaapi" } else { "x264" },
+        match active {
+            Active::X264 => "x264",
+            Active::Vaapi => "vaapi",
+            Active::VideoToolbox => "videotoolbox",
+        },
     );
 
     // ── decoder: input -> RGBA frames on stdout ───────────────────────────
@@ -399,6 +496,7 @@ pub fn export_pipe(
     // ── encoder: composited RGBA frames from stdin -> output ──────────────
     let mut enc_cmd = Command::new(&tools.ffmpeg);
     enc_cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    #[cfg(target_os = "linux")]
     if use_vaapi {
         enc_cmd.arg("-vaapi_device").arg(VAAPI_DEVICE);
     }
@@ -422,6 +520,12 @@ pub fn export_pipe(
     enc_cmd.arg("-vf").arg(&vf);
     if use_vaapi {
         enc_cmd.args(["-c:v", "h264_vaapi", "-qp", "20"]);
+    } else if use_vt {
+        let kbps = videotoolbox_bitrate_kbps(w, h, fps);
+        enc_cmd
+            .args(["-c:v", "h264_videotoolbox", "-b:v"])
+            .arg(format!("{kbps}k"))
+            .args(["-pix_fmt", "yuv420p"]);
     } else {
         let pix = if full_range { "yuvj420p" } else { "yuv420p" };
         enc_cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pix]);

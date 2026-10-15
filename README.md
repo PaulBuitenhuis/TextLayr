@@ -5,9 +5,11 @@ the transcript, export a new video with word-synced popup captions baked in.
 
 **Design & plan:** see [DESIGN.md](./DESIGN.md).
 
-**Status:** Milestone 3 (interactive egui app + headless CLI). Drop a video in
-the GUI, review the transcript, export with the button or **Ctrl+E**; every
-stage is also available headlessly.
+**Status:** Milestone 4 (polish). Drop a video in the GUI, review the
+transcript, export with the button or **Ctrl+E**; every stage is also available
+headlessly. Style preferences persist between runs, a startup check reports any
+missing dependency (ffmpeg/ffprobe, model, fonts) instead of failing mid-export,
+and `scripts/package_macos.sh` builds a self-contained `texxy.app`.
 
 ## Requirements
 
@@ -30,11 +32,10 @@ stage is also available headlessly.
    directory (e.g. `~/.local/share/cmake-<version>`), or install via your distro.
 3. **Model** — download once into `models/`:
    ```sh
-   cd models
-   curl -L -o ggml-small.en.bin \
-     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin"
+   scripts/fetch_model.sh
    ```
-   (~465 MB, English-optimized, offline thereafter. Overridable with `TEXXY_MODEL`.)
+   (~465 MB, English-optimized, offline thereafter. Overridable with
+   `$TEXXY_MODEL`; the script also takes an optional destination path.)
 4. **Fonts** — already bundled in `assets/fonts/` (OFL-licensed, ~1 MB):
    Inter, Nunito, Libre Baskerville, each in Regular + Bold. To re-fetch:
    ```sh
@@ -73,7 +74,7 @@ compositing of the state PNGs → ffmpeg encode → `AI job search tips_karaoke.
 ```sh
 texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
         [--font <family>] [--font-size <pct>] [--position <pct>] [--words-per <n>]
-        [--encoder auto|vaapi|x264] [--graph] [--headless] [--gui]
+        [--encoder auto|vaapi|videotoolbox|x264] [--graph] [--headless] [--gui]
 ```
 
 | Option | Effect |
@@ -86,7 +87,7 @@ texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
 | `--font-size` | Glyph size as % of frame height (default 3.4) |
 | `--position` | Caption box center as % of frame height (default 72) |
 | `--words-per` | Words per popup, 2–6 (default 3) |
-| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else x264) · `vaapi` · `x264` |
+| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else x264) · `vaapi` · `videotoolbox` (macOS, experimental) · `x264` |
 | `--graph` | Export via the M2 overlay-filter graph instead of the frame pipe (≈4.2 GB ffmpeg RAM) |
 | `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
 
@@ -95,6 +96,38 @@ Suppress progress on stderr, keep the table on stdout:
 ```sh
 ./target/debug/texxy video.mp4 --words 2>/dev/null
 ```
+
+## Packaging for macOS
+
+`scripts/package_macos.sh` builds a fully offline `dist/texxy.app`: the release
+binary plus ffmpeg, ffprobe, the whisper model and the fonts, all under
+`Contents/Resources/` (exactly where `probe.rs`/`model.rs`/`config.rs` look
+first).
+
+```sh
+scripts/fetch_model.sh        # once, if models/ is empty
+scripts/package_macos.sh      # -> dist/texxy.app
+open dist/texxy.app
+```
+
+| Env var | Purpose |
+|---|---|
+| `TEXXY_FFMPEG_DIR` | directory holding the `ffmpeg`/`ffprobe` to bundle (default: `vendor/macos/`, then `$PATH`) |
+| `TEXXY_MODEL` | model to bundle (default: `models/ggml-small.en.bin`) |
+| `TEXXY_VERSION` | `CFBundle` version string (default: `git describe`, else `0.1.0`) |
+| `CODESIGN_IDENTITY` | codesign identity; `-` (default) is ad-hoc |
+
+For a redistributable build, drop a static arm64 `ffmpeg` + `ffprobe` into
+`vendor/macos/` (e.g. from <https://evermeet.cx/ffmpeg/>); a Homebrew ffmpeg
+works too but pulls in more dylibs. The bundle is ad-hoc signed by default, so
+the first launch may need **Right click → Open**, or:
+
+```sh
+xattr -dr com.apple.quarantine dist/texxy.app
+```
+
+To ship beyond this machine, set `CODESIGN_IDENTITY` to a Developer ID and
+notarize.
 
 ## Development notes
 
@@ -139,6 +172,23 @@ Suppress progress on stderr, keep the table on stdout:
   `h264_vaapi` exports the sample in ~154 s at ~450 MB RSS vs ~1057 s at ~1 GB
   for x264 `-crf 18`. Probe color tags are forwarded so the output matches the
   graph path's tags (`yuvj420p/pc/bt709`).
+- **VideoToolbox (macOS) is opt-in.** `--encoder videotoolbox` uses
+  `h264_videotoolbox`, rate-controlled by bitrate (scaled to resolution × fps)
+  rather than crf, with `-pix_fmt yuv420p`. It is *not* selected by `Auto`:
+  its rate control and full-range handling differ from x264/VAAPI and it hasn't
+  been verified against the reference output here. A failed hardware probe
+  falls back to x264 rather than erroring, for every `Encoder` value.
+- **Style persistence (M4).** The review style autosaves to
+  `~/Library/Application Support/texxy/config.json` (macOS) /
+  `~/.config/texxy/config.json` (Linux) ~0.4 s after it stops changing, written
+  atomically (temp + rename). Loaded at startup and on "Change video"; a
+  **Reset to defaults** button in the style panel. The CLI never reads it, so
+  headless runs stay deterministic. A field missing from the file falls back to
+  its default and out-of-range values are `sanitize()`d.
+- **Startup preflight (M4).** `deps::Check::run()` locates ffmpeg/ffprobe,
+  the model and the fonts up front. The GUI shows a "Setup required" screen
+  with per-item fix instructions and a **Re-check** button; the CLI prints one
+  consolidated error and exits before starting any work.
 - **Pipe re-timing uses `avg_frame_rate`, not `r_frame_rate`.** They coincide
   for most CFR files, but the sample's `r_frame_rate` (179/6) is 0.08% off —
   enough to drift video vs audio by ~0.2 s over 222 s. True VFR input would
@@ -155,12 +205,14 @@ src/
   transcribe.rs  whisper transcription, word merge, timing normalization, cache
   model.rs       whisper model discovery
   chunk.rs       word grouping into caption chunks + highlight windows
-  config.rs      Style struct (fonts, colors, sizes) + font discovery
+  config.rs      Style struct (fonts, colors, sizes), font discovery, config persistence
+  deps.rs        startup dependency check (ffmpeg/model/fonts) + fix instructions
   render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
   export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
   ui/            egui app: drop, ingest, review (preview/editor/style), export, done
 assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
 models/          ggml-small.en.bin (downloaded, not committed)
-vendor/          static ffmpeg (macOS, later) + whisper-rs-sys patch
+scripts/         fetch_model.sh + package_macos.sh (+ Info.plist)
+vendor/          static ffmpeg (macOS) + whisper-rs-sys patch
 DESIGN.md        full design & implementation plan
 ```

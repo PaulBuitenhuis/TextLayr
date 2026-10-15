@@ -69,7 +69,10 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
     report(IngestProgress::Probing);
     let info = probe::probe(&tools, input).context("probe failed")?;
     if !info.has_audio {
-        bail!("input has no audio track; cannot transcribe");
+        bail!(
+            "this video has no audio track, so there's nothing to transcribe. \
+             Karaoke captions need a voiceover."
+        );
     }
     report(IngestProgress::Probed(info.clone()));
 

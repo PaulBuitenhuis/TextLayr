@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Result};
 
 use texxy::config::Style;
 use texxy::pipeline::{self, IngestProgress, Progress};
-use texxy::{chunk, export, render, transcribe, ui};
+use texxy::{chunk, deps, export, render, transcribe, ui};
 
 /// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
@@ -69,7 +69,7 @@ fn usage() -> ! {
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_karaoke.mp4)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
-    eprintln!("  --encoder <name>    auto (default) | vaapi | x264 — pipe export encoder");
+    eprintln!("  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder");
     eprintln!("  --graph             Milestone 2 overlay-filter-graph encode (RAM grows)");
     eprintln!("  --font <family>     Libre Baskerville | Inter | Nunito");
     eprintln!("  --font-size <pct>   Font size as % of frame height");
@@ -112,8 +112,11 @@ fn parse_args() -> Args {
                     "auto" => export::Encoder::Auto,
                     "x264" => export::Encoder::X264,
                     "vaapi" => export::Encoder::Vaapi,
+                    "videotoolbox" | "vt" => export::Encoder::Videotoolbox,
                     other => {
-                        eprintln!("error: --encoder expects auto, vaapi or x264, got '{other}'");
+                        eprintln!(
+                            "error: --encoder expects auto, vaapi, videotoolbox or x264, got '{other}'"
+                        );
                         std::process::exit(2);
                     }
                 });
@@ -194,6 +197,14 @@ fn main() {
 /// The Milestone 1–2 pipeline, driven from the command line.
 fn run_cli(args: &Args) -> Result<()> {
     let Some(input) = args.input.clone() else { usage() };
+
+    // Fail fast with one actionable message instead of discovering each
+    // missing dependency (ffmpeg, model, fonts) partway through the pipeline.
+    let missing = deps::Check::run();
+    if let Some(msg) = missing.error_message() {
+        bail!("{msg}");
+    }
+
     let mut style = Style::default();
     apply_overrides(&mut style, &args.style_overrides);
     style.sanitize();

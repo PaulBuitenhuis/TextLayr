@@ -1,6 +1,9 @@
 # Rust build output
 /target/
 
+# Packaged macOS app (scripts/package_macos.sh)
+/dist/
+
 # Whisper model (~465 MB, downloaded via README instructions)
 /models/*.bin
 

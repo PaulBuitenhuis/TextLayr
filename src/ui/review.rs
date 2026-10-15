@@ -80,8 +80,8 @@ pub struct ReviewState {
 }
 
 impl ReviewState {
-    pub fn new(input: PathBuf, ing: Ingest) -> Self {
-        let style = Style::default();
+    pub fn new(input: PathBuf, ing: Ingest, mut style: Style) -> Self {
+        style.sanitize();
         let chunks = chunk::chunk_words(&ing.words, style.words_per_popup)
             .iter()
             .map(EditChunk::from_chunk)
@@ -330,6 +330,26 @@ pub fn style_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
         );
     }
     ui.checkbox(&mut r.style.shadow, "Drop shadow");
+
+    ui.add_space(12.0);
+    if ui
+        .add_enabled(
+            r.style != Style::default(),
+            egui::Button::new("Reset to defaults").small(),
+        )
+        .clicked()
+    {
+        r.style = Style::default();
+        r.preview.invalidate();
+        if r.style.words_per_popup != before.words_per_popup {
+            let discarded = r.rechunk(r.style.words_per_popup);
+            action = Action::Rechunked {
+                discarded_edits: discarded,
+            };
+        } else {
+            action = Action::Seek;
+        }
+    }
 
     r.style.sanitize();
     if r.style != before {

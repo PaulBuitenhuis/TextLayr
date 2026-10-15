@@ -8,10 +8,12 @@ mod review;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
+use crate::config::{self, Style};
+use crate::deps;
 use crate::pipeline::{self, ExportProgress, ExportSink, IngestProgress, Progress};
 use preview::Frame;
 use review::{Action, ReviewState};
@@ -72,6 +74,13 @@ pub struct App {
     warn: Option<String>,
     /// A file is being hovered over the drop zone.
     hovering: bool,
+    /// Startup dependency check (ffmpeg, model, fonts).
+    deps: deps::Check,
+    /// The style currently persisted on disk; a change from the live style
+    /// schedules an autosave.
+    saved_style: Style,
+    /// When the pending style autosave may fire (debounce).
+    style_save_at: Option<Instant>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     /// Outstanding worker messages (drives the idle repoll).
@@ -84,6 +93,8 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>, initial: Option<PathBuf>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         let (tx, rx) = mpsc::channel();
+        let saved_style = config::load_style();
+        let deps = deps::Check::run();
         let mut app = App {
             stage: Stage::Drop,
             input: None,
@@ -94,19 +105,63 @@ impl App {
             error: None,
             warn: None,
             hovering: false,
+            deps,
+            saved_style,
+            style_save_at: None,
             tx,
             rx,
             pending: 0,
             frame_token: 0,
         };
         if let Some(path) = initial {
-            if path.is_file() {
+            if !path.is_file() {
+                app.error = Some(format!("input file not found: {}", path.display()));
+            } else if app.deps.ok() {
                 app.start_ingest(path);
             } else {
-                app.error = Some(format!("input file not found: {}", path.display()));
+                // Dependencies are missing; keep the file so "Re-check" can
+                // resume once they're installed.
+                app.input = Some(path);
             }
         }
         app
+    }
+
+    /// Re-run the dependency check (the user may have installed something
+    /// since launch) and clear the banner if everything is now present.
+    fn recheck_deps(&mut self) {
+        self.deps = deps::Check::run();
+        if self.deps.ok() {
+            self.error = None;
+        }
+    }
+
+    /// Debounced autosave of the review style. Called once per frame; writes
+    /// the config only after the style has been stable for a beat, so dragging
+    /// a slider doesn't hammer the disk.
+    fn autosave_style(&mut self, ctx: &egui::Context) {
+        const DEBOUNCE: Duration = Duration::from_millis(400);
+        let dirty = match &self.review {
+            Some(r) if r.style != self.saved_style => Some(r.style.clone()),
+            _ => None,
+        };
+        let Some(style) = dirty else {
+            self.style_save_at = None;
+            return;
+        };
+        let now = Instant::now();
+        let deadline = *self.style_save_at.get_or_insert(now + DEBOUNCE);
+        if now >= deadline {
+            self.saved_style = style;
+            self.style_save_at = None;
+            if let Err(e) = config::save_style(&self.saved_style) {
+                eprintln!("      style save failed: {e:#}");
+            }
+        } else {
+            // Make sure a frame runs at the deadline even if the user stops
+            // interacting (egui otherwise sleeps).
+            ctx.request_repaint_after(deadline - now);
+        }
     }
 
     // ── workers ───────────────────────────────────────────────────────────
@@ -114,6 +169,14 @@ impl App {
     fn start_ingest(&mut self, path: PathBuf) {
         self.error = None;
         self.warn = None;
+        // Refuse to start against a broken environment; the drop screen shows
+        // exactly what is missing and a "Re-check" button.
+        if !self.deps.ok() {
+            self.recheck_deps();
+            self.input = Some(path);
+            self.error = self.deps.summary();
+            return;
+        }
         self.input = Some(path.clone());
         self.ingest = Some(IngestStatus {
             file: path.clone(),
@@ -294,7 +357,8 @@ impl App {
             Msg::IngestOk(ing) => {
                 self.pending = self.pending.saturating_sub(1);
                 let input = self.input.clone().unwrap_or_default();
-                self.review = Some(ReviewState::new(input, *ing));
+                let style = self.saved_style.clone();
+                self.review = Some(ReviewState::new(input, *ing, style));
                 self.ingest = None;
                 self.stage = Stage::Review;
                 self.seek_preview();
@@ -412,6 +476,10 @@ impl App {
     }
 
     fn screen_drop(&mut self, ui: &mut egui::Ui) {
+        if !self.deps.ok() {
+            self.screen_setup(ui);
+            return;
+        }
         let rect = ui.available_rect_before_wrap();
         let (fill, stroke) = if self.hovering {
             (
@@ -454,6 +522,61 @@ impl App {
                 }
             });
         }
+    }
+
+    /// Shown on the drop screen when a required tool/model/font is missing.
+    fn screen_setup(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(30.0);
+        ui.vertical_centered(|ui| {
+            ui.heading("Setup required");
+            ui.label(
+                egui::RichText::new("texxy needs these before it can caption a video:").weak(),
+            );
+        });
+        ui.add_space(14.0);
+
+        let problems = self.deps.problems();
+        egui::ScrollArea::vertical()
+            .max_height(340.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for p in &problems {
+                    egui::Frame::new()
+                        .fill(ui.visuals().faint_bg_color)
+                        .corner_radius(6.0)
+                        .inner_margin(egui::Margin::symmetric(12, 8))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(&p.what).strong());
+                            ui.add(egui::Label::new(
+                                egui::RichText::new(&p.how).weak(),
+                            ));
+                        });
+                    ui.add_space(8.0);
+                }
+            });
+
+        ui.add_space(12.0);
+        ui.vertical_centered(|ui| {
+            if ui
+                .add(egui::Button::new("Re-check").min_size(egui::vec2(120.0, 32.0)))
+                .clicked()
+            {
+                self.recheck_deps();
+            }
+            if let Some(path) = self.input.clone() {
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} is waiting — open it again once setup is done",
+                        file_label(&path)
+                    ))
+                    .weak(),
+                );
+                if ui.button("Retry").clicked() {
+                    self.start_ingest(path);
+                }
+            }
+        });
     }
 
     fn screen_ingest(&mut self, ui: &mut egui::Ui) {
@@ -655,6 +778,8 @@ impl eframe::App for App {
                 egui::CentralPanel::default().show(ui, |ui| self.screen_done(ui));
             }
         }
+
+        self.autosave_style(&ctx);
     }
 }
 

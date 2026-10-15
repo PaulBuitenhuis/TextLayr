@@ -1,8 +1,10 @@
-//! Style preferences for caption rendering.
+//! Style preferences for caption rendering, plus on-disk persistence.
 //!
-//! The `Style` struct is the single source of truth for how captions look.
-//! Persistence (serde JSON in the platform config dir) lands in Milestone 4;
-//! for now it carries `Serialize`/`Deserialize` so that lands without rework.
+//! The [`Style`] struct is the single source of truth for how captions look.
+//! It is persisted as JSON in the platform config dir (Milestone 4):
+//! `~/Library/Application Support/texxy/config.json` on macOS,
+//! `~/.config/texxy/config.json` on Linux. The CLI keeps the built-in
+//! defaults and never reads this file, so headless runs stay deterministic.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -102,6 +104,13 @@ pub fn find_fonts_dir() -> Result<PathBuf> {
     }
 
     if let Ok(exe) = std::env::current_exe() {
+        // .app bundle: the exe lives in Contents/MacOS, fonts are copied to
+        // Contents/Resources/assets/fonts by scripts/package_macos.sh.
+        if let Some(dir) = exe.parent() {
+            if let Some(res) = dir.parent() {
+                candidates.push(res.join("Resources").join("assets").join("fonts"));
+            }
+        }
         let mut cur = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..6 {
             let Some(dir) = cur else { break };
@@ -153,4 +162,151 @@ pub fn font_paths(fonts_dir: &Path, family: &str) -> Result<(PathBuf, PathBuf)> 
 /// Read a font file into memory with a helpful error.
 pub fn load_font_bytes(path: &Path) -> Result<Vec<u8>> {
     std::fs::read(path).with_context(|| format!("failed to read font {}", path.display()))
+}
+
+// ---------------------------------------------------------------------------
+// Persistence (Milestone 4)
+// ---------------------------------------------------------------------------
+
+/// Bump when the on-disk shape changes incompatibly.
+pub const CONFIG_VERSION: u32 = 1;
+
+/// The persisted document. Wrapped (with a version) so future app preferences
+/// can be added without breaking old files; today it only carries the caption
+/// style.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct Config {
+    version: u32,
+    style: Style,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            version: CONFIG_VERSION,
+            style: Style::default(),
+        }
+    }
+}
+
+/// `<config dir>/texxy/config.json` (`None` if the platform has no config dir).
+///
+/// macOS: `~/Library/Application Support/texxy/config.json`.
+/// Linux: `~/.config/texxy/config.json`.
+pub fn config_path() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("texxy").join("config.json"))
+}
+
+/// Load the persisted style, falling back to the built-in default when the
+/// file is absent, unreadable, or invalid. Never fails: a corrupt config must
+/// not stop the app from starting.
+pub fn load_style() -> Style {
+    let path = match config_path() {
+        Some(p) => p,
+        None => return Style::default(),
+    };
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Style::default();
+    };
+    match serde_json::from_slice::<Config>(&bytes) {
+        Ok(cfg) => {
+            let mut style = cfg.style;
+            style.sanitize();
+            style
+        }
+        Err(e) => {
+            eprintln!("(ignoring unreadable config {}: {e})", path.display());
+            Style::default()
+        }
+    }
+}
+
+/// Persist the style atomically (write a temp file, then rename) so an
+/// interrupted write can never leave a half-written config behind.
+pub fn save_style(style: &Style) -> Result<()> {
+    let path = config_path().context("no platform config directory")?;
+    save_style_to(&path, style)
+}
+
+/// [`save_style`] to an explicit path (also used by tests).
+pub fn save_style_to(path: &Path, style: &Style) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+    }
+    let cfg = Config {
+        version: CONFIG_VERSION,
+        style: style.clone(),
+    };
+    let json = serde_json::to_vec_pretty(&cfg).context("serialize config")?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json).with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn style_round_trips_through_json() {
+        let style = Style {
+            font_family: "Nunito".to_string(),
+            font_size_pct: 5.5,
+            highlight: Color::new(1, 2, 3, 4),
+            words_per_popup: 5,
+            ..Style::default()
+        };
+        let json = serde_json::to_vec(&Config {
+            version: CONFIG_VERSION,
+            style: style.clone(),
+        })
+        .unwrap();
+        let back: Config = serde_json::from_slice(&json).unwrap();
+        assert_eq!(back.style, style);
+        assert_eq!(back.version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn missing_fields_fall_back_to_defaults() {
+        // A hand-written partial file still parses; unspecified fields default.
+        let cfg: Config = serde_json::from_str(r#"{"style":{"font_size_pct":9.0}}"#).unwrap();
+        assert_eq!(cfg.style.font_size_pct, 9.0);
+        assert_eq!(cfg.style.font_family, Style::default().font_family);
+    }
+
+    #[test]
+    fn save_then_load_round_trips_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cfg").join("config.json");
+        let style = Style {
+            position_pct: 33.0,
+            dim: Color::new(9, 8, 7, 255),
+            ..Style::default()
+        };
+        save_style_to(&path, &style).unwrap();
+        assert!(path.is_file());
+        // The temp file used during the atomic write is gone.
+        assert!(!path.with_extension("json.tmp").exists());
+
+        let bytes = std::fs::read(&path).unwrap();
+        let cfg: Config = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(cfg.style.position_pct, 33.0);
+        assert_eq!(cfg.style.dim, Color::new(9, 8, 7, 255));
+    }
+
+    #[test]
+    fn out_of_range_values_are_sanitized() {
+        let cfg: Config = serde_json::from_str(
+            r#"{"style":{"words_per_popup":99,"font_size_pct":1000.0,"font_family":"Comic Sans"}}"#,
+        )
+        .unwrap();
+        let mut style = cfg.style;
+        style.sanitize();
+        assert_eq!(style.words_per_popup, 6);
+        assert_eq!(style.font_size_pct, 20.0);
+        assert_eq!(style.font_family, FONT_FAMILIES[0]);
+    }
 }
