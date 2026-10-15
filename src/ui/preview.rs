@@ -37,6 +37,23 @@ pub fn extract(tools: &probe::Fftools, input: &std::path::Path, at_secs: f64) ->
     })
 }
 
+/// Scale a caption crop from full source resolution to the preview scale by
+/// `factor` (the same factor the frame was downscaled by). Preserves aspect;
+/// returns the buffer unchanged when no scaling is needed.
+fn scale_caption(caption: Vec<u8>, cw: u32, ch: u32, factor: f32) -> (Vec<u8>, u32, u32) {
+    if cw == 0 || ch == 0 {
+        return (caption, cw, ch);
+    }
+    let sw = (cw as f32 * factor).round().max(1.0) as u32;
+    let sh = (ch as f32 * factor).round().max(1.0) as u32;
+    if sw == cw && sh == ch {
+        return (caption, cw, ch);
+    }
+    let img = image::RgbaImage::from_raw(cw, ch, caption).expect("caption buffer size mismatch");
+    let small = image::imageops::resize(&img, sw, sh, FilterType::Lanczos3);
+    (small.into_raw(), sw, sh)
+}
+
 /// A scaled RGBA surface (frame base and composite results).
 #[derive(Clone)]
 struct Surface {
@@ -138,19 +155,12 @@ impl Preview {
         if !words.is_empty() {
             match self.render_caption(style, words, active, src_w, src_h) {
                 Ok((caption, cw, ch)) => {
-                    // Scale the caption by the same factor as the frame, then
-                    // place it with the exporter's math (centered horizontally,
-                    // box center at position_pct of the height).
-                    let (scaled, sw, sh) = if cw == base.width {
-                        (caption, cw, ch)
-                    } else {
-                        let img = image::RgbaImage::from_raw(cw, ch, caption)
-                            .expect("caption buffer size mismatch");
-                        let th = ((ch as u64 * base.width as u64) / cw as u64).max(1) as u32;
-                        let small =
-                            image::imageops::resize(&img, base.width, th, FilterType::Lanczos3);
-                        (small.into_raw(), base.width, th)
-                    };
+                    // Scale the caption by the *same* factor the frame was
+                    // scaled by (base.width / src_w) — not up to base.width,
+                    // which would stretch every crop to the full frame width
+                    // and make preview text far larger than the export's.
+                    let factor = base.width as f32 / src_w.max(1) as f32;
+                    let (scaled, sw, sh) = scale_caption(caption, cw, ch, factor);
                     let x = ((base.width as f32 - sw as f32) / 2.0).round() as i32;
                     let y = (base.height as f32 * style.position_pct / 100.0 - sh as f32 / 2.0)
                         .round() as i32;
@@ -198,5 +208,25 @@ impl Preview {
         let faces = &self.faces.as_ref().expect("faces loaded").faces;
         render::render_state_rgba(faces, style, words, active, font_px, src_w)
             .context("caption render failed")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scale_caption;
+
+    #[test]
+    fn caption_scales_with_the_frame_not_to_full_width() {
+        // A 700x150 crop from a 1080-wide source, previewed at 480 wide, must
+        // scale to ~311x67 (factor 480/1080) — not stretch to 480 wide, which
+        // would make the preview text ~1.5x larger than the export's.
+        let factor = 480.0 / 1080.0;
+        let (rgba, sw, sh) = scale_caption(vec![0u8; 700 * 150 * 4], 700, 150, factor);
+        assert_eq!(sw, (700.0 * factor).round() as u32);
+        assert_eq!(sh, (150.0 * factor).round() as u32);
+        assert_eq!(rgba.len(), (sw * sh * 4) as usize);
+        // A one-to-one factor is a no-op (same buffer, no resample).
+        let (_, sw, sh) = scale_caption(vec![0u8; 40], 10, 1, 1.0);
+        assert_eq!((sw, sh), (10, 1));
     }
 }

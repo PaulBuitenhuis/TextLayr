@@ -30,18 +30,18 @@ use std::sync::{Arc, Mutex};
 /// Encoder choice for [`export_pipe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Encoder {
-    /// Best hardware encoder this platform offers, else x264: VAAPI on Linux
-    /// (when the device probes OK). `Auto` stays x264 on macOS — VideoToolbox
-    /// is available but opt-in (see [`Encoder::Videotoolbox`]).
+    /// Best hardware encoder this platform offers, else x264: VAAPI on Linux,
+    /// else VideoToolbox on macOS (each used only when its probe passes).
     #[default]
     Auto,
-    /// Software x264 (crf 18) — always available.
+    /// Software x264 (crf 18) — always available, crf-based, and preserves the
+    /// source's color range exactly.
     X264,
     /// VAAPI hardware encode (Linux; needs /dev/dri + a working driver).
     Vaapi,
-    /// VideoToolbox hardware encode (macOS). Experimental and opt-in: not
-    /// selected by `Auto`, because its rate control (bitrate, not crf) and
-    /// full-range handling differ from the x264/VAAPI paths.
+    /// VideoToolbox hardware encode (macOS). Rate-controlled by bitrate (no
+    /// crf) and always limited-range (`tv`) — ffmpeg cannot push full-range
+    /// yuv420p through VideoToolbox. `Auto` picks it when its probe passes.
     Videotoolbox,
 }
 
@@ -144,9 +144,10 @@ fn videotoolbox_works(tools: &Fftools) -> bool {
 
 /// Resolve the requested [`Encoder`] to one that actually works here.
 ///
-/// `Auto` prefers VAAPI on Linux and stays on x264 elsewhere; a requested
-/// hardware encoder that fails its probe silently falls back to x264 so an
-/// export never dies just because a hardware path is unavailable.
+/// `Auto` prefers the platform's hardware encoder — VAAPI on Linux, else
+/// VideoToolbox on macOS — and falls back to x264. A requested hardware
+/// encoder that fails its probe silently falls back too, so an export never
+/// dies just because a hardware path is unavailable.
 fn active_encoder(tools: &Fftools, encoder: Encoder) -> Active {
     match encoder {
         Encoder::X264 => Active::X264,
@@ -167,6 +168,8 @@ fn active_encoder(tools: &Fftools, encoder: Encoder) -> Active {
         Encoder::Auto => {
             if vaapi_works(tools) {
                 Active::Vaapi
+            } else if videotoolbox_works(tools) {
+                Active::VideoToolbox
             } else {
                 Active::X264
             }
