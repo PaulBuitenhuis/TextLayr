@@ -56,7 +56,14 @@ and `scripts/package_macos.sh` builds a self-contained `texxy.app`.
 ```sh
 cargo build --release
 
-# GUI: drop zone, or pre-loaded with a video as argv[1]
+# macOS GUI: launch the *bundle*, not the raw binary. macOS runs a bare
+# executable it is asked to open through Terminal, which is why the binary
+# below pops a terminal window; the .app does not.
+scripts/package_macos.sh
+open dist/texxy.app          # or double-click dist/texxy.app in Finder
+
+# GUI from a terminal you already have open (fine on Linux too); drop zone,
+# or pre-loaded with a video as argv[1]
 ./target/release/texxy
 ./target/release/texxy "../samples/AI job search tips.mp4"
 

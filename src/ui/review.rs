@@ -367,17 +367,28 @@ pub fn style_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
                 });
 
             ui.add_space(16.0);
-            theme::section(ui, "BOX");
+            theme::section(ui, "Box");
             ui.add_space(8.0);
-            ui.checkbox(&mut r.style.rounded, "Rounded corners");
-            if r.style.rounded {
-                ui.add(
-                    egui::Slider::new(&mut r.style.corner_radius_frac, 0.0..=0.5)
-                        .fixed_decimals(2)
-                        .text("Corner radius"),
-                );
-            }
-            ui.checkbox(&mut r.style.shadow, "Drop shadow");
+            egui::Grid::new("box_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
+                .min_col_width(86.0)
+                .show(ui, |ui| {
+                    ui.label("Rounded");
+                    ui.checkbox(&mut r.style.rounded, "");
+                    ui.end_row();
+                    if r.style.rounded {
+                        ui.label("Radius");
+                        ui.add(
+                            egui::Slider::new(&mut r.style.corner_radius_frac, 0.0..=0.5)
+                                .fixed_decimals(2),
+                        );
+                        ui.end_row();
+                    }
+                    ui.label("Shadow");
+                    ui.checkbox(&mut r.style.shadow, "");
+                    ui.end_row();
+                });
 
             ui.add_space(16.0);
             if theme::wide_button(ui, r.style != Style::default(), "Reset to defaults").clicked() {

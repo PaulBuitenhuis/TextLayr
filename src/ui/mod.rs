@@ -77,6 +77,8 @@ pub struct App {
     hovering: bool,
     /// Startup dependency check (ffmpeg, model, fonts).
     deps: deps::Check,
+    /// Whether the About window is showing.
+    about_open: bool,
     /// The style currently persisted on disk; a change from the live style
     /// schedules an autosave.
     saved_style: Style,
@@ -107,6 +109,7 @@ impl App {
             warn: None,
             hovering: false,
             deps,
+            about_open: false,
             saved_style,
             style_save_at: None,
             tx,
@@ -475,6 +478,9 @@ impl App {
                 if self.stage == Stage::Review && theme::button(ui, "Change video").clicked() {
                     self.reset_to_drop();
                 }
+                if theme::button(ui, "About").clicked() {
+                    self.about_open = true;
+                }
             });
         });
         ui.add_space(1.0);
@@ -539,20 +545,19 @@ impl App {
                 egui::pos2(center.x, center.y + 104.0),
                 egui::vec2(120.0, theme::CONTROL_H),
             );
-            let retry = egui::Button::new("Retry").min_size(egui::vec2(120.0, theme::CONTROL_H));
-            if ui.put(btn, retry).clicked() {
+            let clicked = ui
+                .scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(btn)
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                    |ui| theme::fixed_button(ui, true, 120.0, "Retry"),
+                )
+                .inner
+                .clicked();
+            if clicked {
                 self.start_ingest(path);
             }
         }
-
-        // Build stamp, tucked away in the corner of the home screen.
-        painter.text(
-            rect.right_bottom() - egui::vec2(12.0, 10.0),
-            egui::Align2::RIGHT_BOTTOM,
-            format!("build {}", env!("TEXXY_GIT_HASH")),
-            egui::FontId::proportional(10.5),
-            v.weak_text_color().gamma_multiply(0.6),
-        );
     }
 
     /// Shown on the drop screen when a required tool/model/font is missing.
@@ -601,7 +606,7 @@ impl App {
                     .weak(),
                 );
                 ui.add_space(4.0);
-                if theme::button(ui, "Retry").clicked() {
+                if theme::wide_button(ui, true, "Retry").clicked() {
                     self.start_ingest(path);
                 }
             }
@@ -651,11 +656,73 @@ impl App {
                     }
                 }
                 ui.add_space(8.0);
-                if theme::button(ui, "New video").clicked() {
+                if theme::wide_button(ui, true, "New video").clicked() {
                     self.reset_to_drop();
                 }
             });
         });
+    }
+
+    /// A small modal with the version/build and the resolved runtime paths.
+    /// This is the one place the build stamp lives, so it stays out of the way.
+    fn about_window(&mut self, ctx: &egui::Context) {
+        if !self.about_open {
+            return;
+        }
+        let mut open = true;
+        let mut close = false;
+        egui::Window::new("About texxy")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(430.0);
+                ui.vertical_centered(|ui| {
+                    ui.heading("texxy");
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new("Offline karaoke caption burner").weak());
+                    ui.add_space(8.0);
+                    ui.label(format!(
+                        "Version {}   ·   build {}",
+                        env!("CARGO_PKG_VERSION"),
+                        env!("TEXXY_GIT_HASH")
+                    ));
+                });
+                ui.add_space(14.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                let fftools = self.deps.fftools.as_ref();
+                let ffmpeg = fftools.map(|t| t.ffmpeg.clone());
+                let ffprobe = fftools.map(|t| t.ffprobe.clone());
+                let model = self.deps.model.clone();
+                let fonts = self.deps.fonts.clone();
+                let config = config::config_path();
+
+                egui::Grid::new("about_grid")
+                    .num_columns(2)
+                    .spacing([14.0, 6.0])
+                    .min_col_width(62.0)
+                    .max_col_width(300.0)
+                    .show(ui, |ui| {
+                        about_row(ui, "ffmpeg", ffmpeg.as_deref());
+                        about_row(ui, "ffprobe", ffprobe.as_deref());
+                        about_row(ui, "model", model.as_deref());
+                        about_row(ui, "fonts", fonts.as_deref());
+                        about_row(ui, "config", config.as_deref());
+                    });
+
+                ui.add_space(16.0);
+                ui.vertical_centered(|ui| {
+                    if theme::fixed_button(ui, true, 120.0, "Close").clicked() {
+                        close = true;
+                    }
+                });
+            });
+        if !open || close {
+            self.about_open = false;
+        }
     }
 
     // ── review layout ─────────────────────────────────────────────────────
@@ -767,6 +834,7 @@ impl eframe::App for App {
             }
         }
 
+        self.about_window(&ctx);
         self.autosave_style(&ctx);
     }
 }
@@ -775,7 +843,7 @@ impl eframe::App for App {
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title(format!("texxy {}", env!("TEXXY_GIT_HASH")))
+            .with_title("texxy")
             .with_inner_size([1320.0, 840.0])
             .with_min_inner_size([1040.0, 660.0]),
         ..Default::default()
@@ -787,6 +855,25 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!("failed to start the GUI: {e}"))?;
     Ok(())
+}
+
+/// One `label → value` row in the About grid; a missing value shows in red.
+fn about_row(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
+    ui.label(egui::RichText::new(label).weak());
+    match value {
+        Some(p) => {
+            ui.add(
+                egui::Label::new(egui::RichText::new(p.display().to_string()).small().monospace())
+                    .truncate(),
+            )
+            .on_hover_text(p.display().to_string());
+        }
+        None => {
+            let color = ui.visuals().error_fg_color;
+            ui.label(egui::RichText::new("not found").color(color));
+        }
+    }
+    ui.end_row();
 }
 
 /// A dismissable warning/error strip pinned to the bottom of the window.

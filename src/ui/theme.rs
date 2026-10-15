@@ -76,8 +76,11 @@ pub fn apply(ctx: &egui::Context) {
         v.menu_corner_radius = CornerRadius::same(8);
         v.window_stroke = Stroke::new(1.0, BORDER);
         v.slider_trailing_fill = true;
+        // `selection.stroke.color` is the *text* colour drawn on top of the
+        // selection fill (e.g. the selected row of a dropdown), so it must
+        // contrast with the accent, not match it.
         v.selection.bg_fill = ACCENT;
-        v.selection.stroke = Stroke::new(1.0, ACCENT);
+        v.selection.stroke = Stroke::new(1.0, Color32::WHITE);
         v.warn_fg_color = Color32::from_rgb(255, 179, 64);
         v.error_fg_color = Color32::from_rgb(255, 105, 97);
 
@@ -143,23 +146,26 @@ fn accent_scope<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R
     .inner
 }
 
-/// The macOS "default" action: accent-filled, full width of its container.
-pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
-    let w = ui.available_width();
-    accent_scope(ui, |ui| {
-        ui.add_enabled(
-            enabled,
-            egui::Button::new(RichText::new(label).strong()).min_size(Vec2::new(w, CONTROL_H)),
-        )
-    })
+/// A button occupying an explicit size, with its label **centred**. Uses
+/// `add_sized`, whose justified layout is what centres the content; `min_size`
+/// alone would leave the label stranded at the left edge.
+fn sized_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: RichText) -> Response {
+    ui.add_enabled_ui(enabled, |ui| ui.add_sized(size, egui::Button::new(text)))
+        .inner
 }
 
-/// A secondary (grey) button at the shared control height.
+/// The macOS "default" action: accent-filled, full width of its container.
+pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
+    let size = Vec2::new(ui.available_width(), CONTROL_H);
+    accent_scope(ui, |ui| sized_button(ui, enabled, size, RichText::new(label).strong()))
+}
+
+/// A secondary (grey) button at the shared control height, sized to its label.
 pub fn button(ui: &mut egui::Ui, label: &str) -> Response {
     button_enabled(ui, true, label)
 }
 
-/// As [`button`], but disable-able (`add_enabled` styles it grey).
+/// As [`button`], but disable-able (a disabled button renders grey).
 pub fn button_enabled(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
     ui.add_enabled(
         enabled,
@@ -167,13 +173,15 @@ pub fn button_enabled(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response
     )
 }
 
-/// A secondary button that fills the available width.
+/// A secondary button that fills the available width (label centred).
 pub fn wide_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
-    let w = ui.available_width();
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(label).min_size(Vec2::new(w, CONTROL_H)),
-    )
+    let size = Vec2::new(ui.available_width(), CONTROL_H);
+    sized_button(ui, enabled, size, RichText::new(label))
+}
+
+/// A secondary button of a fixed width (label centred), e.g. Retry / Close.
+pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, width: f32, label: &str) -> Response {
+    sized_button(ui, enabled, Vec2::new(width, CONTROL_H), RichText::new(label))
 }
 
 /// A small-caps section label used to group panel controls.
