@@ -462,7 +462,10 @@ pub fn export_pipe(
     let full_range = info.color_range == "pc"
         || info.color_range == "jpeg"
         || info.pix_fmt.starts_with("yuvj");
-    let out_range = if full_range { "full" } else { "limited" };
+    // VideoToolbox cannot pair yuv420p with full range ("Could not get pixel
+    // format for color format 'yuv420p' range 'pc'"), so its path always
+    // encodes limited range and is tagged tv (see the color-tag loop below).
+    let out_range = if full_range && !use_vt { "full" } else { "limited" };
     let matrix = scale_matrix(&info.color_space);
     eprintln!(
         "      pipe export: {} states, {} frames total, encoder={} ({out_range} range, {matrix})",
@@ -531,8 +534,10 @@ pub fn export_pipe(
         enc_cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pix]);
     }
     // Forward color tags so players read the same signal as the source.
+    // VideoToolbox can only do limited-range yuv420p, so it is tagged tv.
+    let fwd_range = if use_vt { "tv" } else { info.color_range.as_str() };
     for (opt, val) in [
-        ("-color_range", info.color_range.as_str()),
+        ("-color_range", fwd_range),
         ("-colorspace", info.color_space.as_str()),
         ("-color_primaries", info.color_primaries.as_str()),
         ("-color_trc", info.color_transfer.as_str()),

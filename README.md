@@ -87,7 +87,7 @@ texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
 | `--font-size` | Glyph size as % of frame height (default 3.4) |
 | `--position` | Caption box center as % of frame height (default 72) |
 | `--words-per` | Words per popup, 2–6 (default 3) |
-| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else x264) · `vaapi` · `videotoolbox` (macOS, experimental) · `x264` |
+| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else x264) · `vaapi` · `videotoolbox` (macOS, ~4× faster, limited-range) · `x264` |
 | `--graph` | Export via the M2 overlay-filter graph instead of the frame pipe (≈4.2 GB ffmpeg RAM) |
 | `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
 
@@ -174,10 +174,12 @@ notarize.
   graph path's tags (`yuvj420p/pc/bt709`).
 - **VideoToolbox (macOS) is opt-in.** `--encoder videotoolbox` uses
   `h264_videotoolbox`, rate-controlled by bitrate (scaled to resolution × fps)
-  rather than crf, with `-pix_fmt yuv420p`. It is *not* selected by `Auto`:
-  its rate control and full-range handling differ from x264/VAAPI and it hasn't
-  been verified against the reference output here. A failed hardware probe
-  falls back to x264 rather than erroring, for every `Encoder` value.
+  rather than crf. It can only encode limited-range `yuv420p` — ffmpeg 6.0
+  rejects `yuv420p` + range `pc` — so its output is always limited/tv even from
+  a full-range source. `Auto` therefore stays on x264, which preserves the
+  source's range exactly. Measured on an M-series Mac (222 s sample, 1080×1920):
+  **37.7 s** with VideoToolbox vs **162 s** with x264 (~4.3× faster). A failed
+  hardware probe falls back to x264 rather than erroring, for every `Encoder`.
 - **Style persistence (M4).** The review style autosaves to
   `~/Library/Application Support/texxy/config.json` (macOS) /
   `~/.config/texxy/config.json` (Linux) ~0.4 s after it stops changing, written
