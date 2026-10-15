@@ -149,6 +149,26 @@ impl Preview {
             return;
         }
         let Some(base) = self.base.clone() else { return };
+        let data = self.build_composite(style, words, active);
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [base.width as usize, base.height as usize],
+            &data,
+        );
+        self.texture = Some(ctx.load_texture(
+            "preview_frame",
+            image,
+            egui::TextureOptions::LINEAR,
+        ));
+        self.composite_built = true;
+    }
+
+    /// Composite the caption onto the (already downscaled) preview frame and
+    /// return the straight-alpha RGBA buffer. Split out from [`Self::ensure`]
+    /// so the exact pixels the preview shows are testable without a GPU.
+    fn build_composite(&mut self, style: &Style, words: &[String], active: usize) -> Vec<u8> {
+        let Some(base) = self.base.clone() else {
+            return Vec::new();
+        };
         let (src_w, src_h) = self.src_size;
         let mut data = base.rgba.clone();
 
@@ -170,16 +190,7 @@ impl Preview {
             }
         }
 
-        let image = egui::ColorImage::from_rgba_unmultiplied(
-            [base.width as usize, base.height as usize],
-            &data,
-        );
-        self.texture = Some(ctx.load_texture(
-            "preview_frame",
-            image,
-            egui::TextureOptions::LINEAR,
-        ));
-        self.composite_built = true;
+        data
     }
 
     /// Render one caption state at full source resolution (export parity).
@@ -213,7 +224,120 @@ impl Preview {
 
 #[cfg(test)]
 mod tests {
-    use super::scale_caption;
+    use super::*;
+    use crate::config::Color;
+    use crate::render::{font_px, render_state_rgba};
+
+    /// The reporter's saved style: a very small 1.1% font, 4 words per popup.
+    fn reporter_style() -> Style {
+        Style {
+            font_size_pct: 1.1,
+            words_per_popup: 4,
+            position_pct: 83.0,
+            highlight: Color::new(94, 232, 86, 255),
+            dim: Color::new(212, 175, 175, 255),
+            box_opacity: 0.68,
+            corner_radius_frac: 0.39,
+            ..Style::default()
+        }
+    }
+
+    /// A flat gray frame (uniform base makes the caption box easy to isolate).
+    fn flat_frame(w: u32, h: u32) -> Frame {
+        let mut rgba = vec![60u8; (w * h * 4) as usize];
+        for p in rgba.as_chunks_mut::<4>().0 {
+            p[3] = 255;
+        }
+        Frame {
+            width: w,
+            height: h,
+            rgba,
+        }
+    }
+
+    /// Bounding box of the (dark) caption box within a composite, as
+    /// `(w, h)` fractions of the frame.
+    fn caption_frac(data: &[u8], w: u32, h: u32) -> (f32, f32) {
+        let mut x0 = u32::MAX;
+        let mut y0 = u32::MAX;
+        let mut x1 = 0u32;
+        let mut y1 = 0u32;
+        let mut any = false;
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 4) as usize;
+                let lum = data[i] as u32 + data[i + 1] as u32 + data[i + 2] as u32;
+                if lum < 3 * 45 {
+                    any = true;
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
+            }
+        }
+        assert!(any, "no caption box found in the composite");
+        (
+            (x1 - x0 + 1) as f32 / w as f32,
+            (y1 - y0 + 1) as f32 / h as f32,
+        )
+    }
+
+    /// End-to-end guard for the reported bug: the preview must show the caption
+    /// at the *same fraction of the frame* as the export. Before the fix the
+    /// crop was stretched to the preview width, so at 1.1% the preview read as
+    /// ~90% wide while the video was ~23%.
+    #[test]
+    fn preview_caption_matches_export_fraction() {
+        let style = reporter_style();
+        let (src_w, src_h) = (1080u32, 1920u32);
+        let words: Vec<String> = ["Alright,", "I", "wanted", "to"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        // Export reference: caption blended onto a full-res frame.
+        let fpx = font_px(&style, src_h);
+        let faces = Faces::load(&style, fpx).unwrap();
+        let (cap, cw, ch) = render_state_rgba(&faces, &style, &words, 0, fpx, src_w).unwrap();
+        let mut full = flat_frame(src_w, src_h).rgba;
+        let fx = ((src_w as f32 - cw as f32) / 2.0).round() as i32;
+        let fy = (src_h as f32 * style.position_pct / 100.0 - ch as f32 / 2.0).round() as i32;
+        blend_straight(&mut full, src_w, src_h, &cap, cw, ch, fx, fy);
+        let (export_w, export_h) = caption_frac(&full, src_w, src_h);
+
+        // What the GUI preview actually composites.
+        let mut preview = Preview::default();
+        preview.set_frame(flat_frame(src_w, src_h));
+        let (pw, ph) = preview.image_size().unwrap();
+        let data = preview.build_composite(&style, &words, 0);
+        let (preview_w, preview_h) = caption_frac(&data, pw, ph);
+
+        eprintln!("export : frac_w={export_w:.3} frac_h={export_h:.3} (frame {src_w}x{src_h})");
+        eprintln!("preview: frac_w={preview_w:.3} frac_h={preview_h:.3} (frame {pw}x{ph})");
+
+        assert!(
+            (preview_w - export_w).abs() < 0.01,
+            "preview width {preview_w:.3} != export {export_w:.3}"
+        );
+        assert!(
+            (preview_h - export_h).abs() < 0.01,
+            "preview height {preview_h:.3} != export {export_h:.3}"
+        );
+        // The regression: the preview must not stretch the crop to full width.
+        assert!(preview_w < 0.5, "caption stretched to full width: {preview_w:.3}");
+
+        let dir = std::path::Path::new("/tmp/texxy_diag");
+        std::fs::create_dir_all(dir).unwrap();
+        image::RgbaImage::from_raw(src_w, src_h, full)
+            .unwrap()
+            .save(dir.join("export_1080.png"))
+            .unwrap();
+        image::RgbaImage::from_raw(pw, ph, data)
+            .unwrap()
+            .save(dir.join("preview_actual.png"))
+            .unwrap();
+    }
 
     #[test]
     fn caption_scales_with_the_frame_not_to_full_width() {

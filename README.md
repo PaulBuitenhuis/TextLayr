@@ -184,8 +184,13 @@ notarize.
 - **Preview scales like the export.** The preview renders the caption crop at
   full source resolution (same `render_state_rgba` + placement math as the
   export) and then scales it by the *same* factor the frame was downscaled by.
-  It must **not** resize the crop to the preview's full width, or short captions
-  appear ~1.5× larger in the preview than in the burned-in video.
+  It must **not** resize the crop to the preview's full width, or captions
+  appear far larger in the preview than in the burned-in video. A test
+  (`ui/preview.rs`) composites a synthetic frame and asserts the caption's
+  width/height fraction matches the export's, so this can't regress.
+- **The build is stamped.** `build.rs` embeds the short git hash; the header
+  and window title show `build <hash>`, so it's obvious which revision is
+  running (useful when checking whether a rebuild actually took effect).
 - **Style persistence (M4).** The review style autosaves to
   `~/Library/Application Support/texxy/config.json` (macOS) /
   `~/.config/texxy/config.json` (Linux) ~0.4 s after it stops changing, written

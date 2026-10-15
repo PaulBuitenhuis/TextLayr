@@ -442,6 +442,11 @@ impl App {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("texxy").size(18.0).strong());
+            ui.label(
+                egui::RichText::new(format!("build {}", env!("TEXXY_GIT_HASH")))
+                    .weak()
+                    .small(),
+            );
             ui.separator();
             match &self.stage {
                 Stage::Drop => {
@@ -787,7 +792,7 @@ impl eframe::App for App {
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("texxy")
+            .with_title(format!("texxy {}", env!("TEXXY_GIT_HASH")))
             .with_inner_size([1280.0, 820.0])
             .with_min_inner_size([960.0, 620.0]),
         ..Default::default()
