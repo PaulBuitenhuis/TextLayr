@@ -188,9 +188,14 @@ notarize.
   appear far larger in the preview than in the burned-in video. A test
   (`ui/preview.rs`) composites a synthetic frame and asserts the caption's
   width/height fraction matches the export's, so this can't regress.
-- **The build is stamped.** `build.rs` embeds the short git hash; the header
-  and window title show `build <hash>`, so it's obvious which revision is
-  running (useful when checking whether a rebuild actually took effect).
+- **The build is stamped.** `build.rs` embeds the short git hash; the window
+  title shows `texxy <hash>` and the home screen keeps a faint `build <hash>`
+  in its bottom-right corner — so it's obvious which revision is running
+  (useful when checking whether a rebuild actually took effect).
+- **One theme module drives the look.** `ui/theme.rs` sets the type scale,
+  spacing, corner radii, accent colour, control height and widget palette, and
+  provides the shared button/card builders. Screens use those instead of
+  picking their own sizes, which is what keeps buttons aligned and consistent.
 - **Style persistence (M4).** The review style autosaves to
   `~/Library/Application Support/texxy/config.json` (macOS) /
   `~/.config/texxy/config.json` (Linux) ~0.4 s after it stops changing, written
@@ -223,6 +228,8 @@ src/
   render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
   export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
   ui/            egui app: drop, ingest, review (preview/editor/style), export, done
+    theme.rs     macOS-flavoured style + shared button/card builders
+    preview.rs   live composited preview (same renderer as the export)
 assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
 models/          ggml-small.en.bin (downloaded, not committed)
 scripts/         fetch_model.sh + package_macos.sh (+ Info.plist)

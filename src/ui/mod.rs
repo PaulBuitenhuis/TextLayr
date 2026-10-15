@@ -5,6 +5,7 @@
 
 mod preview;
 mod review;
+mod theme;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -91,7 +92,7 @@ pub struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>, initial: Option<PathBuf>) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        theme::apply(&cc.egui_ctx);
         let (tx, rx) = mpsc::channel();
         let saved_style = config::load_style();
         let deps = deps::Check::run();
@@ -441,13 +442,11 @@ impl App {
 
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("texxy").size(18.0).strong());
-            ui.label(
-                egui::RichText::new(format!("build {}", env!("TEXXY_GIT_HASH")))
-                    .weak()
-                    .small(),
-            );
+            ui.add_space(2.0);
+            ui.label(egui::RichText::new("texxy").size(17.0).strong());
+            ui.add_space(6.0);
             ui.separator();
+            ui.add_space(2.0);
             match &self.stage {
                 Stage::Drop => {
                     ui.label(egui::RichText::new("offline karaoke caption burner").weak());
@@ -473,11 +472,12 @@ impl App {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.stage == Stage::Review && ui.button("Change video").clicked() {
+                if self.stage == Stage::Review && theme::button(ui, "Change video").clicked() {
                     self.reset_to_drop();
                 }
             });
         });
+        ui.add_space(1.0);
     }
 
     fn screen_drop(&mut self, ui: &mut egui::Ui) {
@@ -486,90 +486,113 @@ impl App {
             return;
         }
         let rect = ui.available_rect_before_wrap();
+        let v = ui.visuals().clone();
         let (fill, stroke) = if self.hovering {
             (
-                ui.visuals().selection.bg_fill,
-                egui::Stroke::new(2.0, ui.visuals().selection.stroke.color),
+                theme::ACCENT.gamma_multiply(0.18),
+                egui::Stroke::new(2.0, theme::ACCENT),
             )
         } else {
             (
-                ui.visuals().faint_bg_color,
-                egui::Stroke::new(
-                    1.5,
-                    ui.visuals().widgets.noninteractive.bg_stroke.color,
-                ),
+                v.faint_bg_color,
+                egui::Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color),
             )
         };
-        ui.painter().rect_filled(rect, 16.0, fill);
-        ui.painter().rect_stroke(rect, 16.0, stroke, egui::StrokeKind::Inside);
-        ui.painter().text(
-            rect.center() - egui::vec2(0.0, 24.0),
+        let painter = ui.painter().clone();
+        let radius = theme::ROUND_LG as f32;
+        painter.rect_filled(rect, radius, fill);
+        painter.rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+
+        let center = rect.center();
+        painter.text(
+            center - egui::vec2(0.0, 36.0),
             egui::Align2::CENTER_CENTER,
-            "Drop a video here",
-            egui::FontId::proportional(32.0),
-            ui.visuals().strong_text_color(),
+            "Drop a video",
+            egui::FontId::proportional(30.0),
+            v.strong_text_color(),
         );
-        ui.painter().text(
-            rect.center() + egui::vec2(0.0, 20.0),
+        painter.text(
+            center + egui::vec2(0.0, 2.0),
             egui::Align2::CENTER_CENTER,
-            "any video with a voiceover track\nor run:  texxy <video.mp4>",
+            "Any video with a voiceover track.",
             egui::FontId::proportional(15.0),
-            ui.visuals().weak_text_color(),
+            v.weak_text_color(),
+        );
+        painter.text(
+            center + egui::vec2(0.0, 32.0),
+            egui::Align2::CENTER_CENTER,
+            "or run   texxy <video.mp4>",
+            egui::FontId::monospace(12.5),
+            v.weak_text_color().gamma_multiply(0.75),
         );
 
-        // A startup file that failed ingest: offer a retry.
+        // A startup file that failed ingest: offer a retry right in the card.
         if let Some(path) = self.input.clone() {
-            ui.horizontal(|ui| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(format!("failed: {}", file_label(&path))).weak());
-                if ui.button("Retry").clicked() {
-                    self.start_ingest(path);
-                }
-            });
+            painter.text(
+                egui::pos2(center.x, center.y + 74.0),
+                egui::Align2::CENTER_CENTER,
+                format!("couldn't open {}", file_label(&path)),
+                egui::FontId::proportional(13.0),
+                v.error_fg_color,
+            );
+            let btn = egui::Rect::from_center_size(
+                egui::pos2(center.x, center.y + 104.0),
+                egui::vec2(120.0, theme::CONTROL_H),
+            );
+            let retry = egui::Button::new("Retry").min_size(egui::vec2(120.0, theme::CONTROL_H));
+            if ui.put(btn, retry).clicked() {
+                self.start_ingest(path);
+            }
         }
+
+        // Build stamp, tucked away in the corner of the home screen.
+        painter.text(
+            rect.right_bottom() - egui::vec2(12.0, 10.0),
+            egui::Align2::RIGHT_BOTTOM,
+            format!("build {}", env!("TEXXY_GIT_HASH")),
+            egui::FontId::proportional(10.5),
+            v.weak_text_color().gamma_multiply(0.6),
+        );
     }
 
     /// Shown on the drop screen when a required tool/model/font is missing.
     fn screen_setup(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(30.0);
+        ui.add_space(32.0);
         ui.vertical_centered(|ui| {
             ui.heading("Setup required");
+            ui.add_space(2.0);
             ui.label(
                 egui::RichText::new("texxy needs these before it can caption a video:").weak(),
             );
         });
-        ui.add_space(14.0);
+        ui.add_space(16.0);
 
         let problems = self.deps.problems();
-        egui::ScrollArea::vertical()
-            .max_height(340.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for p in &problems {
-                    egui::Frame::new()
-                        .fill(ui.visuals().faint_bg_color)
-                        .corner_radius(6.0)
-                        .inner_margin(egui::Margin::symmetric(12, 8))
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new(&p.what).strong());
-                            ui.add(egui::Label::new(
-                                egui::RichText::new(&p.how).weak(),
-                            ));
-                        });
-                    ui.add_space(8.0);
-                }
-            });
-
-        ui.add_space(12.0);
         ui.vertical_centered(|ui| {
-            if ui
-                .add(egui::Button::new("Re-check").min_size(egui::vec2(120.0, 32.0)))
-                .clicked()
-            {
+            ui.set_max_width(560.0);
+            egui::ScrollArea::vertical()
+                .max_height(320.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for p in &problems {
+                        theme::card(ui, |ui| {
+                            ui.label(egui::RichText::new(&p.what).strong());
+                            ui.add_space(2.0);
+                            ui.add(egui::Label::new(egui::RichText::new(&p.how).weak()));
+                        });
+                        ui.add_space(8.0);
+                    }
+                });
+        });
+
+        ui.add_space(16.0);
+        ui.vertical_centered(|ui| {
+            ui.set_max_width(240.0);
+            if theme::primary_button(ui, true, "Re-check").clicked() {
                 self.recheck_deps();
             }
             if let Some(path) = self.input.clone() {
-                ui.add_space(6.0);
+                ui.add_space(10.0);
                 ui.label(
                     egui::RichText::new(format!(
                         "{} is waiting — open it again once setup is done",
@@ -577,7 +600,8 @@ impl App {
                     ))
                     .weak(),
                 );
-                if ui.button("Retry").clicked() {
+                ui.add_space(4.0);
+                if theme::button(ui, "Retry").clicked() {
                     self.start_ingest(path);
                 }
             }
@@ -588,67 +612,46 @@ impl App {
         let Some(st) = &self.ingest else { return };
         let file = file_label(&st.file);
         let label = st.label.clone();
-        let progress = st.progress;
-        ui.vertical_centered(|ui| {
-            ui.add_space(70.0);
-            ui.heading(file);
-            ui.add_space(20.0);
-            match progress {
-                Some(p) => {
-                    ui.add(
-                        egui::ProgressBar::new(p)
-                            .show_percentage()
-                            .desired_width(420.0),
-                    );
-                }
-                None => {
-                    ui.add(egui::Spinner::new());
-                }
-            }
-            ui.add_space(10.0);
-            ui.label(egui::RichText::new(label).weak());
-        });
+        centered_block(ui, &file, &label, st.progress);
     }
 
     fn screen_export(&mut self, ui: &mut egui::Ui) {
         let Some(st) = &self.export else { return };
         let label = st.label.clone();
-        let progress = st.progress;
-        ui.vertical_centered(|ui| {
-            ui.add_space(70.0);
-            ui.heading("Exporting");
-            ui.add_space(20.0);
-            ui.add(
-                egui::ProgressBar::new(progress)
-                    .show_percentage()
-                    .desired_width(420.0),
-            );
-            ui.add_space(10.0);
-            ui.label(egui::RichText::new(label).weak());
-        });
+        centered_block(ui, "Exporting", &label, Some(st.progress));
     }
 
     fn screen_done(&mut self, ui: &mut egui::Ui) {
         let Some(d) = &self.done else { return };
         let output = d.output.clone();
         let secs = d.secs;
-        ui.vertical_centered(|ui| {
-            ui.add_space(70.0);
-            ui.heading("Done");
-            ui.add_space(12.0);
-            let size_mb = std::fs::metadata(&output).map(|m| m.len() as f64 / 1e6).unwrap_or(0.0);
+        let size_mb = std::fs::metadata(&output)
+            .map(|m| m.len() as f64 / 1e6)
+            .unwrap_or(0.0);
+
+        centered(ui, 88.0, |ui| {
+            ui.heading("Export complete");
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new(file_label(&output)).strong());
+            ui.add_space(2.0);
             ui.label(
-                egui::RichText::new(format!("{}  ({size_mb:.1} MB, export took {secs:.0}s)", output.display()))
-                    .monospace(),
+                egui::RichText::new(format!("{size_mb:.1} MB · took {secs:.0}s")).weak(),
             );
             ui.add_space(18.0);
-            ui.horizontal(|ui| {
-                if ui.button("Reveal in folder").clicked() {
+            ui.vertical_centered(|ui| {
+                ui.set_max_width(260.0);
+                let reveal_label = if cfg!(target_os = "macos") {
+                    "Reveal in Finder"
+                } else {
+                    "Show in folder"
+                };
+                if theme::primary_button(ui, true, reveal_label).clicked() {
                     if let Err(e) = reveal(&output) {
                         self.error = Some(format!("could not open folder: {e}"));
                     }
                 }
-                if ui.button("New video").clicked() {
+                ui.add_space(8.0);
+                if theme::button(ui, "New video").clicked() {
                     self.reset_to_drop();
                 }
             });
@@ -686,7 +689,7 @@ impl App {
         if let Some(r) = self.review.as_mut() {
             egui::Panel::left("preview_panel")
                 .resizable(true)
-                .default_size(460.0)
+                .default_size(430.0)
                 .min_size(300.0)
                 .show(ui, |ui| {
                     let a = review::preview_panel(ui, r);
@@ -696,8 +699,8 @@ impl App {
         if let Some(r) = self.review.as_mut() {
             egui::Panel::right("style_panel")
                 .resizable(true)
-                .default_size(300.0)
-                .min_size(250.0)
+                .default_size(320.0)
+                .min_size(280.0)
                 .show(ui, |ui| {
                     let a = review::style_panel(ui, r);
                     merge(a, &mut seek, &mut export, &mut rechunk_warn);
@@ -736,34 +739,14 @@ impl eframe::App for App {
         });
 
         if let Some(err) = self.error.clone() {
-            let mut dismiss = false;
-            egui::Panel::bottom("error_banner").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.colored_label(ui.visuals().error_fg_color, format!("⚠ {err}"));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("✕").clicked() {
-                            dismiss = true;
-                        }
-                    });
-                });
-            });
-            if dismiss {
+            let color = ui.visuals().error_fg_color;
+            if banner(ui, "error_banner", color, &err) {
                 self.error = None;
             }
         }
         if let Some(warn) = self.warn.clone() {
-            let mut dismiss = false;
-            egui::Panel::bottom("warn_banner").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.colored_label(egui::Color32::from_rgb(255, 170, 0), format!("⚠ {warn}"));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("✕").clicked() {
-                            dismiss = true;
-                        }
-                    });
-                });
-            });
-            if dismiss {
+            let color = ui.visuals().warn_fg_color;
+            if banner(ui, "warn_banner", color, &warn) {
                 self.warn = None;
             }
         }
@@ -793,8 +776,8 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("texxy {}", env!("TEXXY_GIT_HASH")))
-            .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([960.0, 620.0]),
+            .with_inner_size([1320.0, 840.0])
+            .with_min_inner_size([1040.0, 660.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -804,6 +787,66 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!("failed to start the GUI: {e}"))?;
     Ok(())
+}
+
+/// A dismissable warning/error strip pinned to the bottom of the window.
+/// Returns `true` when the user clicked Dismiss.
+fn banner(ui: &mut egui::Ui, id: &str, color: egui::Color32, text: &str) -> bool {
+    let mut dismissed = false;
+    egui::Panel::bottom(egui::Id::new(id)).show(ui, |ui| {
+        ui.add_space(3.0);
+        // Dismiss is added first (right-to-left) so it always keeps its space;
+        // the message then wraps into whatever is left.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if theme::button(ui, "Dismiss").clicked() {
+                dismissed = true;
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add_space(4.0);
+                ui.colored_label(color, "\u{26A0}");
+                ui.add(egui::Label::new(egui::RichText::new(text)).wrap());
+            });
+        });
+        ui.add_space(3.0);
+    });
+    dismissed
+}
+
+/// Center a block of widgets horizontally, sitting `above_center` points above
+/// the optical middle of the available area.
+fn centered(ui: &mut egui::Ui, above_center: f32, add: impl FnOnce(&mut egui::Ui)) {
+    let rect = ui.available_rect_before_wrap();
+    ui.allocate_ui_with_layout(
+        rect.size(),
+        egui::Layout::top_down(egui::Align::Center),
+        |ui| {
+            ui.add_space((rect.height() * 0.5 - above_center).max(24.0));
+            add(ui);
+        },
+    );
+}
+
+/// The shared ingest/export status block: title, progress (or spinner), label.
+fn centered_block(ui: &mut egui::Ui, title: &str, label: &str, progress: Option<f32>) {
+    centered(ui, 56.0, |ui| {
+        ui.heading(title);
+        ui.add_space(18.0);
+        match progress {
+            Some(p) => {
+                ui.add(
+                    egui::ProgressBar::new(p)
+                        .show_percentage()
+                        .desired_width(420.0)
+                        .corner_radius(theme::ROUND),
+                );
+            }
+            None => {
+                ui.add(egui::Spinner::new().size(26.0));
+            }
+        }
+        ui.add_space(12.0);
+        ui.label(egui::RichText::new(label).weak());
+    });
 }
 
 fn file_label(path: &Path) -> String {
