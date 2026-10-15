@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use whisper_rs::{
     DtwMode, DtwModelPreset, DtwParameters, FullParams, SamplingStrategy, WhisperContext,
@@ -7,7 +8,7 @@ use whisper_rs::{
 };
 
 /// A single transcribed word with word-level timing (seconds).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Word {
     pub text: String,
     pub start_secs: f64,
@@ -181,4 +182,53 @@ fn num_cpus() -> std::ffi::c_int {
     std::thread::available_parallelism()
         .map(|n| n.get() as std::ffi::c_int)
         .unwrap_or(4)
+}
+
+// ---------------------------------------------------------------------------
+// Transcript cache
+//
+// whisper small.en costs minutes per run on this machine, so word timings are
+// cached per input file (keyed on path + size + mtime) in the platform cache
+// dir. Rendering/export iterations then start instantly.
+// ---------------------------------------------------------------------------
+
+/// Cache file for `input`, if it can be keyed and the cache dir exists.
+pub fn cache_path(input: &Path) -> Option<PathBuf> {
+    let meta = std::fs::metadata(input).ok()?;
+    let len = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    input.to_string_lossy().hash(&mut h);
+    len.hash(&mut h);
+    mtime.hash(&mut h);
+
+    let dir = dirs::cache_dir()?.join("texxy");
+    Some(dir.join(format!("{:016x}.json", h.finish())))
+}
+
+/// Load a cached transcript for `input`, if present and parseable.
+pub fn load_cached(input: &Path) -> Option<Vec<Word>> {
+    let path = cache_path(input)?;
+    let bytes = std::fs::read(&path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Persist a transcript. Best-effort: callers log and continue on error.
+pub fn save_cache(input: &Path, words: &[Word]) -> Result<()> {
+    let path = cache_path(input).context("cannot derive cache path")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+    }
+    let json = serde_json::to_vec_pretty(words).context("serialize transcript")?;
+    std::fs::write(&path, json)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
 }
