@@ -1,0 +1,40 @@
+[package]
+name = "texxy"
+version = "0.1.0"
+edition = "2021"
+description = "Offline karaoke caption burner for short-form video"
+license = "MIT"
+
+[[bin]]
+name = "texxy"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+dirs = "6"
+
+# Transcription (whisper.cpp bindings). CPU by default on Linux; the `metal`
+# feature is enabled on macOS in the target-specific section below.
+whisper-rs = "0.14"
+
+# Text rasterization for caption overlays.
+fontdue = "0.9"
+tiny-skia = "0.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Native file dialogs / drag-drop live in egui (Milestone 3); not needed for M1.
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+# whisper-rs-sys generates bindgen layout tests that fail to compile against
+# this glibc (the `_IO_FILE` size assertion overflows). We vendor the crate
+# and disable those tests via `.layout_tests(false)`. Remove once upstream
+# ships a fix.
+[patch.crates-io]
+whisper-rs-sys = { path = "vendor/patch/whisper-rs-sys" }
