@@ -24,7 +24,10 @@ pub struct CaptionState {
 
 /// A font family loaded at a given pixel size: regular + bold faces plus the
 /// font-wide ink metrics used to size the box.
-struct Faces {
+///
+/// Public so the GUI preview can keep one loaded per (family, size) and
+/// re-render caption states without re-reading the TTFs every frame.
+pub struct Faces {
     regular: Font,
     bold: Font,
     /// Distance from baseline up to the tallest ascender/cap (px).
@@ -33,12 +36,54 @@ struct Faces {
     descent: f32,
 }
 
+/// Caption glyph size in pixels for a style on a frame of `frame_h` pixels.
+pub fn font_px(style: &Style, frame_h: u32) -> f32 {
+    style.font_size_pct / 100.0 * frame_h as f32
+}
+
+/// Straight-alpha blend of the caption `src` (non-premultiplied RGBA) onto the
+/// fully-opaque `dst` frame at (ox, oy), clipped to the destination.
+///
+/// Shared by the GUI preview and the raw-pipe exporter so both composite
+/// exactly like the state PNGs on screen.
+pub fn blend_straight(dst: &mut [u8], dw: u32, dh: u32, src: &[u8], sw: u32, sh: u32, ox: i32, oy: i32) {
+    let (dw, dh) = (dw as i32, dh as i32);
+    for sy in 0..sh as i32 {
+        let dy = oy + sy;
+        if dy < 0 || dy >= dh {
+            continue;
+        }
+        for sx in 0..sw as i32 {
+            let dx = ox + sx;
+            if dx < 0 || dx >= dw {
+                continue;
+            }
+            let si = (sy as usize * sw as usize + sx as usize) * 4;
+            let a = src[si + 3] as u32;
+            if a == 0 {
+                continue;
+            }
+            let di = (dy as usize * dw as usize + dx as usize) * 4;
+            if a == 255 {
+                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+                continue;
+            }
+            let inv = 255 - a;
+            for c in 0..3 {
+                let s = src[si + c] as u32;
+                let d = dst[di + c] as u32;
+                dst[di + c] = ((s * a + d * inv + 127) / 255).min(255) as u8;
+            }
+        }
+    }
+}
+
 /// Probe strings covering ascenders/caps and descenders.
 const PROBE_ASC: &str = "bdfhklH";
 const PROBE_DESC: &str = "gjpqyQ";
 
 impl Faces {
-    fn load(style: &Style, px: f32) -> Result<Faces> {
+    pub fn load(style: &Style, px: f32) -> Result<Faces> {
         let dir = config::find_fonts_dir()?;
         let (regular_path, bold_path) = config::font_paths(&dir, &style.font_family)?;
         let regular = fontdue::Font::from_bytes(
@@ -186,19 +231,22 @@ fn blend_glyph(
     }
 }
 
-/// Render a single state PNG for `words` with `active` highlighted.
+/// Render one caption state for `words` with `active` highlighted into a
+/// straight-alpha RGBA buffer. Returns `(pixels, width, height)`.
 ///
 /// `frame_w` bounds the box: oversized chunks get their font shrunk until they
 /// fit 92% of the frame width.
-fn render_state(
+///
+/// This is the pixel source for both the export's state PNGs and the GUI's
+/// live preview — preview and output are rendered by the same code.
+pub fn render_state_rgba(
     faces: &Faces,
     style: &Style,
     words: &[String],
     active: usize,
     font_px: f32,
     frame_w: u32,
-    out: &Path,
-) -> Result<()> {
+) -> Result<(Vec<u8>, u32, u32)> {
     let pad_x = 0.50 * font_px;
     let pad_y = 0.24 * font_px;
 
@@ -332,8 +380,13 @@ fn render_state(
             p[2] = ((p[2] as u32 * 255 + a / 2) / a).min(255) as u8;
         }
     }
-    let img = image::RgbaImage::from_raw(canvas_w as u32, canvas_h as u32, straight)
-        .context("RGBA buffer size mismatch")?;
+    Ok((straight, canvas_w as u32, canvas_h as u32))
+}
+
+/// Render one state and save it as a PNG.
+fn render_state(faces: &Faces, style: &Style, words: &[String], active: usize, font_px: f32, frame_w: u32, out: &Path) -> Result<()> {
+    let (rgba, w, h) = render_state_rgba(faces, style, words, active, font_px, frame_w)?;
+    let img = image::RgbaImage::from_raw(w, h, rgba).context("RGBA buffer size mismatch")?;
     img.save(out)
         .with_context(|| format!("failed to write {}", out.display()))?;
     Ok(())
@@ -341,6 +394,7 @@ fn render_state(
 
 /// Render every state of every chunk into `out_dir`.
 ///
+/// `on_state` receives 0..=1 after each state (for the GUI's export progress).
 /// Returns states in chronological order with their visibility windows.
 pub fn render_states(
     style: &Style,
@@ -348,11 +402,12 @@ pub fn render_states(
     frame_w: u32,
     frame_h: u32,
     out_dir: &Path,
+    mut on_state: impl FnMut(f32),
 ) -> Result<Vec<CaptionState>> {
     let mut style = style.clone();
     style.sanitize();
 
-    let font_px = style.font_size_pct / 100.0 * frame_h as f32;
+    let font_px = font_px(&style, frame_h);
     let faces = Faces::load(&style, font_px)?;
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("failed to create {}", out_dir.display()))?;
@@ -364,6 +419,7 @@ pub fn render_states(
     );
 
     let mut states = Vec::with_capacity(total);
+    let mut done = 0usize;
     for (ci, chunk) in chunks.iter().enumerate() {
         let words: Vec<String> = chunk.words.iter().map(|w| w.text.clone()).collect();
         let windows = chunk.state_windows();
@@ -376,6 +432,10 @@ pub fn render_states(
                 start_secs: start,
                 end_secs: end,
             });
+            done += 1;
+            if total > 0 {
+                on_state(done as f32 / total as f32);
+            }
         }
     }
     Ok(states)

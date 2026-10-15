@@ -1,32 +1,44 @@
-mod audio;
-mod chunk;
-mod config;
-mod export;
-mod model;
-mod probe;
-mod render;
-mod transcribe;
+//! texxy binary: dispatches between the GUI and the headless CLI.
+//!
+//! - `texxy` → GUI (drop screen)
+//! - `texxy video.mp4` → GUI with the video pre-loaded
+//! - `texxy video.mp4 --headless` (or any of `--words`/`-o`/`--png-dir`/style
+//!   flags) → the Milestone 1–2 headless pipeline
 
-use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::time::Instant;
 
-/// CLI options (parsed by hand — no arg-parsing dependency yet).
+use anyhow::{bail, Context, Result};
+
+use texxy::config::Style;
+use texxy::pipeline::{self, IngestProgress, Progress};
+use texxy::{chunk, export, render, transcribe, ui};
+
+/// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
 struct Args {
-    input: PathBuf,
-    /// Milestone 1 behavior: print the word table and stop.
+    /// Video to open in the GUI, or to process when headless.
+    input: Option<PathBuf>,
+    /// Force the GUI even when headless-style flags are present.
+    gui: bool,
+    /// Run the pipeline without a GUI.
+    headless: bool,
+    /// Milestone 1 behavior: print the word table and stop (implies headless).
     words_only: bool,
     /// Ignore (and don't write) the transcript cache.
     no_cache: bool,
     output: Option<PathBuf>,
     /// Render states + filter script into this directory instead of encoding.
     png_dir: Option<PathBuf>,
+    /// Milestone 2 backend: encode via the N-stage overlay filter graph.
+    graph: bool,
+    /// Hardware/software encoder for the default pipe export.
+    encoder: Option<export::Encoder>,
     style_overrides: StyleOverrides,
 }
 
-/// Style knobs exposed on the CLI for fast iteration (they become GUI sliders
-/// in Milestone 3).
+/// Style knobs exposed on the CLI for fast iteration (the GUI exposes them as
+/// sliders and pickers).
 #[derive(Debug, Default)]
 struct StyleOverrides {
     font: Option<String>,
@@ -35,109 +47,196 @@ struct StyleOverrides {
     words_per_popup: Option<usize>,
 }
 
+impl StyleOverrides {
+    fn any(&self) -> bool {
+        self.font.is_some()
+            || self.font_size_pct.is_some()
+            || self.position_pct.is_some()
+            || self.words_per_popup.is_some()
+    }
+}
+
 fn usage() -> ! {
-    eprintln!("usage: texxy <video.mp4> [options]");
+    eprintln!("usage: texxy [video.mp4] [options]");
     eprintln!();
     eprintln!("Burns word-synced karaoke captions into a video.");
+    eprintln!("Without headless options the GUI opens (a video argument is pre-loaded).");
     eprintln!();
     eprintln!("options:");
-    eprintln!("  --words              Milestone 1 mode: print (word, start, end) and stop");
-    eprintln!("  --no-cache           Ignore the cached transcript, re-transcribe");
-    eprintln!("  -o, --output <path>  Output path (default: <input>_karaoke.mp4)");
-    eprintln!("  --png-dir <path>     Render caption states + filter script, don't encode");
-    eprintln!("  --font <family>      Libre Baskerville | Inter | Nunito");
-    eprintln!("  --font-size <pct>    Font size as % of frame height");
-    eprintln!("  --position <pct>     Vertical center of the caption box (% of height)");
-    eprintln!("  --words-per <n>      Words per popup (2-6)");
+    eprintln!("  --gui               Open the GUI (default when no other options)");
+    eprintln!("  --headless          Run the pipeline without a GUI");
+    eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
+    eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
+    eprintln!("  -o, --output <path> Output path (default: <input>_karaoke.mp4)");
+    eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
+    eprintln!("  --encoder <name>    auto (default) | vaapi | x264 — pipe export encoder");
+    eprintln!("  --graph             Milestone 2 overlay-filter-graph encode (RAM grows)");
+    eprintln!("  --font <family>     Libre Baskerville | Inter | Nunito");
+    eprintln!("  --font-size <pct>   Font size as % of frame height");
+    eprintln!("  --position <pct>    Vertical center of the caption box (% of height)");
+    eprintln!("  --words-per <n>     Words per popup (2-6)");
     std::process::exit(2);
 }
 
-fn parse_args() -> Result<Args> {
+fn parse_args() -> Args {
     let mut args = Args::default();
     let mut it = std::env::args().skip(1);
     let mut positional: Option<PathBuf> = None;
 
+    // Usage errors exit right here: this is a CLI, not a library.
+    fn need_value(it: &mut impl Iterator<Item = String>, name: &str) -> String {
+        match it.next() {
+            Some(v) => v,
+            None => {
+                eprintln!("error: {name} requires a value");
+                std::process::exit(2);
+            }
+        }
+    }
+
     while let Some(arg) = it.next() {
-        let mut value =
-            |name: &str| it.next().with_context(|| format!("{name} requires a value"));
         match arg.as_str() {
             "-h" | "--help" => usage(),
+            "--gui" => args.gui = true,
+            "--headless" => args.headless = true,
             "--words" => args.words_only = true,
             "--no-cache" => args.no_cache = true,
-            "-o" | "--output" => args.output = Some(PathBuf::from(value("--output")?)),
-            "--png-dir" => args.png_dir = Some(PathBuf::from(value("--png-dir")?)),
-            "--font" => args.style_overrides.font = Some(value("--font")?),
+            "-o" | "--output" => {
+                args.output = Some(PathBuf::from(need_value(&mut it, "--output")))
+            }
+            "--png-dir" => args.png_dir = Some(PathBuf::from(need_value(&mut it, "--png-dir"))),
+            "--graph" => args.graph = true,
+            "--encoder" => {
+                let v = need_value(&mut it, "--encoder");
+                args.encoder = Some(match v.as_str() {
+                    "auto" => export::Encoder::Auto,
+                    "x264" => export::Encoder::X264,
+                    "vaapi" => export::Encoder::Vaapi,
+                    other => {
+                        eprintln!("error: --encoder expects auto, vaapi or x264, got '{other}'");
+                        std::process::exit(2);
+                    }
+                });
+            }
+            "--font" => args.style_overrides.font = Some(need_value(&mut it, "--font")),
             "--font-size" => {
-                args.style_overrides.font_size_pct = Some(parse_num(&value("--font-size")?)?)
+                let v = need_value(&mut it, "--font-size");
+                args.style_overrides.font_size_pct = Some(parse_num(&v, "--font-size"));
             }
             "--position" => {
-                args.style_overrides.position_pct = Some(parse_num(&value("--position")?)?)
+                let v = need_value(&mut it, "--position");
+                args.style_overrides.position_pct = Some(parse_num(&v, "--position"));
             }
             "--words-per" => {
-                args.style_overrides.words_per_popup =
-                    Some(parse_num::<usize>(&value("--words-per")?)?)
+                let v = need_value(&mut it, "--words-per");
+                args.style_overrides.words_per_popup = Some(parse_num(&v, "--words-per"));
             }
-            other if other.starts_with('-') => bail!("unknown option: {other}"),
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option: {other}");
+                std::process::exit(2);
+            }
             other => {
                 if positional.is_some() {
-                    bail!("unexpected extra argument: {other}");
+                    eprintln!("error: unexpected extra argument: {other}");
+                    std::process::exit(2);
                 }
                 positional = Some(PathBuf::from(other));
             }
         }
     }
 
-    let Some(input) = positional else { usage() };
-    if !input.is_file() {
-        bail!("input file not found: {}", input.display());
+    args.input = positional;
+    if let Some(input) = &args.input {
+        if !input.is_file() {
+            eprintln!("error: input file not found: {}", input.display());
+            std::process::exit(2);
+        }
     }
-    args.input = input;
-    Ok(args)
+    args
 }
 
-fn parse_num<T: std::str::FromStr>(s: &str) -> Result<T>
+fn parse_num<T: std::str::FromStr>(s: &str, flag: &str) -> T
 where
     T::Err: std::fmt::Display,
 {
     s.parse()
-        .map_err(|e| anyhow::anyhow!("expected a number, got '{s}': {e}"))
+        .unwrap_or_else(|e| {
+            eprintln!("error: {flag} expects a number, got '{s}': {e}");
+            std::process::exit(2);
+        })
 }
 
 fn main() {
-    if let Err(e) = run() {
+    let args = parse_args();
+
+    // Any output/style option implies the headless pipeline; --gui wins over
+    // that so `texxy --gui --font Inter` can still open the GUI.
+    let headless = !args.gui
+        && (args.headless
+            || args.words_only
+            || args.output.is_some()
+            || args.png_dir.is_some()
+            || args.graph
+            || args.encoder.is_some()
+            || args.style_overrides.any());
+
+    let result = if headless {
+        run_cli(&args)
+    } else {
+        ui::run(args.input.clone())
+    };
+    if let Err(e) = result {
         eprintln!("error: {e:#}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let args = parse_args()?;
-    let mut style = config::Style::default();
+/// The Milestone 1–2 pipeline, driven from the command line.
+fn run_cli(args: &Args) -> Result<()> {
+    let Some(input) = args.input.clone() else { usage() };
+    let mut style = Style::default();
     apply_overrides(&mut style, &args.style_overrides);
     style.sanitize();
 
-    // ── 1. probe ───────────────────────────────────────────────────────────
-    eprintln!("[1/4] probing video…");
-    let tools = probe::find_ffmpeg().context("ffmpeg discovery failed")?;
-    eprintln!("      ffmpeg : {}", tools.ffmpeg.display());
-    eprintln!("      ffprobe: {}", tools.ffprobe.display());
+    // Phase logging on stderr, shaped like the Milestone 2 output.
+    let log_input = input.clone();
+    let progress: Progress = Box::new(move |event| match event {
+        IngestProgress::Tools(tools) => {
+            eprintln!("[1/4] probing video…");
+            eprintln!("      ffmpeg : {}", tools.ffmpeg.display());
+            eprintln!("      ffprobe: {}", tools.ffprobe.display());
+        }
+        IngestProgress::Probing => {}
+        IngestProgress::Probed(info) => eprintln!(
+            "      {}x{} (display)  {:.1}s  {:.2} fps  audio={}  pix={}",
+            info.display_width,
+            info.display_height,
+            info.duration_secs,
+            info.fps,
+            info.has_audio,
+            info.pix_fmt
+        ),
+        IngestProgress::Cached(n) => eprintln!(
+            "[2/4] transcript cache hit: {n} words ({})",
+            transcribe::cache_path(&log_input)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        ),
+        IngestProgress::Extracting => {
+            eprintln!("[2/4] extracting audio + transcribing with whisper small.en…")
+        }
+        IngestProgress::Transcribing(_) => {}
+        IngestProgress::Transcribed {
+            words,
+            secs,
+            realtime_x,
+        } => eprintln!("      {words} words in {secs:.1}s  ({realtime_x:.1}x realtime)"),
+    });
 
-    let info = probe::probe(&tools, &args.input).context("probe failed")?;
-    eprintln!(
-        "      {}x{} (display)  {:.1}s  {:.2} fps  audio={}  pix={}",
-        info.display_width,
-        info.display_height,
-        info.duration_secs,
-        info.fps,
-        info.has_audio,
-        info.pix_fmt
-    );
-    if !info.has_audio {
-        bail!("input has no audio track; cannot transcribe");
-    }
-
-    // ── 2. transcribe (cached when possible) ───────────────────────────────
-    let words = get_words(&tools, &args)?;
+    let ing = pipeline::ingest(&input, args.no_cache, progress).context("ingest failed")?;
+    let tools = ing.tools;
+    let info = ing.info;
+    let words = ing.words;
 
     if args.words_only {
         eprintln!();
@@ -177,6 +276,7 @@ fn run() -> Result<()> {
         info.display_width,
         info.display_height,
         &state_dir,
+        |_| {},
     )?;
     eprintln!(
         "      {} state PNGs in {:.1}s",
@@ -203,27 +303,45 @@ fn run() -> Result<()> {
     }
 
     // ── 4. export ──────────────────────────────────────────────────────────
-    let output = args.output.clone().unwrap_or_else(|| default_output(&args.input));
+    let output = args
+        .output
+        .clone()
+        .unwrap_or_else(|| pipeline::default_output(&input));
     eprintln!("[4/4] encoding with ffmpeg…");
     let t = Instant::now();
-    let script = state_dir.join("filter_complex.txt");
     let mut last_pct = 0u32;
-    export::export(
-        &tools,
-        &args.input,
-        &output,
-        &info,
-        &states,
-        style.position_pct,
-        &script,
-        |frac| {
-            let pct = (frac * 100.0) as u32;
-            if pct != last_pct && pct % 5 == 0 {
-                last_pct = pct;
-                eprint!("\r      encode {pct:3}%");
-            }
-        },
-    )?;
+    let mut on_frac = |frac: f64| {
+        let pct = (frac * 100.0) as u32;
+        if pct != last_pct && pct % 5 == 0 {
+            last_pct = pct;
+            eprint!("\r      encode {pct:3}%");
+        }
+    };
+    if args.graph {
+        // Milestone 2 backend: one overlay stage per state, exact PTS.
+        let script = state_dir.join("filter_complex.txt");
+        export::export(
+            &tools,
+            &input,
+            &output,
+            &info,
+            &states,
+            style.position_pct,
+            &script,
+            &mut on_frac,
+        )?;
+    } else {
+        export::export_pipe(
+            &tools,
+            &input,
+            &output,
+            &info,
+            &states,
+            style.position_pct,
+            args.encoder.unwrap_or_default(),
+            &mut on_frac,
+        )?;
+    }
     eprintln!("\r      encode 100%");
 
     let size = std::fs::metadata(&output)
@@ -237,7 +355,7 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn apply_overrides(style: &mut config::Style, o: &StyleOverrides) {
+fn apply_overrides(style: &mut Style, o: &StyleOverrides) {
     if let Some(f) = &o.font {
         style.font_family = f.clone();
     }
@@ -250,60 +368,4 @@ fn apply_overrides(style: &mut config::Style, o: &StyleOverrides) {
     if let Some(v) = o.words_per_popup {
         style.words_per_popup = v;
     }
-}
-
-fn default_output(input: &PathBuf) -> PathBuf {
-    let stem = input
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "video".to_string());
-    let name = format!("{stem}_karaoke.mp4");
-    match input.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.join(name),
-        _ => PathBuf::from(name),
-    }
-}
-
-/// Transcribed words, from cache when the input file is unchanged.
-fn get_words(tools: &probe::Fftools, args: &Args) -> Result<Vec<transcribe::Word>> {
-    if !args.no_cache {
-        if let Some(cached) = transcribe::load_cached(&args.input) {
-            eprintln!(
-                "[2/4] transcript cache hit: {} words ({})",
-                cached.len(),
-                transcribe::cache_path(&args.input)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default()
-            );
-            return Ok(cached);
-        }
-    }
-    eprintln!("[2/4] extracting audio + transcribing with whisper small.en…");
-    let tmp = tempfile::tempdir().context("temp dir")?;
-    let pcm_path = tmp.path().join("audio.f32le");
-    let t = Instant::now();
-    audio::extract_pcm(tools, &args.input, &pcm_path).context("audio extraction failed")?;
-    let samples = audio::read_pcm(&pcm_path).context("PCM read failed")?;
-    let audio_secs = samples.len() as f64 / 16000.0;
-    eprintln!("      {:.1}s of audio extracted in {:.1}s", audio_secs, t.elapsed().as_secs_f64());
-
-    let model = model::find_model().context("model discovery failed")?;
-    eprintln!(
-        "      model: {} ({:.0} MB)",
-        model.display(),
-        model::file_size(&model)? as f64 / 1e6
-    );
-    let t = Instant::now();
-    let words = transcribe::transcribe(&model, &samples).context("transcription failed")?;
-    let elapsed = t.elapsed().as_secs_f64();
-    eprintln!(
-        "      {} words in {:.1}s  ({:.1}x realtime)",
-        words.len(),
-        elapsed,
-        if elapsed > 0.0 { audio_secs / elapsed } else { 0.0 }
-    );
-    if let Err(e) = transcribe::save_cache(&args.input, &words) {
-        eprintln!("      (cache write skipped: {e:#})");
-    }
-    Ok(words)
 }

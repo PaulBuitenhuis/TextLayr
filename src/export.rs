@@ -1,27 +1,152 @@
-//! ffmpeg compositing: build the overlay filter graph and run the encode.
+//! ffmpeg compositing: caption states burned over the decoded video.
 //!
-//! One `overlay` stage per caption state, each gated by an `enable` window so
-//! a state PNG is blended only while its word is being spoken:
+//! Two backends produce the same output:
+//!
+//! - **pipe** ([`export_pipe`], default): decode → raw RGBA pipe → composite
+//!   each frame in Rust (one state PNG decoded lazily on window entry) →
+//!   encode. Memory stays O(one frame) regardless of state count, and the
+//!   encoder can be VAAPI hardware. This is DESIGN's "Plan B".
+//! - **graph** ([`export`], `--graph`): one `overlay` stage per state, each
+//!   gated by an `enable` window:
 //!
 //! ```text
 //! [0:v][1:v]overlay=x=…:y=…:enable='gte(t,a)*lt(t,b)':eof_action=repeat[v0];
 //! [v0][2:v]overlay=…[v1];
 //! …
-//! [v548][549:v]overlay=…[vout]
 //! ```
 //!
-//! The PNG inputs are still images (no `-loop`): each is decoded exactly once
-//! and repeated thereafter via `eof_action=repeat`. The graph is passed to
-//! ffmpeg as a file (see [`filter_graph_file_option`]) to sidestep
-//! command-length limits.
+//! The graph opens every state PNG as an input at once — exact PTS handling,
+//! but hundreds of decoder + filter contexts in flight (RAM grows with state
+//! count), so the pipe is the default.
 
-use crate::probe::{Fftools, VideoInfo};
-use crate::render::CaptionState;
+use crate::probe::{parse_rate, Fftools, VideoInfo};
+use crate::render::{blend_straight, CaptionState};
 use anyhow::{bail, Context, Result};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{ChildStderr, Command, Stdio};
 use std::sync::{Arc, Mutex};
+
+/// Encoder choice for [`export_pipe`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Encoder {
+    /// VAAPI when the device probes OK, else libx264.
+    #[default]
+    Auto,
+    /// Software x264 (crf 18) — always available.
+    X264,
+    /// VAAPI hardware encode (Intel/AMD, needs /dev/dri + a working driver).
+    Vaapi,
+}
+
+/// Device used for VAAPI. Linux-only; [`vaapi_works`] checks it first.
+#[cfg(target_os = "linux")]
+const VAAPI_DEVICE: &str = "/dev/dri/renderD128";
+
+/// Probe once per process whether a working VAAPI encoder is present:
+/// the device node must exist and a 1-frame test encode must succeed.
+fn vaapi_works(tools: &Fftools) -> bool {
+    static OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OK.get_or_init(|| {
+        #[cfg(not(target_os = "linux"))]
+        return false;
+        #[cfg(target_os = "linux")]
+        {
+            if !Path::new(VAAPI_DEVICE).exists() {
+                return false;
+            }
+            Command::new(&tools.ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-vaapi_device",
+                    VAAPI_DEVICE,
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=black:s=256x256:r=30:d=0.2",
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "format=nv12,hwupload",
+                    "-c:v",
+                    "h264_vaapi",
+                    "-qp",
+                    "22",
+                    "-f",
+                    "null",
+                    "-",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    })
+}
+
+/// Map an ffprobe color-matrix name onto `scale`'s `out_color_matrix` value.
+/// Unknown/unspecified sources get bt709 (what this project targets).
+fn scale_matrix(color_space: &str) -> &'static str {
+    match color_space {
+        "bt470bg" | "smpte170m" => "bt601",
+        "smpte240m" => "smpte240m",
+        "fcc" => "fcc",
+        "bt2020nc" | "bt2020c" => "bt2020",
+        _ => "bt709",
+    }
+}
+
+/// Drain a child's stderr on a thread, keeping only the tail so a full pipe
+/// can never block the child. Returns the shared tail buffer + join handle.
+fn drain_stderr(
+    stream: ChildStderr,
+) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>) {
+    let err_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&err_buf);
+    let handle = std::thread::spawn(move || {
+        let mut reader = BufReader::new(stream);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match reader.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let mut buf = sink.lock().unwrap();
+                    buf.extend_from_slice(&line);
+                    // Keep only the tail; ffmpeg errors are what matter.
+                    const CAP: usize = 16 * 1024;
+                    if buf.len() > CAP {
+                        let cut = buf.len() - CAP;
+                        buf.drain(..cut);
+                    }
+                }
+            }
+        }
+    });
+    (err_buf, handle)
+}
+
+/// Fill `buf` with exactly one frame; `Ok(false)` = clean EOF at a frame
+/// boundary (the expected end of the stream).
+fn read_frame(r: &mut impl Read, buf: &mut [u8]) -> Result<bool> {
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        match r.read(&mut buf[filled..]) {
+            Ok(0) => {
+                if filled == 0 {
+                    return Ok(false);
+                }
+                bail!("decoder ended mid-frame ({filled}/{} bytes)", buf.len());
+            }
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).context("reading a frame from the decoding ffmpeg"),
+        }
+    }
+    Ok(true)
+}
 
 /// Build the `filter_complex` script for `states`.
 ///
@@ -150,29 +275,7 @@ pub fn export(
         .context("failed to spawn ffmpeg")?;
 
     // Drain stderr on a thread so the pipe can never block the encoder.
-    let stderr = child.stderr.take().context("ffmpeg stderr")?;
-    let err_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&err_buf);
-    let err_thread = std::thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut line = Vec::new();
-        loop {
-            line.clear();
-            match reader.read_until(b'\n', &mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    let mut buf = sink.lock().unwrap();
-                    buf.extend_from_slice(&line);
-                    // Keep only the tail; ffmpeg errors are what matter.
-                    const CAP: usize = 16 * 1024;
-                    if buf.len() > CAP {
-                        let cut = buf.len() - CAP;
-                        buf.drain(..cut);
-                    }
-                }
-            }
-        }
-    });
+    let (err_buf, err_thread) = drain_stderr(child.stderr.take().context("ffmpeg stderr")?);
 
     // Parse `-progress` on stdout.
     let stdout = child.stdout.take().context("ffmpeg stdout")?;
@@ -220,9 +323,264 @@ pub fn export(
     Ok(())
 }
 
-/// Grab a single frame at `at_secs` as a PNG (used by the Milestone 3 live
-/// preview, and by verification scripts today).
-#[allow(dead_code)] // wired into the review screen in Milestone 3
+/// Encode `output` by piping raw frames through Rust (the default backend).
+///
+/// ffmpeg decodes `input` to RGBA (rotation applied by autorotate), we blend
+/// the active caption state per frame exactly like [`blend_straight`] does in
+/// the preview, and a second ffmpeg encodes the composited frames. Peak RAM is
+/// one frame + one state, independent of state count.
+///
+/// `on_progress` receives 0.0..=1.0 as the encode advances.
+pub fn export_pipe(
+    tools: &Fftools,
+    input: &Path,
+    output: &Path,
+    info: &VideoInfo,
+    states: &[CaptionState],
+    position_pct: f32,
+    encoder: Encoder,
+    mut on_progress: impl FnMut(f64),
+) -> Result<()> {
+    if states.is_empty() {
+        bail!("nothing to render: no caption states");
+    }
+
+    let w = info.display_width;
+    let h = info.display_height;
+    let frame_len = w as usize * h as usize * 4;
+    let total_secs = info.duration_secs.max(0.001);
+    let rate = if info.frame_rate.is_empty() || info.frame_rate == "0/0" {
+        "30/1".to_string()
+    } else {
+        info.frame_rate.clone()
+    };
+    let fps = parse_rate(&rate)
+        .or(Some(info.fps))
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .unwrap_or(30.0);
+
+    // Honor the source's color tags: full-range sources encode to yuvj420p
+    // (what the Milestone 2 graph produced), limited sources to yuv420p.
+    let use_vaapi = match encoder {
+        Encoder::X264 => false,
+        Encoder::Vaapi => true,
+        Encoder::Auto => vaapi_works(tools),
+    };
+    let full_range = info.color_range == "pc"
+        || info.color_range == "jpeg"
+        || info.pix_fmt.starts_with("yuvj");
+    let out_range = if full_range { "full" } else { "limited" };
+    let matrix = scale_matrix(&info.color_space);
+    eprintln!(
+        "      pipe export: {} states, {} frames total, encoder={} ({out_range} range, {matrix})",
+        states.len(),
+        (total_secs * fps).round() as u64,
+        if use_vaapi { "vaapi" } else { "x264" },
+    );
+
+    // ── decoder: input -> RGBA frames on stdout ───────────────────────────
+    let mut dec_cmd = Command::new(&tools.ffmpeg);
+    dec_cmd
+        .args(["-hide_banner", "-loglevel", "error", "-i"])
+        .arg(input)
+        .args([
+            "-map", "0:v:0", "-fps_mode", "passthrough", "-an", "-f", "rawvideo",
+            "-pix_fmt", "rgba", "-",
+        ]);
+    let mut dec = dec_cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to spawn the decoding ffmpeg")?;
+    let dec_out = dec.stdout.take().context("decoder stdout pipe")?;
+    let (dec_err, dec_err_thread) = drain_stderr(dec.stderr.take().context("decoder stderr pipe")?);
+
+    // ── encoder: composited RGBA frames from stdin -> output ──────────────
+    let mut enc_cmd = Command::new(&tools.ffmpeg);
+    enc_cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    if use_vaapi {
+        enc_cmd.arg("-vaapi_device").arg(VAAPI_DEVICE);
+    }
+    enc_cmd
+        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
+        .arg(format!("{w}x{h}"))
+        .arg("-r")
+        .arg(&rate)
+        .args(["-i", "pipe:0"])
+        .arg("-i")
+        .arg(input)
+        .args(["-map", "0:v:0", "-map", "1:a:0"]);
+    // `scale` performs rgb->yuv with the source's matrix/range; for VAAPI the
+    // following `format=nv12` restricts its output so the conversion happens
+    // there too (then `hwupload` moves it to the GPU).
+    let vf = if use_vaapi {
+        format!("scale=out_color_matrix={matrix}:out_range={out_range},format=nv12,hwupload")
+    } else {
+        format!("scale=out_color_matrix={matrix}:out_range={out_range}")
+    };
+    enc_cmd.arg("-vf").arg(&vf);
+    if use_vaapi {
+        enc_cmd.args(["-c:v", "h264_vaapi", "-qp", "20"]);
+    } else {
+        let pix = if full_range { "yuvj420p" } else { "yuv420p" };
+        enc_cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pix]);
+    }
+    // Forward color tags so players read the same signal as the source.
+    for (opt, val) in [
+        ("-color_range", info.color_range.as_str()),
+        ("-colorspace", info.color_space.as_str()),
+        ("-color_primaries", info.color_primaries.as_str()),
+        ("-color_trc", info.color_transfer.as_str()),
+    ] {
+        if val != "unknown" && !val.is_empty() {
+            enc_cmd.arg(opt).arg(val);
+        }
+    }
+    enc_cmd
+        .args(["-c:a", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats"])
+        .arg(output);
+    let mut enc = enc_cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to spawn the encoding ffmpeg")?;
+    let mut enc_in = enc.stdin.take().context("encoder stdin pipe")?;
+    let enc_out = enc.stdout.take().context("encoder stdout pipe")?;
+    let (enc_err, enc_err_thread) = drain_stderr(enc.stderr.take().context("encoder stderr pipe")?);
+
+    // Parse `-progress` on the encoder's stdout on a thread; frames are
+    // pumped on this thread, which drains the channel as it goes.
+    let (prog_tx, prog_rx) = std::sync::mpsc::channel::<f64>();
+    let prog_thread = std::thread::spawn(move || {
+        for line in BufReader::new(enc_out).lines().map_while(Result::ok) {
+            // `out_time_ms` is a historical misnomer (microseconds either way).
+            let v = line
+                .strip_prefix("out_time_us=")
+                .or_else(|| line.strip_prefix("out_time_ms="));
+            if let Some(v) = v {
+                if let Ok(us) = v.trim().parse::<f64>() {
+                    if us >= 0.0 {
+                        let _ = prog_tx.send(us);
+                    }
+                }
+            } else if line.starts_with("progress=end") {
+                let _ = prog_tx.send(f64::MAX); // end sentinel
+            }
+        }
+    });
+
+    // ── pump: read frame → pick state → blend → write ─────────────────────
+    let mut buf = vec![0u8; frame_len];
+    let mut idx = 0usize;
+    let mut cached_idx: Option<usize> = None;
+    let mut cached: Option<(Vec<u8>, u32, u32)> = None;
+    let mut frame_no = 0u64;
+    let mut last_frac = 0.0f64;
+
+    let pump = (|| -> Result<u64> {
+        let mut reader = dec_out;
+        loop {
+            if !read_frame(&mut reader, &mut buf)? {
+                break Ok(frame_no);
+            }
+
+            // States are chronological and non-overlapping: advance the
+            // pointer, then blend if this frame falls inside the window.
+            let t = frame_no as f64 / fps;
+            while idx < states.len() && t >= states[idx].end_secs {
+                idx += 1;
+            }
+            if let Some(st) = states.get(idx).filter(|s| t >= s.start_secs) {
+                if cached_idx != Some(idx) {
+                    let img = image::open(&st.png)
+                        .with_context(|| format!("failed to read {}", st.png.display()))?
+                        .to_rgba8();
+                    let (rw, rh) = (img.width(), img.height());
+                    cached = Some((img.into_raw(), rw, rh));
+                    cached_idx = Some(idx);
+                }
+                let (src, sw, sh) = cached.as_ref().expect("state cached");
+                // Same placement math as the preview and the graph's overlay
+                // expressions: centered, box center at position_pct.
+                let x = ((w as f32 - *sw as f32) / 2.0).round() as i32;
+                let y = (h as f32 * position_pct / 100.0 - *sh as f32 / 2.0).round() as i32;
+                blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
+            }
+
+            // Progress reported by the encoder as it consumes our frames.
+            while let Ok(us) = prog_rx.try_recv() {
+                let frac = if us >= f64::MAX {
+                    1.0
+                } else {
+                    (us / 1e6 / total_secs).clamp(0.0, 1.0)
+                };
+                if frac > last_frac {
+                    last_frac = frac;
+                    on_progress(frac);
+                }
+            }
+
+            enc_in
+                .write_all(&buf)
+                .map_err(|e| anyhow::anyhow!("encoder pipe closed: {e}"))?;
+            frame_no += 1;
+        }
+    })();
+
+    // End the encoder's input stream (or kill both on failure), then reap.
+    drop(enc_in);
+    if pump.is_err() {
+        let _ = dec.kill();
+        let _ = enc.kill();
+    }
+    let enc_status = loop {
+        match prog_rx.recv() {
+            Ok(us) => {
+                let frac = if us >= f64::MAX {
+                    1.0
+                } else {
+                    (us / 1e6 / total_secs).clamp(0.0, 1.0)
+                };
+                if frac > last_frac {
+                    last_frac = frac;
+                    on_progress(frac);
+                }
+            }
+            // Progress thread finished = encoder exited.
+            Err(_) => break enc.wait().context("failed to wait for the encoder")?,
+        }
+    };
+    let _ = dec.wait();
+    let _ = dec_err_thread.join();
+    let _ = prog_thread.join();
+    let _ = enc_err_thread.join();
+    on_progress(1.0);
+
+    let tail = |buf: &Arc<Mutex<Vec<u8>>>| {
+        String::from_utf8_lossy(&buf.lock().unwrap())
+            .trim()
+            .to_string()
+    };
+    if let Err(e) = pump {
+        bail!(
+            "pipe export failed: {e:#}\n  decoder: {}\n  encoder: {}",
+            tail(&dec_err),
+            tail(&enc_err)
+        );
+    }
+    if !enc_status.success() {
+        bail!("ffmpeg encode failed ({enc_status}): {}", tail(&enc_err));
+    }
+    if !output.is_file() {
+        bail!("ffmpeg reported success but {} is missing", output.display());
+    }
+    Ok(())
+}
+
+/// Grab a single frame at `at_secs` as a PNG (used by the GUI's live
+/// preview, and by verification scripts).
 pub fn extract_frame(tools: &Fftools, input: &Path, at_secs: f64, out: &Path) -> Result<()> {
     let status = Command::new(&tools.ffmpeg)
         .arg("-hide_banner")

@@ -5,8 +5,9 @@ the transcript, export a new video with word-synced popup captions baked in.
 
 **Design & plan:** see [DESIGN.md](./DESIGN.md).
 
-**Status:** Milestone 2 (caption renderer + CLI export). The full pipeline runs
-headlessly; the GUI comes in Milestone 3.
+**Status:** Milestone 3 (interactive egui app + headless CLI). Drop a video in
+the GUI, review the transcript, export with the button or **Ctrl+E**; every
+stage is also available headlessly.
 
 ## Requirements
 
@@ -52,18 +53,27 @@ headlessly; the GUI comes in Milestone 3.
 ## Build & run
 
 ```sh
-cargo build
-cargo run -- "../samples/AI job search tips.mp4"      # full pipeline -> *_karaoke.mp4
+cargo build --release
+
+# GUI: drop zone, or pre-loaded with a video as argv[1]
+./target/release/texxy
+./target/release/texxy "../samples/AI job search tips.mp4"
+
+# headless (same pipeline; also selected automatically when --words, -o,
+# --png-dir, --graph, --encoder or a style flag is present — --gui forces GUI)
+./target/release/texxy "../samples/AI job search tips.mp4" --headless
 ```
 
-Pipeline: `ffprobe` (display dims + rotation) → ffmpeg audio extract (16 kHz mono
-f32le) → whisper transcription with DTW word timings (cached) → chunking →
-caption state PNGs → ffmpeg overlay graph → `AI job search tips_karaoke.mp4`
-(H.264 crf 18, audio copied).
+Pipeline: `ffprobe` (display dims + rotation, color tags) → ffmpeg audio
+extract (16 kHz mono f32le) → whisper transcription with DTW word timings
+(cached) → chunking → caption state PNGs → export: ffmpeg decode → Rust
+compositing of the state PNGs → ffmpeg encode → `AI job search tips_karaoke.mp4`
+(VAAPI H.264 by default, x264 `-crf 18` fallback, audio copied).
 
 ```sh
 texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
         [--font <family>] [--font-size <pct>] [--position <pct>] [--words-per <n>]
+        [--encoder auto|vaapi|x264] [--graph] [--headless] [--gui]
 ```
 
 | Option | Effect |
@@ -76,6 +86,9 @@ texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
 | `--font-size` | Glyph size as % of frame height (default 3.4) |
 | `--position` | Caption box center as % of frame height (default 72) |
 | `--words-per` | Words per popup, 2–6 (default 3) |
+| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else x264) · `vaapi` · `x264` |
+| `--graph` | Export via the M2 overlay-filter graph instead of the frame pipe (≈4.2 GB ffmpeg RAM) |
+| `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
 
 Suppress progress on stderr, keep the table on stdout:
 
@@ -114,21 +127,38 @@ Suppress progress on stderr, keep the table on stdout:
   tiles the chunk's span, so a highlight can't flash for two frames.
 - **ffmpeg 8/9 dropped `-filter_complex_script`.** It was replaced by the generic
   "option value from file" syntax `-/filter_complex <file>`. `export.rs` probes
-  `ffmpeg -h full` once and uses whichever spelling the installed build accepts.
+  `ffmpeg -h full` once and uses whichever spelling the installed build accepts
+  (graph path; only reachable via `--graph` now).
+- **Graph RAM bomb → frame pipe is the default.** The M2 overlay graph passes
+  every state as its own ffmpeg input: 754 inputs cost **4.19 GB ffmpeg RSS**,
+  which swaps an 8 GB machine to death. `export.rs::export_pipe` instead runs
+  ffmpeg decoder → Rust `blend_straight` (lazy 1-entry state-PNG cache) →
+  encoder stdin: **453 MB** peak ffmpeg + ~24 MB texxy on the sample.
+  `--graph` keeps the old path.
+- **VAAPI by default.** `Encoder::Auto` probes `/dev/dri/renderD128` once;
+  `h264_vaapi` exports the sample in ~154 s at ~450 MB RSS vs ~1057 s at ~1 GB
+  for x264 `-crf 18`. Probe color tags are forwarded so the output matches the
+  graph path's tags (`yuvj420p/pc/bt709`).
+- **Pipe re-timing uses `avg_frame_rate`, not `r_frame_rate`.** They coincide
+  for most CFR files, but the sample's `r_frame_rate` (179/6) is 0.08% off —
+  enough to drift video vs audio by ~0.2 s over 222 s. True VFR input would
+  need per-frame PTS handling (known limitation).
 
 ## Layout
 
 ```
 src/
-  main.rs        CLI pipeline: probe → transcribe → chunk → render → export
-  probe.rs       ffprobe wrapper (rotation-aware display dims) + ffmpeg discovery
+  main.rs        arg parsing + headless CLI: probe → transcribe → chunk → render → export
+  pipeline.rs    shared orchestration (ingest + export) for CLI and GUI
+  probe.rs       ffprobe wrapper (rotation-aware display dims, color tags) + ffmpeg discovery
   audio.rs       16 kHz mono f32le extraction + PCM read
   transcribe.rs  whisper transcription, word merge, timing normalization, cache
   model.rs       whisper model discovery
   chunk.rs       word grouping into caption chunks + highlight windows
   config.rs      Style struct (fonts, colors, sizes) + font discovery
-  render.rs      fontdue + tiny-skia -> per-state caption PNGs
-  export.rs      ffmpeg overlay filter graph construction + encode
+  render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
+  export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
+  ui/            egui app: drop, ingest, review (preview/editor/style), export, done
 assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
 models/          ggml-small.en.bin (downloaded, not committed)
 vendor/          static ffmpeg (macOS, later) + whisper-rs-sys patch

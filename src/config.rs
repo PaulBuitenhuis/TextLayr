@@ -27,7 +27,7 @@ impl Color {
 ///
 /// Percentage fields are relative to the video frame, so a style tuned on the
 /// 1080x1920 sample scales to any resolution/orientation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Style {
     /// One of the bundled families: "Libre Baskerville", "Inter", "Nunito".

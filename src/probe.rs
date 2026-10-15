@@ -19,8 +19,18 @@ pub struct VideoInfo {
     pub display_height: u32,
     pub duration_secs: f64,
     pub fps: f64,
+    /// Exact frame rate as an ffprobe rational string ("179/6"), preferred for
+    /// the raw-pipe export's `-framerate` so durations match the source.
+    pub frame_rate: String,
     pub has_audio: bool,
     pub pix_fmt: String,
+    /// Color tags from the source stream, verbatim from ffprobe
+    /// ("pc"/"tv", "bt709", …). "unknown" when the stream doesn't say —
+    /// the pipe export forwards them so re-encoding preserves the signal.
+    pub color_range: String,
+    pub color_space: String,
+    pub color_primaries: String,
+    pub color_transfer: String,
 }
 
 /// Locate ffmpeg and ffprobe. Order: bundled Resources/bin -> vendor/<platform> -> PATH.
@@ -109,7 +119,7 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .arg("-v").arg("error")
         .arg("-select_streams").arg("v:0")
         .arg("-show_entries")
-        .arg("stream=width,height,avg_frame_rate,pix_fmt:stream_side_data=rotation:format=duration")
+        .arg("stream=width,height,avg_frame_rate,r_frame_rate,pix_fmt,color_range,color_space,color_primaries,color_transfer:stream_side_data=rotation:format=duration")
         .arg("-of").arg("json")
         .arg(input)
         .output()
@@ -172,6 +182,24 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .and_then(parse_rate)
         .unwrap_or(30.0);
 
+    // Prefer the average rate for re-timing piped frames: for a CFR source it
+    // equals nb_frames/duration exactly. `r_frame_rate` is ffprobe's rounded
+    // timebase estimate — the sample's "179/6" (29.8333) is off by 0.08% from
+    // the true 29.8584, which would drift video vs audio ~0.2 s over 222 s.
+    let frame_rate = stream
+        .get("avg_frame_rate")
+        .and_then(|v| v.as_str())
+        .filter(|s| *s != "0/0" && !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            stream
+                .get("r_frame_rate")
+                .and_then(|v| v.as_str())
+                .filter(|s| *s != "0/0" && !s.is_empty())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "30/1".to_string());
+
     // --- duration (format level) ---
     let duration_secs = json
         .get("format")
@@ -185,6 +213,19 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+
+    let color = |key: &str| {
+        stream
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown")
+            .to_string()
+    };
+    let color_range = color("color_range");
+    let color_space = color("color_space");
+    let color_primaries = color("color_primaries");
+    let color_transfer = color("color_transfer");
 
     // --- audio presence (separate quick query) ---
     let aout = Command::new(&tools.ffprobe)
@@ -203,13 +244,18 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         display_height,
         duration_secs,
         fps,
+        frame_rate,
         has_audio,
         pix_fmt,
+        color_range,
+        color_space,
+        color_primaries,
+        color_transfer,
     })
 }
 
 /// Parse an ffprobe rate string like "30000/1001" or "30/1" into an f64.
-fn parse_rate(s: &str) -> Option<f64> {
+pub(crate) fn parse_rate(s: &str) -> Option<f64> {
     if let Some((num, den)) = s.split_once('/') {
         let n: f64 = num.parse().ok()?;
         let d: f64 = den.parse().ok()?;

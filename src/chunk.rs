@@ -68,6 +68,31 @@ impl Chunk {
             .collect::<Vec<_>>()
             .join(" ")
     }
+
+    /// Build a chunk from *edited* caption text (DESIGN's editing rule):
+    /// words are whitespace-split and re-timed **evenly within the chunk's
+    /// original time span** — editing changes text, never when the popup is
+    /// on screen. Empty text yields a wordless chunk (rendering skips it).
+    pub fn from_edited_text(text: &str, start_secs: f64, end_secs: f64) -> Chunk {
+        let texts: Vec<&str> = text.split_whitespace().collect();
+        let n = texts.len();
+        let span = (end_secs - start_secs).max(0.0);
+        let step = if n > 0 { span / n as f64 } else { 0.0 };
+        let words = texts
+            .iter()
+            .enumerate()
+            .map(|(i, t)| Word {
+                text: (*t).to_string(),
+                start_secs: start_secs + step * i as f64,
+                end_secs: start_secs + step * (i + 1) as f64,
+            })
+            .collect();
+        Chunk {
+            words,
+            start_secs,
+            end_secs,
+        }
+    }
 }
 
 /// How long the last word of a chunk stays on screen past its own end, to
@@ -258,5 +283,35 @@ mod tests {
             assert!(*e <= chunks[0].end_secs + 1e-9);
         }
         assert_eq!(win[3].1, chunks[0].end_secs);
+    }
+
+    #[test]
+    fn edited_text_is_retimed_evenly_within_the_original_span() {
+        // The user swapped 2 words for 4: same on-screen span, even split.
+        let c = Chunk::from_edited_text("one two three four", 10.0, 12.0);
+        assert_eq!(c.text(), "one two three four");
+        assert_eq!(c.start_secs, 10.0);
+        assert_eq!(c.end_secs, 12.0);
+        assert_eq!(c.words.len(), 4);
+        for (i, w) in c.words.iter().enumerate() {
+            let expect_start = 10.0 + 0.5 * i as f64;
+            assert!((w.start_secs - expect_start).abs() < 1e-9);
+            assert!((w.end_secs - (expect_start + 0.5)).abs() < 1e-9);
+        }
+        // The windows the renderer will show tile the span exactly.
+        let win = c.state_windows();
+        assert_eq!(win[0].0, 10.0);
+        assert_eq!(win[3].1, 12.0);
+    }
+
+    #[test]
+    fn edited_text_collapses_whitespace_and_handles_empty() {
+        let c = Chunk::from_edited_text("  hello   world  ", 0.0, 1.0);
+        assert_eq!(c.words.len(), 2);
+        assert_eq!(c.text(), "hello world");
+
+        let empty = Chunk::from_edited_text("   ", 0.0, 1.0);
+        assert!(empty.words.is_empty());
+        assert!(empty.state_windows().is_empty());
     }
 }

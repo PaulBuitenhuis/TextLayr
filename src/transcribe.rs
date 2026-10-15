@@ -19,7 +19,15 @@ pub struct Word {
 /// whisper.cpp (small.en). Returns words in chronological order with special
 /// tokens (timestamps, blanks, NOSPEECH) filtered out and subword tokens
 /// merged into whole words.
-pub fn transcribe(model: &Path, samples: &[f32]) -> Result<Vec<Word>> {
+///
+/// `on_progress` receives 0..=1 as whisper advances (whisper reports whole
+/// percent on the inference thread; the sink must be `'static` because that's
+/// what the C callback API demands).
+pub fn transcribe(
+    model: &Path,
+    samples: &[f32],
+    on_progress: impl Fn(f32) + Send + 'static,
+) -> Result<Vec<Word>> {
     if samples.is_empty() {
         bail!("no audio samples to transcribe");
     }
@@ -56,6 +64,11 @@ pub fn transcribe(model: &Path, samples: &[f32]) -> Result<Vec<Word>> {
     params.set_print_special(false);
     params.set_suppress_blank(true);
     params.set_suppress_nst(true);
+    // Live progress for the GUI: whisper invokes this on the calling thread
+    // with a whole percent (0..=100) while `full()` runs.
+    params.set_progress_callback_safe(move |pct| {
+        on_progress((pct as f32 / 100.0).clamp(0.0, 1.0));
+    });
 
     state
         .full(params, samples)
