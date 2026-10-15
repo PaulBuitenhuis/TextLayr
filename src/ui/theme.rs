@@ -195,3 +195,75 @@ pub fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
         .inner_margin(Margin::symmetric(20, 16))
         .show(ui, |ui| add(ui));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Applying the theme sets the shared control height on both palettes.
+    #[test]
+    fn theme_sets_the_control_height() {
+        let ctx = egui::Context::default();
+        apply(&ctx);
+        let style = ctx.style_of(egui::Theme::Dark);
+        assert_eq!(style.spacing.interact_size.y, CONTROL_H);
+        assert_eq!(style.visuals.selection.bg_fill, ACCENT);
+    }
+
+    /// Headless smoke test: build one frame containing the widget vocabulary the
+    /// screens use (grid, sliders, swatch, buttons, card, pinned bottom panel).
+    /// Guards against panics and egui id clashes in the shared builders.
+    #[test]
+    fn theme_widgets_build_without_panicking() {
+        egui::__run_test_ui(|ui| {
+            apply(ui.ctx());
+
+            egui::Panel::top("t").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("texxy").size(17.0).strong());
+                    ui.separator();
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let _ = button(ui, "Change video");
+                    });
+                });
+            });
+
+            egui::CentralPanel::default().show(ui, |ui| {
+                // Pinned footer, as the style panel does.
+                egui::Panel::bottom("footer").show(ui, |ui| {
+                    let _ = primary_button(ui, true, "Export video");
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("or press \u{2318}E").weak().small());
+                    });
+                });
+
+                ui.heading("Style");
+                ui.add_space(8.0);
+
+                let mut pct = 3.4f32;
+                let mut rounded = true;
+                egui::Grid::new("grid")
+                    .num_columns(2)
+                    .spacing([12.0, 10.0])
+                    .show(ui, |ui| {
+                        ui.label("Size");
+                        ui.add(egui::Slider::new(&mut pct, 1.0..=20.0).suffix("%"));
+                        ui.end_row();
+                        ui.label("Highlight");
+                        let mut c = Color32::WHITE;
+                        let _ = ui.color_edit_button_srgba(&mut c);
+                        ui.end_row();
+                    });
+
+                ui.checkbox(&mut rounded, "Rounded corners");
+                let _ = button_enabled(ui, false, "Previous");
+                let _ = button(ui, "Dismiss");
+                let _ = wide_button(ui, true, "Reset to defaults");
+                card(ui, |ui| {
+                    ui.label(egui::RichText::new("what").strong());
+                    ui.label(egui::RichText::new("how").weak());
+                });
+            });
+        });
+    }
+}
