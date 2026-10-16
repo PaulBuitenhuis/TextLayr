@@ -76,7 +76,7 @@ fn usage() -> ! {
     eprintln!("  --setup             Download missing ffmpeg/model into the app data dir, then exit");
     eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
-    eprintln!("  -o, --output <path> Output path (default: <input>_karaoke.mp4)");
+    eprintln!("  -o, --output <path> Output path (default: <input>_textlayr.mp4)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
     eprintln!("  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder");
     eprintln!("  --model <name>      base.en (default, fast) | small.en (more accurate)");

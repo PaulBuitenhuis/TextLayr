@@ -80,7 +80,7 @@ Prefer the terminal? `textlayr --setup` does the same thing.
 3. **Review** the transcript: click a chunk to jump the preview to it, edit any
    text, and adjust the style panel on the right.
 4. **Export** (button or **⌘E**). The result is written next to the input as
-   `<name>_karaoke.mp4`, with a **Reveal in Finder** shortcut when it's done.
+   `<name>_textlayr.mp4`, with a **Reveal in Finder** shortcut when it's done.
 
 A transcript is cached per input file (and per model), so re-rendering or
 restyling after the first pass is instant.
@@ -101,7 +101,7 @@ textlayr --version                          # version + build hash
 | `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
 | `--words` | Print the word-timing table and stop |
 | `--no-cache` | Ignore the cached transcript and re-transcribe |
-| `-o, --output <path>` | Output path (default `<input>_karaoke.mp4`) |
+| `-o, --output <path>` | Output path (default `<input>_textlayr.mp4`) |
 | `--model <base.en\|small.en>` | Whisper model to use |
 | `--png-dir <dir>` | Render caption states + filter script, skip encoding |
 | `--font <family>` | `Libre Baskerville` (default) · `Inter` · `Nunito` |

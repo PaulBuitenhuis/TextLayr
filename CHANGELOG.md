@@ -20,6 +20,8 @@ with an unrelated product that uses the old name.
   a downloaded model and saved preferences carry over.
 - **Dependency updates:** `whisper-rs` 0.14 → 0.16 (re-vendored `whisper-rs-sys`
   0.15), `sha2` 0.10 → 0.11, `tiny-skia` 0.11 → 0.12, `dirs` 6 → 7.
+- **Output name:** the default export is now `<input>_textlayr.mp4` (was
+  `<input>_karaoke.mp4`).
 
 ## [0.1.0] - 2026-10-16
 

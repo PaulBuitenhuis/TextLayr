@@ -192,13 +192,13 @@ pub fn export_video(
     Ok(())
 }
 
-/// Default output path: `<input stem>_karaoke.mp4` next to the input.
+/// Default output path: `<input stem>_textlayr.mp4` next to the input.
 pub fn default_output(input: &Path) -> PathBuf {
     let stem = input
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "video".to_string());
-    let name = format!("{stem}_karaoke.mp4");
+    let name = format!("{stem}_textlayr.mp4");
     match input.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.join(name),
         _ => PathBuf::from(name),
