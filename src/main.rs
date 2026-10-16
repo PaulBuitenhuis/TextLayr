@@ -6,11 +6,15 @@
 //!   flags) → the Milestone 1–2 headless pipeline
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
 use texxy::config::Style;
+use texxy::install::{self, InstallProgress};
+use texxy::model::Model;
 use texxy::pipeline::{self, IngestProgress, Progress};
 use texxy::{chunk, deps, export, render, transcribe, ui};
 
@@ -23,6 +27,8 @@ struct Args {
     gui: bool,
     /// Run the pipeline without a GUI.
     headless: bool,
+    /// Download the missing dependencies (ffmpeg/model) and stop.
+    setup: bool,
     /// Milestone 1 behavior: print the word table and stop (implies headless).
     words_only: bool,
     /// Ignore (and don't write) the transcript cache.
@@ -34,6 +40,8 @@ struct Args {
     graph: bool,
     /// Hardware/software encoder for the default pipe export.
     encoder: Option<export::Encoder>,
+    /// Whisper model to use (base.en/small.en); defaults to the fastest.
+    model: Option<Model>,
     style_overrides: StyleOverrides,
 }
 
@@ -65,17 +73,31 @@ fn usage() -> ! {
     eprintln!("options:");
     eprintln!("  --gui               Open the GUI (default when no other options)");
     eprintln!("  --headless          Run the pipeline without a GUI");
+    eprintln!("  --setup             Download missing ffmpeg/model into the app data dir, then exit");
     eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_karaoke.mp4)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
     eprintln!("  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder");
+    eprintln!("  --model <name>      base.en (default, fast) | small.en (more accurate)");
     eprintln!("  --graph             Milestone 2 overlay-filter-graph encode (RAM grows)");
     eprintln!("  --font <family>     Libre Baskerville | Inter | Nunito");
     eprintln!("  --font-size <pct>   Font size as % of frame height");
     eprintln!("  --position <pct>    Vertical center of the caption box (% of height)");
     eprintln!("  --words-per <n>     Words per popup (2-6)");
+    eprintln!("  -V, --version       Print the version and build hash, then exit");
     std::process::exit(2);
+}
+
+/// `--version` / `-V`: the version plus the short build hash, so a user (or a
+/// bug report) can tell exactly which revision is running.
+fn version() -> ! {
+    println!(
+        "texxy {} (build {})",
+        env!("CARGO_PKG_VERSION"),
+        env!("TEXXY_GIT_HASH")
+    );
+    std::process::exit(0);
 }
 
 fn parse_args() -> Args {
@@ -97,8 +119,10 @@ fn parse_args() -> Args {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => usage(),
+            "-V" | "--version" => version(),
             "--gui" => args.gui = true,
             "--headless" => args.headless = true,
+            "--setup" => args.setup = true,
             "--words" => args.words_only = true,
             "--no-cache" => args.no_cache = true,
             "-o" | "--output" => {
@@ -106,6 +130,17 @@ fn parse_args() -> Args {
             }
             "--png-dir" => args.png_dir = Some(PathBuf::from(need_value(&mut it, "--png-dir"))),
             "--graph" => args.graph = true,
+            "--model" => {
+                let v = need_value(&mut it, "--model");
+                args.model = Some(match v.as_str() {
+                    "base.en" | "base" => Model::BaseEn,
+                    "small.en" | "small" => Model::SmallEn,
+                    other => {
+                        eprintln!("error: --model expects base.en or small.en, got '{other}'");
+                        std::process::exit(2);
+                    }
+                });
+            }
             "--encoder" => {
                 let v = need_value(&mut it, "--encoder");
                 args.encoder = Some(match v.as_str() {
@@ -172,6 +207,15 @@ where
 fn main() {
     let args = parse_args();
 
+    // `--setup` is its own mode: fetch what's missing, then exit.
+    if args.setup {
+        if let Err(e) = run_setup(&args) {
+            eprintln!("error: {e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Any output/style option implies the headless pipeline; --gui wins over
     // that so `texxy --gui --font Inter` can still open the GUI.
     let headless = !args.gui
@@ -181,6 +225,7 @@ fn main() {
             || args.png_dir.is_some()
             || args.graph
             || args.encoder.is_some()
+            || args.model.is_some()
             || args.style_overrides.any());
 
     let result = if headless {
@@ -194,16 +239,59 @@ fn main() {
     }
 }
 
+/// `--setup`: download every missing dependency (ffmpeg/ffprobe, the model)
+/// into the platform data directory, reporting progress on stderr. Exits
+/// non-zero if anything is still missing afterwards.
+fn run_setup(args: &Args) -> Result<()> {
+    let preferred = args.model.unwrap_or_default();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut last_pct = u32::MAX;
+    let sink: install::InstallSink = Box::new(move |p| match p {
+        InstallProgress::NothingToDo => eprintln!("everything is already installed"),
+        InstallProgress::Begin { index, total, label } => {
+            eprintln!("[{}/{}] downloading {label}…", index + 1, total);
+        }
+        InstallProgress::Bytes { got, expected, .. } => {
+            if let Some(total) = expected.filter(|t| *t > 0) {
+                let pct = ((got * 100) / total) as u32;
+                if pct / 5 != last_pct / 5 {
+                    last_pct = pct;
+                    eprint!("\r      {pct:3}%");
+                }
+            }
+        }
+        InstallProgress::Installed { label, .. } => {
+            last_pct = u32::MAX;
+            eprintln!("\r      installed {label}          ");
+        }
+    });
+
+    install::install(preferred, sink, cancel).context("setup failed")?;
+
+    let check = deps::Check::run(preferred);
+    if let Some(msg) = check.error_message() {
+        bail!("{msg}");
+    }
+    eprintln!("setup complete");
+    Ok(())
+}
+
 /// The Milestone 1–2 pipeline, driven from the command line.
 fn run_cli(args: &Args) -> Result<()> {
     let Some(input) = args.input.clone() else { usage() };
 
+    // Resolve the model first: whether it's present decides the dependency
+    // check.
+    let preferred = args.model.unwrap_or_default();
+
     // Fail fast with one actionable message instead of discovering each
     // missing dependency (ffmpeg, model, fonts) partway through the pipeline.
-    let missing = deps::Check::run();
-    if let Some(msg) = missing.error_message() {
+    let check = deps::Check::run(preferred);
+    if let Some(msg) = check.error_message() {
         bail!("{msg}");
     }
+    let found_model = check.model.clone().context("model discovery failed")?;
+    let model_kind = found_model.model;
 
     let mut style = Style::default();
     apply_overrides(&mut style, &args.style_overrides);
@@ -217,6 +305,7 @@ fn run_cli(args: &Args) -> Result<()> {
             eprintln!("      ffmpeg : {}", tools.ffmpeg.display());
             eprintln!("      ffprobe: {}", tools.ffprobe.display());
         }
+        IngestProgress::Model(m) => eprintln!("      model  : {}", m.id()),
         IngestProgress::Probing => {}
         IngestProgress::Probed(info) => eprintln!(
             "      {}x{} (display)  {:.1}s  {:.2} fps  audio={}  pix={}",
@@ -229,12 +318,12 @@ fn run_cli(args: &Args) -> Result<()> {
         ),
         IngestProgress::Cached(n) => eprintln!(
             "[2/4] transcript cache hit: {n} words ({})",
-            transcribe::cache_path(&log_input)
+            transcribe::cache_path(&log_input, model_kind)
                 .map(|p| p.display().to_string())
                 .unwrap_or_default()
         ),
         IngestProgress::Extracting => {
-            eprintln!("[2/4] extracting audio + transcribing with whisper small.en…")
+            eprintln!("[2/4] extracting audio + transcribing with whisper {}…", model_kind.id())
         }
         IngestProgress::Transcribing(_) => {}
         IngestProgress::Transcribed {
@@ -244,7 +333,8 @@ fn run_cli(args: &Args) -> Result<()> {
         } => eprintln!("      {words} words in {secs:.1}s  ({realtime_x:.1}x realtime)"),
     });
 
-    let ing = pipeline::ingest(&input, args.no_cache, progress).context("ingest failed")?;
+    let ing = pipeline::ingest(&input, args.no_cache, &found_model, progress)
+        .context("ingest failed")?;
     let tools = ing.tools;
     let info = ing.info;
     let words = ing.words;

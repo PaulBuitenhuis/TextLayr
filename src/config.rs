@@ -10,6 +10,9 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::model::Model;
+use crate::source::Source;
+
 /// Straight (non-premultiplied) RGBA color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color {
@@ -58,8 +61,8 @@ pub struct Style {
 impl Default for Style {
     fn default() -> Self {
         Style {
-            // Serif matches the reference screenshot (samples/text example
-            // screen shot.png).
+            // The serif default matches the reference look texxy was built for:
+            // a small rounded box with serif-ish caption text.
             font_family: "Libre Baskerville".to_string(),
             font_size_pct: 3.4,
             highlight: Color::new(255, 255, 255, 255),
@@ -92,15 +95,16 @@ impl Style {
     }
 }
 
-/// Locate the bundled `assets/fonts` directory.
+/// Locate the bundled `assets/fonts` directory, and where it came from.
 ///
-/// Order: `$TEXXY_FONTS` → `assets/fonts` next to / above the executable
-/// (handles `target/debug`) → `assets/fonts` under the current directory.
-pub fn find_fonts_dir() -> Result<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
+/// Order: `$TEXXY_FONTS` → bundled `Contents/Resources/assets/fonts` →
+/// `assets/fonts` next to / above the executable (dev) → under the current
+/// directory (dev).
+pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
+    let mut candidates: Vec<(PathBuf, Source)> = Vec::new();
 
     if let Ok(env) = std::env::var("TEXXY_FONTS") {
-        candidates.push(PathBuf::from(env));
+        candidates.push((PathBuf::from(env), Source::Env));
     }
 
     if let Ok(exe) = std::env::current_exe() {
@@ -108,13 +112,16 @@ pub fn find_fonts_dir() -> Result<PathBuf> {
         // Contents/Resources/assets/fonts by scripts/package_macos.sh.
         if let Some(dir) = exe.parent() {
             if let Some(res) = dir.parent() {
-                candidates.push(res.join("Resources").join("assets").join("fonts"));
+                candidates.push((
+                    res.join("Resources").join("assets").join("fonts"),
+                    Source::Bundled,
+                ));
             }
         }
         let mut cur = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..6 {
             let Some(dir) = cur else { break };
-            candidates.push(dir.join("assets").join("fonts"));
+            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
             cur = dir.parent().map(|p| p.to_path_buf());
         }
     }
@@ -123,14 +130,14 @@ pub fn find_fonts_dir() -> Result<PathBuf> {
         let mut cur = Some(cwd);
         for _ in 0..6 {
             let Some(dir) = cur else { break };
-            candidates.push(dir.join("assets").join("fonts"));
+            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
             cur = dir.parent().map(|p| p.to_path_buf());
         }
     }
 
-    for c in &candidates {
+    for (c, source) in &candidates {
         if c.is_dir() && c.join("LibreBaskerville-Regular.ttf").is_file() {
-            return Ok(c.clone());
+            return Ok((c.clone(), *source));
         }
     }
 
@@ -172,13 +179,14 @@ pub fn load_font_bytes(path: &Path) -> Result<Vec<u8>> {
 pub const CONFIG_VERSION: u32 = 1;
 
 /// The persisted document. Wrapped (with a version) so future app preferences
-/// can be added without breaking old files; today it only carries the caption
-/// style.
+/// can be added without breaking old files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Config {
     version: u32,
     style: Style,
+    /// Preferred whisper model (id form).
+    model: Model,
 }
 
 impl Default for Config {
@@ -186,8 +194,17 @@ impl Default for Config {
         Config {
             version: CONFIG_VERSION,
             style: Style::default(),
+            model: Model::default(),
         }
     }
+}
+
+/// Everything that persists between runs: the caption style and the chosen
+/// whisper model.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Prefs {
+    pub style: Style,
+    pub model: Model,
 }
 
 /// `<config dir>/texxy/config.json` (`None` if the platform has no config dir).
@@ -198,46 +215,50 @@ pub fn config_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("texxy").join("config.json"))
 }
 
-/// Load the persisted style, falling back to the built-in default when the
-/// file is absent, unreadable, or invalid. Never fails: a corrupt config must
-/// not stop the app from starting.
-pub fn load_style() -> Style {
+/// Load persisted preferences, falling back to defaults when the file is
+/// absent, unreadable, or invalid. Never fails: a corrupt config must not stop
+/// the app from starting.
+pub fn load_prefs() -> Prefs {
     let path = match config_path() {
         Some(p) => p,
-        None => return Style::default(),
+        None => return Prefs::default(),
     };
     let Ok(bytes) = std::fs::read(&path) else {
-        return Style::default();
+        return Prefs::default();
     };
     match serde_json::from_slice::<Config>(&bytes) {
         Ok(cfg) => {
             let mut style = cfg.style;
             style.sanitize();
-            style
+            Prefs {
+                style,
+                model: cfg.model,
+            }
         }
         Err(e) => {
             eprintln!("(ignoring unreadable config {}: {e})", path.display());
-            Style::default()
+            Prefs::default()
         }
     }
 }
 
-/// Persist the style atomically (write a temp file, then rename) so an
+/// Persist preferences atomically (write a temp file, then rename) so an
 /// interrupted write can never leave a half-written config behind.
-pub fn save_style(style: &Style) -> Result<()> {
+pub fn save_prefs(prefs: &Prefs) -> Result<()> {
     let path = config_path().context("no platform config directory")?;
-    save_style_to(&path, style)
+    save_prefs_to(&path, prefs)
 }
 
-/// [`save_style`] to an explicit path (also used by tests).
-pub fn save_style_to(path: &Path, style: &Style) -> Result<()> {
+/// [`save_prefs`] to an explicit path (also used by tests).
+pub fn save_prefs_to(path: &Path, prefs: &Prefs) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;
     }
     let cfg = Config {
         version: CONFIG_VERSION,
-        style: style.clone(),
+        style: prefs.style.clone(),
+        model: prefs.model,
     };
     let json = serde_json::to_vec_pretty(&cfg).context("serialize config")?;
     let tmp = path.with_extension("json.tmp");
@@ -262,11 +283,13 @@ mod tests {
         let json = serde_json::to_vec(&Config {
             version: CONFIG_VERSION,
             style: style.clone(),
+            model: Model::SmallEn,
         })
         .unwrap();
         let back: Config = serde_json::from_slice(&json).unwrap();
         assert_eq!(back.style, style);
         assert_eq!(back.version, CONFIG_VERSION);
+        assert_eq!(back.model, Model::SmallEn);
     }
 
     #[test]
@@ -275,18 +298,22 @@ mod tests {
         let cfg: Config = serde_json::from_str(r#"{"style":{"font_size_pct":9.0}}"#).unwrap();
         assert_eq!(cfg.style.font_size_pct, 9.0);
         assert_eq!(cfg.style.font_family, Style::default().font_family);
+        assert_eq!(cfg.model, Model::default());
     }
 
     #[test]
     fn save_then_load_round_trips_on_disk() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cfg").join("config.json");
-        let style = Style {
-            position_pct: 33.0,
-            dim: Color::new(9, 8, 7, 255),
-            ..Style::default()
+        let prefs = Prefs {
+            style: Style {
+                position_pct: 33.0,
+                dim: Color::new(9, 8, 7, 255),
+                ..Style::default()
+            },
+            model: Model::SmallEn,
         };
-        save_style_to(&path, &style).unwrap();
+        save_prefs_to(&path, &prefs).unwrap();
         assert!(path.is_file());
         // The temp file used during the atomic write is gone.
         assert!(!path.with_extension("json.tmp").exists());
@@ -295,6 +322,7 @@ mod tests {
         let cfg: Config = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(cfg.style.position_pct, 33.0);
         assert_eq!(cfg.style.dim, Color::new(9, 8, 7, 255));
+        assert_eq!(cfg.model, Model::SmallEn);
     }
 
     #[test]

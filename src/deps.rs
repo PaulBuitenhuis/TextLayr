@@ -1,22 +1,25 @@
-//! Startup dependency check (Milestone 4).
+//! Startup dependency check.
 //!
-//! ffmpeg/ffprobe, the whisper model, and the bundled fonts are all required
+//! ffmpeg/ffprobe, a whisper model and the bundled fonts are all required
 //! before any work can start. [`Check::run`] locates them without side effects
-//! and turns each miss into an actionable message the GUI banner and the CLI
-//! can both show — instead of the user discovering the problem mid-export.
+//! and records where each came from, so the GUI can (a) offer to install what's
+//! missing and (b) show honest provenance in the About window, and the CLI can
+//! print one actionable error instead of failing mid-export.
+
+use std::path::PathBuf;
 
 use crate::config;
-use crate::model;
+use crate::model::{self, FoundModel, Model};
 use crate::probe::{self, Fftools};
-use std::path::PathBuf;
+use crate::source::Source;
 
 /// What the environment provides for a run. Each field is `None` when the
 /// corresponding dependency could not be found.
 #[derive(Debug, Clone, Default)]
 pub struct Check {
     pub fftools: Option<Fftools>,
-    pub model: Option<PathBuf>,
-    pub fonts: Option<PathBuf>,
+    pub model: Option<FoundModel>,
+    pub fonts: Option<(PathBuf, Source)>,
 }
 
 /// One missing requirement, phrased for a user.
@@ -26,15 +29,17 @@ pub struct Problem {
     pub what: String,
     /// What to do about it.
     pub how: String,
+    /// Whether the app can fetch this itself (Setup → Install).
+    pub installable: bool,
 }
 
 impl Check {
-    /// Locate every dependency. Never fails: misses are recorded as `None` so
-    /// the caller can report them all at once.
-    pub fn run() -> Check {
+    /// Locate every dependency for the given model preference. Never fails:
+    /// misses are recorded as `None` so the caller can report them all at once.
+    pub fn run(preferred: Model) -> Check {
         Check {
             fftools: probe::find_ffmpeg().ok(),
-            model: model::find_model().ok(),
+            model: model::resolve(preferred),
             fonts: config::find_fonts_dir().ok(),
         }
     }
@@ -50,30 +55,37 @@ impl Check {
         if self.fftools.is_none() {
             out.push(Problem {
                 what: "ffmpeg / ffprobe".to_string(),
-                how: format!(
-                    "install them on your PATH (e.g. `brew install ffmpeg`), or place the \
-                     binaries in {} (the packaged .app bundles them).",
-                    vendor_dir()
-                ),
+                how: "Click Install to download them, run `brew install ffmpeg`, or \
+                      put the binaries on your PATH."
+                    .to_string(),
+                installable: true,
             });
         }
         if self.model.is_none() {
             out.push(Problem {
                 what: "whisper model".to_string(),
-                how: "run scripts/fetch_model.sh, place ggml-small.en.bin in models/, \
-                      or set $TEXXY_MODEL to its path."
+                how: "Click Install to download it, run scripts/fetch_model.sh, or set \
+                      $TEXXY_MODEL to its path."
                     .to_string(),
+                installable: true,
             });
         }
         if self.fonts.is_none() {
             out.push(Problem {
                 what: "caption fonts".to_string(),
-                how: "expected assets/fonts/*.ttf in the repo; set $TEXXY_FONTS to the \
-                      directory that holds them."
+                how: "Expected assets/fonts/*.ttf next to the app; set $TEXXY_FONTS to \
+                      the directory holding them. These ship with texxy, so a missing \
+                      copy means a broken install."
                     .to_string(),
+                installable: false,
             });
         }
         out
+    }
+
+    /// True when at least one missing item can be fetched by the app.
+    pub fn has_installable(&self) -> bool {
+        self.problems().iter().any(|p| p.installable)
     }
 
     /// A single multi-line message for the CLI, or `None` when all is well.
@@ -107,17 +119,6 @@ impl Check {
     }
 }
 
-/// Where a dev build looks for vendored binaries, per platform.
-fn vendor_dir() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "vendor/macos/"
-    } else if cfg!(target_os = "linux") {
-        "vendor/linux/"
-    } else {
-        "vendor/<platform>/"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +130,8 @@ mod tests {
         let problems = check.problems();
         assert_eq!(problems.len(), 3);
         assert!(check.error_message().unwrap().contains("ffmpeg"));
+        // ffmpeg and the model can be installed; fonts cannot.
+        assert!(check.has_installable());
     }
 
     #[test]
@@ -137,13 +140,15 @@ mod tests {
             fftools: Some(Fftools {
                 ffmpeg: PathBuf::from("/bin/true"),
                 ffprobe: PathBuf::from("/bin/true"),
+                source: Source::System,
             }),
             model: None,
-            fonts: Some(PathBuf::from("/fonts")),
+            fonts: Some((PathBuf::from("/fonts"), Source::Bundled)),
         };
         assert!(!check.ok());
         let problems = check.problems();
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].what, "whisper model");
+        assert!(problems[0].installable);
     }
 }

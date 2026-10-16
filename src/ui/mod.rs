@@ -3,21 +3,32 @@
 //! All slow work (whisper, ffmpeg) runs on worker threads and reports through
 //! a channel polled every UI frame; the UI thread never blocks.
 
+mod licenses;
 mod preview;
 mod review;
 mod theme;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
 use crate::config::{self, Style};
 use crate::deps;
+use crate::install::{self, InstallProgress};
+use crate::model::{FoundModel, Model};
 use crate::pipeline::{self, ExportProgress, ExportSink, IngestProgress, Progress};
+use crate::source::Source;
 use preview::Frame;
 use review::{Action, ReviewState};
+
+/// The project and developer, credited in the About window.
+const DEVELOPER: &str = "Paul Buitenhuis";
+const DEVELOPER_URL: &str = "https://github.com/PaulBuitenhuis";
+const REPO_URL: &str = "https://github.com/PaulBuitenhuis/texxy";
 
 /// Where the app is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +45,8 @@ struct IngestStatus {
     label: String,
     /// `None` = indeterminate (spinner) phase.
     progress: Option<f32>,
+    /// Whisper model in use, once known.
+    model: Option<Model>,
 }
 
 struct ExportStatus {
@@ -44,6 +57,13 @@ struct ExportStatus {
 struct DoneInfo {
     output: PathBuf,
     secs: f64,
+}
+
+/// Progress of a first-run install (ffmpeg/model downloads).
+struct InstallStatus {
+    label: String,
+    /// `None` = indeterminate (verifying / starting).
+    progress: Option<f32>,
 }
 
 /// Messages from worker threads.
@@ -61,6 +81,9 @@ enum Msg {
         secs: f64,
     },
     ExportErr(String),
+    Install(InstallProgress),
+    InstallOk,
+    InstallErr(String),
 }
 
 pub struct App {
@@ -77,13 +100,27 @@ pub struct App {
     hovering: bool,
     /// Startup dependency check (ffmpeg, model, fonts).
     deps: deps::Check,
+    /// Preferred whisper model (persisted).
+    model_pref: Model,
+    /// A first-run install in progress, if any.
+    install: Option<InstallStatus>,
+    /// Cancels the in-flight install.
+    install_cancel: Option<Arc<AtomicBool>>,
+    /// The model the in-flight install is fetching (selected on success).
+    install_target: Option<Model>,
+    /// A model the user has asked to remove, awaiting confirmation.
+    pending_remove: Option<Model>,
     /// Whether the About window is showing.
     about_open: bool,
-    /// The style currently persisted on disk; a change from the live style
-    /// schedules an autosave.
-    saved_style: Style,
-    /// When the pending style autosave may fire (debounce).
-    style_save_at: Option<Instant>,
+    /// Whether the open-source licenses window is showing.
+    licenses_open: bool,
+    /// Selected section in the licenses window.
+    licenses_sel: usize,
+    /// The preferences currently persisted on disk; a change from the live
+    /// style/model schedules an autosave.
+    saved_prefs: config::Prefs,
+    /// When the pending preference autosave may fire (debounce).
+    prefs_save_at: Option<Instant>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     /// Outstanding worker messages (drives the idle repoll).
@@ -96,8 +133,17 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>, initial: Option<PathBuf>) -> Self {
         theme::apply(&cc.egui_ctx);
         let (tx, rx) = mpsc::channel();
-        let saved_style = config::load_style();
-        let deps = deps::Check::run();
+        let saved_prefs = config::load_prefs();
+        let deps = deps::Check::run(saved_prefs.model);
+        // Adopt the model we actually resolved, so the choice shown to the user
+        // is always the model in use (a stored preference that isn't installed
+        // falls back to whichever model is). `autosave_prefs` persists the
+        // change on the first frame.
+        let model_pref = deps
+            .model
+            .as_ref()
+            .map(|f| f.model)
+            .unwrap_or(saved_prefs.model);
         let mut app = App {
             stage: Stage::Drop,
             input: None,
@@ -109,9 +155,16 @@ impl App {
             warn: None,
             hovering: false,
             deps,
+            model_pref,
+            install: None,
+            install_cancel: None,
+            install_target: None,
+            pending_remove: None,
             about_open: false,
-            saved_style,
-            style_save_at: None,
+            licenses_open: false,
+            licenses_sel: 0,
+            saved_prefs,
+            prefs_save_at: None,
             tx,
             rx,
             pending: 0,
@@ -132,39 +185,125 @@ impl App {
     }
 
     /// Re-run the dependency check (the user may have installed something
-    /// since launch) and clear the banner if everything is now present.
+    /// since launch) and clear the banner if everything is now present. If the
+    /// preferred model is gone but another is installed, adopt that one so the
+    /// shown choice stays equal to the model in use.
     fn recheck_deps(&mut self) {
-        self.deps = deps::Check::run();
+        self.deps = deps::Check::run(self.model_pref);
+        if let Some(found) = self.deps.model.as_ref() {
+            if found.model != self.model_pref {
+                self.model_pref = found.model;
+                self.prefs_save_at = None;
+            }
+        }
         if self.deps.ok() {
             self.error = None;
         }
     }
 
-    /// Debounced autosave of the review style. Called once per frame; writes
-    /// the config only after the style has been stable for a beat, so dragging
-    /// a slider doesn't hammer the disk.
-    fn autosave_style(&mut self, ctx: &egui::Context) {
+    /// Delete a model texxy downloaded, then refresh discovery.
+    fn remove_model(&mut self, found: &crate::model::FoundModel) {
+        match crate::model::remove_downloaded(found) {
+            Ok(()) => {
+                self.pending_remove = None;
+                self.recheck_deps();
+            }
+            Err(e) => {
+                self.pending_remove = None;
+                self.error = Some(format!("{e:#}"));
+            }
+        }
+    }
+
+    /// The style currently in effect: the review style, or the last saved one.
+    fn current_style(&self) -> Style {
+        self.review
+            .as_ref()
+            .map(|r| r.style.clone())
+            .unwrap_or_else(|| self.saved_prefs.style.clone())
+    }
+
+    /// Persist preferences immediately — used when the model choice changes, so
+    /// it sticks even if the app is quit before the debounce fires.
+    fn persist_prefs(&mut self) {
+        let prefs = config::Prefs {
+            style: self.current_style(),
+            model: self.model_pref,
+        };
+        self.saved_prefs = prefs.clone();
+        self.prefs_save_at = None;
+        if let Err(e) = config::save_prefs(&prefs) {
+            eprintln!("      config save failed: {e:#}");
+        }
+    }
+
+    /// Debounced autosave of the review style and the model preference. Called
+    /// once per frame; writes the config only after things have been stable for
+    /// a beat, so dragging a slider doesn't hammer the disk.
+    fn autosave_prefs(&mut self, ctx: &egui::Context) {
         const DEBOUNCE: Duration = Duration::from_millis(400);
-        let dirty = match &self.review {
-            Some(r) if r.style != self.saved_style => Some(r.style.clone()),
-            _ => None,
+        let style_changed = match &self.review {
+            Some(r) => r.style != self.saved_prefs.style,
+            None => false,
         };
-        let Some(style) = dirty else {
-            self.style_save_at = None;
+        let model_changed = self.model_pref != self.saved_prefs.model;
+        if !style_changed && !model_changed {
+            self.prefs_save_at = None;
             return;
-        };
+        }
         let now = Instant::now();
-        let deadline = *self.style_save_at.get_or_insert(now + DEBOUNCE);
+        let deadline = *self.prefs_save_at.get_or_insert(now + DEBOUNCE);
         if now >= deadline {
-            self.saved_style = style;
-            self.style_save_at = None;
-            if let Err(e) = config::save_style(&self.saved_style) {
-                eprintln!("      style save failed: {e:#}");
+            let prefs = config::Prefs {
+                style: self.current_style(),
+                model: self.model_pref,
+            };
+            self.saved_prefs = prefs.clone();
+            self.prefs_save_at = None;
+            if let Err(e) = config::save_prefs(&prefs) {
+                eprintln!("      config save failed: {e:#}");
             }
         } else {
             // Make sure a frame runs at the deadline even if the user stops
             // interacting (egui otherwise sleeps).
             ctx.request_repaint_after(deadline - now);
+        }
+    }
+
+    /// Download whatever is missing for `target` (ffmpeg and/or the model) and
+    /// select that model when it succeeds.
+    fn start_install(&mut self, target: Model) {
+        if self.install.is_some() {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.install_cancel = Some(Arc::clone(&cancel));
+        self.install_target = Some(target);
+        self.install = Some(InstallStatus {
+            label: "starting…".into(),
+            progress: None,
+        });
+        self.error = None;
+
+        let tx = self.tx.clone();
+        let done_tx = tx.clone();
+        let sink: install::InstallSink = Box::new(move |p| {
+            let _ = tx.send(Msg::Install(p));
+        });
+        self.pending += 1;
+        std::thread::spawn(move || {
+            let msg = match install::install(target, sink, cancel) {
+                Ok(()) => Msg::InstallOk,
+                Err(e) => Msg::InstallErr(format!("{e:#}")),
+            };
+            let _ = done_tx.send(msg);
+        });
+    }
+
+    /// Ask the in-flight install to stop.
+    fn cancel_install(&mut self) {
+        if let Some(cancel) = &self.install_cancel {
+            cancel.store(true, Ordering::Relaxed);
         }
     }
 
@@ -186,8 +325,17 @@ impl App {
             file: path.clone(),
             label: "starting…".into(),
             progress: None,
+            model: None,
         });
         self.stage = Stage::Ingest;
+
+        // The model the review will use: resolved during the dependency check.
+        let Some(found_model) = self.deps.model.clone() else {
+            self.ingest = None;
+            self.stage = Stage::Drop;
+            self.error = Some("no whisper model is installed".into());
+            return;
+        };
 
         let tx = self.tx.clone();
         let done_tx = tx.clone();
@@ -196,7 +344,7 @@ impl App {
         });
         self.pending += 1;
         std::thread::spawn(move || {
-            let msg = match pipeline::ingest(&path, false, sink) {
+            let msg = match pipeline::ingest(&path, false, &found_model, sink) {
                 Ok(ing) => Msg::IngestOk(Box::new(ing)),
                 Err(e) => Msg::IngestErr(format!("{e:#}")),
             };
@@ -319,6 +467,7 @@ impl App {
                 if let Some(st) = &mut self.ingest {
                     match p {
                         IngestProgress::Tools(_) => st.label = "locating ffmpeg…".into(),
+                        IngestProgress::Model(m) => st.model = Some(m),
                         IngestProgress::Probing => st.label = "probing video…".into(),
                         IngestProgress::Probed(info) => {
                             st.label = format!(
@@ -343,7 +492,8 @@ impl App {
                             st.progress = None;
                         }
                         IngestProgress::Transcribing(f) => {
-                            st.label = "transcribing with whisper small.en…".into();
+                            let model = st.model.unwrap_or_default();
+                            st.label = format!("transcribing with whisper {}…", model.id());
                             st.progress = Some(f);
                         }
                         IngestProgress::Transcribed {
@@ -361,7 +511,7 @@ impl App {
             Msg::IngestOk(ing) => {
                 self.pending = self.pending.saturating_sub(1);
                 let input = self.input.clone().unwrap_or_default();
-                let style = self.saved_style.clone();
+                let style = self.saved_prefs.style.clone();
                 self.review = Some(ReviewState::new(input, *ing, style));
                 self.ingest = None;
                 self.stage = Stage::Review;
@@ -415,6 +565,64 @@ impl App {
                 eprintln!("      export failed: {e}");
                 self.error = Some(e);
                 self.stage = Stage::Review;
+            }
+            Msg::Install(p) => {
+                if let Some(st) = &mut self.install {
+                    match p {
+                        InstallProgress::NothingToDo => {
+                            st.label = "nothing to install".into();
+                            st.progress = Some(1.0);
+                        }
+                        InstallProgress::Begin { index, total, label } => {
+                            st.label = format!("downloading {label} ({}/{total})", index + 1);
+                            st.progress = Some(0.0);
+                        }
+                        InstallProgress::Bytes {
+                            label,
+                            got,
+                            expected,
+                            ..
+                        } => {
+                            st.label = match expected {
+                                Some(t) if t > 0 => {
+                                    format!("{label} — {} of {}", human_bytes(got), human_bytes(t))
+                                }
+                                _ => format!("{label} — {}", human_bytes(got)),
+                            };
+                            st.progress = expected
+                                .filter(|t| *t > 0)
+                                .map(|t| (got as f32 / t as f32).clamp(0.0, 1.0));
+                        }
+                        InstallProgress::Installed { index, total, label } => {
+                            st.label = format!("installed {label} ({}/{total})", index + 1);
+                            st.progress = Some(1.0);
+                        }
+                    }
+                }
+            }
+            Msg::InstallOk => {
+                self.pending = self.pending.saturating_sub(1);
+                self.install = None;
+                self.install_cancel = None;
+                if let Some(target) = self.install_target.take() {
+                    self.model_pref = target;
+                }
+                self.recheck_deps();
+                if !self.deps.ok() {
+                    self.error = self.deps.summary();
+                }
+            }
+            Msg::InstallErr(e) => {
+                self.pending = self.pending.saturating_sub(1);
+                self.install = None;
+                self.install_cancel = None;
+                self.install_target = None;
+                self.recheck_deps();
+                // Cancellation is a user action, not something to shout about.
+                if !e.contains("cancelled") {
+                    eprintln!("      install failed: {e}");
+                    self.error = Some(format!("install failed: {e}"));
+                }
             }
         }
     }
@@ -487,6 +695,11 @@ impl App {
     }
 
     fn screen_drop(&mut self, ui: &mut egui::Ui) {
+        // An install can run while dependencies are otherwise satisfied (e.g.
+        // adding a second model from About), so check it before anything else.
+        if self.screen_install(ui) {
+            return;
+        }
         if !self.deps.ok() {
             self.screen_setup(ui);
             return;
@@ -560,23 +773,95 @@ impl App {
         }
     }
 
+    /// Render the in-progress install, if any. Returns `true` when it drew
+    /// something, so callers can skip the rest of the screen.
+    fn screen_install(&mut self, ui: &mut egui::Ui) -> bool {
+        let Some((label, progress)) = self
+            .install
+            .as_ref()
+            .map(|st| (st.label.clone(), st.progress))
+        else {
+            return false;
+        };
+        ui.add_space(40.0);
+        ui.vertical_centered(|ui| {
+            ui.heading("Downloading");
+            ui.add_space(16.0);
+        });
+        ui.vertical_centered(|ui| {
+            ui.set_max_width(520.0);
+            match progress {
+                Some(p) => {
+                    ui.add(
+                        egui::ProgressBar::new(p)
+                            .show_percentage()
+                            .desired_width(460.0)
+                            .corner_radius(theme::ROUND),
+                    );
+                }
+                None => {
+                    ui.add(egui::Spinner::new().size(26.0));
+                }
+            }
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new(label).weak());
+            ui.add_space(14.0);
+            if theme::fixed_button(ui, true, 120.0, "Cancel").clicked() {
+                self.cancel_install();
+            }
+        });
+        true
+    }
+
     /// Shown on the drop screen when a required tool/model/font is missing.
     fn screen_setup(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(32.0);
+        if self.screen_install(ui) {
+            return;
+        }
+        ui.add_space(26.0);
         ui.vertical_centered(|ui| {
             ui.heading("Setup required");
             ui.add_space(2.0);
             ui.label(
-                egui::RichText::new("texxy needs these before it can caption a video:").weak(),
+                egui::RichText::new(
+                    "texxy downloads ffmpeg and a whisper model the first time it runs.",
+                )
+                .weak(),
             );
         });
-        ui.add_space(16.0);
+        ui.add_space(14.0);
+
+        // Model choice. Changing it re-runs the check, so the missing-items list
+        // and the Install button reflect the newly selected model.
+        let mut chosen = self.model_pref;
+        ui.vertical_centered(|ui| {
+            ui.set_max_width(560.0);
+            theme::card(ui, |ui| {
+                ui.label(egui::RichText::new("Transcription model").strong());
+                ui.add_space(4.0);
+                for m in Model::ALL {
+                    ui.radio_value(&mut chosen, m, m.label());
+                }
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new("You can change this later from About.").weak(),
+                );
+            });
+        });
+        if chosen != self.model_pref {
+            self.model_pref = chosen;
+            self.persist_prefs();
+            self.recheck_deps();
+        }
+
+        ui.add_space(14.0);
 
         let problems = self.deps.problems();
+        let installable = self.deps.has_installable();
         ui.vertical_centered(|ui| {
             ui.set_max_width(560.0);
             egui::ScrollArea::vertical()
-                .max_height(320.0)
+                .max_height(220.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for p in &problems {
@@ -590,17 +875,23 @@ impl App {
                 });
         });
 
-        ui.add_space(16.0);
+        ui.add_space(14.0);
         ui.vertical_centered(|ui| {
-            ui.set_max_width(240.0);
-            if theme::primary_button(ui, true, "Re-check").clicked() {
+            ui.set_max_width(260.0);
+            if installable && theme::primary_button(ui, true, "Install").clicked() {
+                self.start_install(self.model_pref);
+            }
+            if installable {
+                ui.add_space(6.0);
+            }
+            if theme::button(ui, "Re-check").clicked() {
                 self.recheck_deps();
             }
             if let Some(path) = self.input.clone() {
                 ui.add_space(10.0);
                 ui.label(
                     egui::RichText::new(format!(
-                        "{} is waiting — open it again once setup is done",
+                        "{} is waiting — it will open once setup is done",
                         file_label(&path)
                     ))
                     .weak(),
@@ -663,21 +954,22 @@ impl App {
         });
     }
 
-    /// A small modal with the version/build and the resolved runtime paths.
-    /// This is the one place the build stamp lives, so it stays out of the way.
+    /// A small modal with the credits, version/build, the model selector and
+    /// the resolved runtime paths (with their provenance).
     fn about_window(&mut self, ctx: &egui::Context) {
         if !self.about_open {
             return;
         }
         let mut open = true;
         let mut close = false;
+        let mut open_licenses = false;
         egui::Window::new("About texxy")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.set_max_width(430.0);
+                ui.set_max_width(470.0);
                 ui.vertical_centered(|ui| {
                     ui.heading("texxy");
                     ui.add_space(2.0);
@@ -689,28 +981,148 @@ impl App {
                         env!("TEXXY_GIT_HASH")
                     ));
                 });
-                ui.add_space(14.0);
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                // Credits + links.
+                ui.vertical_centered(|ui| {
+                    ui.label(format!("Made by {DEVELOPER}"));
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        // Centre the row manually; egui has no "centered horizontal".
+                        ui.add_space((ui.available_width() - 190.0).max(0.0) * 0.5);
+                        ui.hyperlink_to("GitHub", DEVELOPER_URL);
+                        ui.label("·");
+                        ui.hyperlink_to("Source", REPO_URL);
+                        ui.label("·");
+                        ui.label("MIT licensed");
+                    });
+                    ui.add_space(8.0);
+                    if theme::button(ui, "Open source licenses").clicked() {
+                        open_licenses = true;
+                    }
+                });
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                // Models: what's installed, which is in use, and how to change
+                // it. Only installed models can be selected; the rest offer a
+                // Download button.
+                let in_use = self.deps.model.as_ref().map(|f| f.model);
+                let models: Vec<(Model, Option<FoundModel>)> = Model::ALL
+                    .iter()
+                    .map(|m| (*m, crate::model::locate(*m)))
+                    .collect();
+                let pending = self.pending_remove;
+                let mut chosen = self.model_pref;
+                let mut download: Option<Model> = None;
+                let mut remove: Option<FoundModel> = None;
+                let mut set_pending: Option<Option<Model>> = None;
+
+                ui.label(egui::RichText::new("Model").strong());
+                ui.add_space(4.0);
+                for (m, found) in &models {
+                    ui.horizontal(|ui| match found {
+                        Some(f) => {
+                            ui.radio_value(&mut chosen, *m, m.label());
+                            let tip = if f.source == Source::Downloaded {
+                                f.path.display().to_string()
+                            } else {
+                                format!(
+                                    "{}\n\nTo remove it, delete that file — texxy \
+                                     only deletes models it downloaded itself.",
+                                    f.path.display()
+                                )
+                            };
+                            if in_use == Some(*m) {
+                                ui.label(
+                                    egui::RichText::new("in use").color(theme::ACCENT).small(),
+                                )
+                                .on_hover_text(tip);
+                            } else {
+                                ui.label(egui::RichText::new(f.source.label()).weak().small())
+                                    .on_hover_text(tip);
+                            }
+                            if f.source == Source::Downloaded {
+                                if pending == Some(*m) {
+                                    if theme::button(ui, "Confirm remove").clicked() {
+                                        remove = Some(f.clone());
+                                    }
+                                    if theme::button(ui, "Keep").clicked() {
+                                        set_pending = Some(None);
+                                    }
+                                } else if theme::button(ui, "Remove").clicked() {
+                                    set_pending = Some(Some(*m));
+                                }
+                            }
+                        }
+                        None => {
+                            ui.add_space(18.0);
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(m.label()).weak()).truncate(),
+                            );
+                            if theme::button(ui, "Download").clicked() {
+                                download = Some(*m);
+                            }
+                        }
+                    });
+                }
+                // No model at all: make that explicit rather than looking fine.
+                if models.iter().all(|(_, f)| f.is_none()) {
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new("No model installed yet.")
+                            .color(ui.visuals().warn_fg_color)
+                            .small(),
+                    );
+                }
+
+                if let Some(Some(m)) = set_pending {
+                    self.pending_remove = Some(m);
+                } else if set_pending.is_some() {
+                    self.pending_remove = None;
+                }
+                if let Some(f) = remove {
+                    self.remove_model(&f);
+                }
+                if let Some(m) = download {
+                    // The download progress lives on the main screen, so get out
+                    // of the way.
+                    self.about_open = false;
+                    self.start_install(m);
+                } else if chosen != self.model_pref {
+                    self.pending_remove = None;
+                    self.model_pref = chosen;
+                    self.persist_prefs();
+                    self.recheck_deps();
+                }
+
+                ui.add_space(12.0);
                 ui.separator();
                 ui.add_space(10.0);
 
                 let fftools = self.deps.fftools.as_ref();
-                let ffmpeg = fftools.map(|t| t.ffmpeg.clone());
-                let ffprobe = fftools.map(|t| t.ffprobe.clone());
-                let model = self.deps.model.clone();
+                let ffmpeg = fftools.map(|t| (t.ffmpeg.clone(), t.source));
+                let ffprobe = fftools.map(|t| (t.ffprobe.clone(), t.source));
+                let model = self.deps.model.as_ref().map(|m| (m.path.clone(), m.source));
                 let fonts = self.deps.fonts.clone();
                 let config = config::config_path();
 
                 egui::Grid::new("about_grid")
-                    .num_columns(2)
+                    .num_columns(3)
                     .spacing([14.0, 6.0])
                     .min_col_width(62.0)
-                    .max_col_width(300.0)
+                    .max_col_width(320.0)
                     .show(ui, |ui| {
-                        about_row(ui, "ffmpeg", ffmpeg.as_deref());
-                        about_row(ui, "ffprobe", ffprobe.as_deref());
-                        about_row(ui, "model", model.as_deref());
-                        about_row(ui, "fonts", fonts.as_deref());
-                        about_row(ui, "config", config.as_deref());
+                        about_row(ui, "ffmpeg", ffmpeg.as_ref());
+                        about_row(ui, "ffprobe", ffprobe.as_ref());
+                        about_row(ui, "model", model.as_ref());
+                        about_row(ui, "fonts", fonts.as_ref());
+                        about_row_path(ui, "config", config.as_deref());
                     });
 
                 ui.add_space(16.0);
@@ -720,6 +1132,9 @@ impl App {
                     }
                 });
             });
+        if open_licenses {
+            self.licenses_open = true;
+        }
         if !open || close {
             self.about_open = false;
         }
@@ -835,17 +1250,23 @@ impl eframe::App for App {
         }
 
         self.about_window(&ctx);
-        self.autosave_style(&ctx);
+        licenses::window(&ctx, &mut self.licenses_open, &mut self.licenses_sel);
+        self.autosave_prefs(&ctx);
     }
 }
 
 /// Launch the GUI, optionally pre-loading a video.
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("texxy")
+        .with_inner_size([1320.0, 840.0])
+        .with_min_inner_size([1040.0, 660.0]);
+    // texxy's own icon. Without this, eframe falls back to the egui logo.
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icon.png")) {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("texxy")
-            .with_inner_size([1320.0, 840.0])
-            .with_min_inner_size([1040.0, 660.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -857,8 +1278,30 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// One `label → value` row in the About grid; a missing value shows in red.
-fn about_row(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
+/// One `label → path (provenance)` row in the About grid; a missing value shows
+/// in red.
+fn about_row(ui: &mut egui::Ui, label: &str, value: Option<&(PathBuf, Source)>) {
+    ui.label(egui::RichText::new(label).weak());
+    match value {
+        Some((p, source)) => {
+            ui.add(
+                egui::Label::new(egui::RichText::new(p.display().to_string()).small().monospace())
+                    .truncate(),
+            )
+            .on_hover_text(p.display().to_string());
+            ui.label(egui::RichText::new(source.label()).weak().small());
+        }
+        None => {
+            let color = ui.visuals().error_fg_color;
+            ui.label(egui::RichText::new("not found").color(color));
+            ui.label("");
+        }
+    }
+    ui.end_row();
+}
+
+/// A `label → path` row with no provenance (used for the config path).
+fn about_row_path(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
     ui.label(egui::RichText::new(label).weak());
     match value {
         Some(p) => {
@@ -867,13 +1310,31 @@ fn about_row(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
                     .truncate(),
             )
             .on_hover_text(p.display().to_string());
+            ui.label("");
         }
         None => {
             let color = ui.visuals().error_fg_color;
             ui.label(egui::RichText::new("not found").color(color));
+            ui.label("");
         }
     }
     ui.end_row();
+}
+
+/// Bytes as a short human string ("148 MB", "12.3 kB").
+fn human_bytes(n: u64) -> String {
+    const KB: f64 = 1000.0;
+    let n = n as f64;
+    if n < KB {
+        return format!("{n:.0} B");
+    }
+    if n < KB * KB {
+        return format!("{:.1} kB", n / KB);
+    }
+    if n < KB * KB * KB {
+        return format!("{:.1} MB", n / (KB * KB));
+    }
+    format!("{:.2} GB", n / (KB * KB * KB))
 }
 
 /// A dismissable warning/error strip pinned to the bottom of the window.

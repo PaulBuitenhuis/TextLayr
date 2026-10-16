@@ -12,16 +12,19 @@ use anyhow::{bail, Context, Result};
 
 use crate::chunk::Chunk;
 use crate::config::Style;
+use crate::model::{FoundModel, Model};
 use crate::probe::{Fftools, VideoInfo};
 use crate::render::CaptionState;
 use crate::render;
-use crate::{audio, export, model, probe, transcribe};
+use crate::{audio, export, probe, transcribe};
 
 /// Progress of [`ingest`], reported in order.
 #[derive(Debug, Clone)]
 pub enum IngestProgress {
     /// ffmpeg/ffprobe located; discovery is done.
     Tools(Fftools),
+    /// The whisper model that will be used.
+    Model(Model),
     /// ffprobe pass over the input.
     Probing,
     /// Probe finished.
@@ -50,11 +53,18 @@ pub struct Ingest {
     pub info: VideoInfo,
     pub words: Vec<transcribe::Word>,
     pub from_cache: bool,
+    /// The model that produced these words (or that a cache hit came from).
+    pub model: Model,
 }
 
 /// Probe the input, then produce word-level timings — from cache when the
 /// input file is unchanged and `no_cache` is false.
-pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest> {
+pub fn ingest(
+    input: &Path,
+    no_cache: bool,
+    model: &FoundModel,
+    progress: Progress,
+) -> Result<Ingest> {
     // Shared with whisper's callback below: the C API wants a `'static` sink,
     // so the caller's closure lives behind a mutex and is invoked in place.
     let progress = Arc::new(std::sync::Mutex::new(progress));
@@ -66,6 +76,7 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
 
     let tools = probe::find_ffmpeg().context("ffmpeg discovery failed")?;
     report(IngestProgress::Tools(tools.clone()));
+    report(IngestProgress::Model(model.model));
     report(IngestProgress::Probing);
     let info = probe::probe(&tools, input).context("probe failed")?;
     if !info.has_audio {
@@ -77,13 +88,14 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
     report(IngestProgress::Probed(info.clone()));
 
     if !no_cache {
-        if let Some(cached) = transcribe::load_cached(input) {
+        if let Some(cached) = transcribe::load_cached(input, model.model) {
             report(IngestProgress::Cached(cached.len()));
             return Ok(Ingest {
                 tools,
                 info,
                 words: cached,
                 from_cache: true,
+                model: model.model,
             });
         }
     }
@@ -96,10 +108,11 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
     let samples = audio::read_pcm(&pcm_path).context("PCM read failed")?;
     let audio_secs = samples.len() as f64 / 16000.0;
 
-    let model = model::find_model().context("model discovery failed")?;
+    let kind = model.model;
+    let model_path = model.path.clone();
     let sink = Arc::clone(&progress);
     let t = Instant::now();
-    let words = transcribe::transcribe(&model, &samples, move |pct| {
+    let words = transcribe::transcribe(kind, &model_path, &samples, move |pct| {
         if let Ok(mut f) = sink.lock() {
             f(IngestProgress::Transcribing(pct));
         }
@@ -111,7 +124,7 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
         secs: elapsed,
         realtime_x: if elapsed > 0.0 { audio_secs / elapsed } else { 0.0 },
     });
-    if let Err(e) = transcribe::save_cache(input, &words) {
+    if let Err(e) = transcribe::save_cache(input, kind, &words) {
         eprintln!("(transcript cache write skipped: {e:#})");
     }
 
@@ -120,6 +133,7 @@ pub fn ingest(input: &Path, no_cache: bool, progress: Progress) -> Result<Ingest
         info,
         words,
         from_cache: false,
+        model: kind,
     })
 }
 

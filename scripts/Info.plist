@@ -12,6 +12,8 @@
     <string>texxy</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleShortVersionString</key>
@@ -25,7 +27,7 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
     <key>NSHumanReadableCopyright</key>
-    <string>texxy - offline karaoke caption burner</string>
+    <string>Copyright © 2026 Paul Buitenhuis — MIT licensed. https://github.com/PaulBuitenhuis/texxy</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

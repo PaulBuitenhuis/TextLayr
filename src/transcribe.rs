@@ -7,6 +7,8 @@ use whisper_rs::{
     WhisperContextParameters,
 };
 
+use crate::model::Model;
+
 /// A single transcribed word with word-level timing (seconds).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Word {
@@ -16,14 +18,16 @@ pub struct Word {
 }
 
 /// Transcribe a 16 kHz mono f32le PCM blob into word-level timings using
-/// whisper.cpp (small.en). Returns words in chronological order with special
-/// tokens (timestamps, blanks, NOSPEECH) filtered out and subword tokens
-/// merged into whole words.
+/// whisper.cpp. `kind` selects the model (and therefore the DTW preset);
+/// `model` is the path to that model file. Returns words in chronological
+/// order with special tokens (timestamps, blanks, NOSPEECH) filtered out and
+/// subword tokens merged into whole words.
 ///
 /// `on_progress` receives 0..=1 as whisper advances (whisper reports whole
 /// percent on the inference thread; the sink must be `'static` because that's
 /// what the C callback API demands).
 pub fn transcribe(
+    kind: Model,
     model: &Path,
     samples: &[f32],
     on_progress: impl Fn(f32) + Send + 'static,
@@ -38,11 +42,15 @@ pub fn transcribe(
     // DTW token-level timestamps give accurate per-word timings (the plain
     // token timestamps collapse many words onto the same boundary). DTW runs
     // on CPU/GPU after decode and is well worth the extra compute for karaoke
-    // sync. Use the preset for the small English model.
+    // sync. The preset must match the model that's actually loaded.
+    let preset = match kind {
+        Model::BaseEn => DtwModelPreset::BaseEn,
+        Model::SmallEn => DtwModelPreset::SmallEn,
+    };
     let mut ctx_params = WhisperContextParameters::new();
     ctx_params.dtw_parameters(DtwParameters {
         mode: DtwMode::ModelPreset {
-            model_preset: DtwModelPreset::SmallEn,
+            model_preset: preset,
         },
         dtw_mem_size: 1024 * 1024 * 128,
     });
@@ -200,13 +208,14 @@ fn num_cpus() -> std::ffi::c_int {
 // ---------------------------------------------------------------------------
 // Transcript cache
 //
-// whisper small.en costs minutes per run on this machine, so word timings are
-// cached per input file (keyed on path + size + mtime) in the platform cache
-// dir. Rendering/export iterations then start instantly.
+// whisper costs minutes per run, so word timings are cached per input file
+// (keyed on path + size + mtime *and the model*, so switching models never
+// reuses timings produced by a different one) in the platform cache dir.
+// Rendering/export iterations then start instantly.
 // ---------------------------------------------------------------------------
 
 /// Cache file for `input`, if it can be keyed and the cache dir exists.
-pub fn cache_path(input: &Path) -> Option<PathBuf> {
+pub fn cache_path(input: &Path, kind: Model) -> Option<PathBuf> {
     let meta = std::fs::metadata(input).ok()?;
     let len = meta.len();
     let mtime = meta
@@ -221,21 +230,22 @@ pub fn cache_path(input: &Path) -> Option<PathBuf> {
     input.to_string_lossy().hash(&mut h);
     len.hash(&mut h);
     mtime.hash(&mut h);
+    kind.id().hash(&mut h);
 
     let dir = dirs::cache_dir()?.join("texxy");
     Some(dir.join(format!("{:016x}.json", h.finish())))
 }
 
 /// Load a cached transcript for `input`, if present and parseable.
-pub fn load_cached(input: &Path) -> Option<Vec<Word>> {
-    let path = cache_path(input)?;
+pub fn load_cached(input: &Path, kind: Model) -> Option<Vec<Word>> {
+    let path = cache_path(input, kind)?;
     let bytes = std::fs::read(&path).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
 /// Persist a transcript. Best-effort: callers log and continue on error.
-pub fn save_cache(input: &Path, words: &[Word]) -> Result<()> {
-    let path = cache_path(input).context("cannot derive cache path")?;
+pub fn save_cache(input: &Path, kind: Model, words: &[Word]) -> Result<()> {
+    let path = cache_path(input, kind).context("cannot derive cache path")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;

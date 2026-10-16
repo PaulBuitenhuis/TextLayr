@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 #
-# Build a self-contained texxy.app for macOS (Apple Silicon / Intel).
+# Build a self-contained texxy.app for macOS (Apple Silicon).
 #
-# The bundle is fully offline: the release binary plus ffmpeg, ffprobe, the
-# whisper model and the caption fonts all live under Contents/Resources, which
-# is exactly where src/probe.rs, src/model.rs and src/config.rs look first.
+# The bundle contains the release binary and the caption fonts. It does NOT
+# contain ffmpeg/ffprobe or the whisper model: on first run texxy downloads
+# those into ~/Library/Application Support/texxy/ (see the setup screen, or
+# `texxy --setup`).
+#
+# Output:
+#   dist/texxy.app
+#   dist/texxy-<version>.zip      (zip of the .app)
+#   dist/texxy-<version>.dmg      (drag-to-Applications disk image)
 #
 # Usage:
 #   scripts/package_macos.sh
 #
 # Inputs (each can be overridden by an environment variable):
-#   TEXXY_FFMPEG_DIR  directory holding the ffmpeg + ffprobe to bundle
-#                     (default: vendor/macos/, then $PATH)
-#   TEXXY_MODEL       path to ggml-small.en.bin
-#                     (default: models/ggml-small.en.bin)
-#   TEXXY_VERSION     CFBundle version string (default: `git describe` or 0.1.0)
-#   CODESIGN_IDENTITY codesign identity; "-" = ad-hoc (default). Set to a
-#                     Developer ID to ship outside this machine.
-#
-# Output: dist/texxy.app
+#   TEXXY_VERSION     version string (default: `git describe --tags`, else the
+#                     version in Cargo.toml)
+#   CODESIGN_IDENTITY codesign identity; "-" = ad-hoc (default). texxy is not
+#                     notarized, so a distributed build needs Right click > Open
+#                     (or `xattr -dr com.apple.quarantine`) on first launch.
+#   SKIP_ARCHIVES=1   build only dist/texxy.app (no zip/dmg)
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,6 +29,7 @@ cd "$repo_root"
 
 app="$repo_root/dist/texxy.app"
 contents="$app/Contents"
+dist="$repo_root/dist"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -38,63 +42,65 @@ binary="$repo_root/target/release/texxy"
 [[ -x "$binary" ]] || die "release binary not found at $binary"
 
 # ── 2. locate the pieces to bundle ──────────────────────────────────────────
-find_tool() {  # find_tool <name>
-    local name="$1"
-    if [[ -n "${TEXXY_FFMPEG_DIR:-}" ]]; then
-        [[ -f "$TEXXY_FFMPEG_DIR/$name" ]] || die "$TEXXY_FFMPEG_DIR/$name not found"
-        echo "$TEXXY_FFMPEG_DIR/$name"
-    elif [[ -f "$repo_root/vendor/macos/$name" ]]; then
-        echo "$repo_root/vendor/macos/$name"
-    elif command -v "$name" >/dev/null 2>&1; then
-        command -v "$name"
-    else
-        die "$name not found. Put a static build in vendor/macos/ (or set TEXXY_FFMPEG_DIR), or brew install ffmpeg."
-    fi
-}
-ffmpeg_src="$(find_tool ffmpeg)"
-ffprobe_src="$(find_tool ffprobe)"
-
-model_src="${TEXXY_MODEL:-$repo_root/models/ggml-small.en.bin}"
-[[ -f "$model_src" ]] || die "whisper model not found at $model_src — run scripts/fetch_model.sh or set TEXXY_MODEL"
-
 fonts_src="$repo_root/assets/fonts"
 [[ -d "$fonts_src" ]] || die "bundled fonts not found at $fonts_src"
 
 version="${TEXXY_VERSION:-}"
 if [[ -z "$version" ]]; then
-    version="$(git describe --tags --always 2>/dev/null || echo 0.1.0)"
+    version="$(git describe --tags --always 2>/dev/null || true)"
 fi
+if [[ -z "$version" ]]; then
+    version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+fi
+[[ -n "$version" ]] || die "could not determine a version (set TEXXY_VERSION)"
 
 # ── 3. assemble the bundle ──────────────────────────────────────────────────
 say "assembling $app"
 rm -rf "$app"
-mkdir -p "$contents/MacOS" "$contents/Resources/bin" "$contents/Resources/models" "$contents/Resources/assets/fonts"
+mkdir -p "$contents/MacOS" "$contents/Resources/assets/fonts"
 
 cp "$binary" "$contents/MacOS/texxy"
 chmod +x "$contents/MacOS/texxy"
 
-cp "$ffmpeg_src"  "$contents/Resources/bin/ffmpeg"
-cp "$ffprobe_src" "$contents/Resources/bin/ffprobe"
-chmod +x "$contents/Resources/bin/ffmpeg" "$contents/Resources/bin/ffprobe"
-
-cp "$model_src" "$contents/Resources/models/ggml-small.en.bin"
+# Fonts plus their OFL license (the license must travel with the fonts).
 cp "$fonts_src"/*.ttf "$contents/Resources/assets/fonts/"
+[[ -f "$fonts_src/OFL.txt" ]] && cp "$fonts_src/OFL.txt" "$contents/Resources/assets/fonts/"
+
+# Application icon.
+icon="$repo_root/assets/AppIcon.icns"
+[[ -f "$icon" ]] || die "app icon not found at $icon (run scripts/make_icon.py)"
+cp "$icon" "$contents/Resources/AppIcon.icns"
 
 sed "s/__VERSION__/$version/g" "$repo_root/scripts/Info.plist" > "$contents/Info.plist"
 
 # ── 4. codesign ─────────────────────────────────────────────────────────────
 identity="${CODESIGN_IDENTITY:--}"
 say "codesigning (identity: $identity)"
-codesign --force --sign "$identity" "$contents/Resources/bin/ffmpeg"
-codesign --force --sign "$identity" "$contents/Resources/bin/ffprobe"
 codesign --force --deep --sign "$identity" "$app"
 codesign --verify --deep --strict "$app" || die "codesign verification failed"
 
-# ── 5. report ───────────────────────────────────────────────────────────────
+# ── 5. archives ─────────────────────────────────────────────────────────────
+if [[ "${SKIP_ARCHIVES:-0}" != "1" ]]; then
+    zip_path="$dist/texxy-$version.zip"
+    dmg_path="$dist/texxy-$version.dmg"
+    say "archiving $zip_path"
+    rm -f "$zip_path"
+    ditto -c -k --keepParent "$app" "$zip_path"
+
+    say "building $dmg_path"
+    rm -f "$dmg_path"
+    "$repo_root/scripts/make_dmg.sh" "$app" "$version" "$dmg_path"
+fi
+
+# ── 6. report ───────────────────────────────────────────────────────────────
 size="$(du -sh "$app" | cut -f1)"
 say "done: $app ($size, version $version)"
 echo
 echo "Run it:            open \"$app\""
 echo "Drag a video onto the window (or, from a terminal, add a path as argv[1])."
-echo "First launch of an ad-hoc-signed app may need Right click > Open, or:"
-echo "  xattr -dr com.apple.quarantine \"$app\""
+echo "First run downloads ffmpeg + a whisper model (~190 MB) into:"
+echo "  ~/Library/Application Support/texxy/"
+echo "Prefer to do that headlessly?  \"$contents/MacOS/texxy\" --setup"
+echo
+echo "This build is ad-hoc signed and NOT notarized. On another Mac, first launch"
+echo "needs Right click > Open, or:  xattr -dr com.apple.quarantine \"$app\""

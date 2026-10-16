@@ -1,0 +1,51 @@
+name: Bug report
+description: Something went wrong while using texxy
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A few details make this much faster to fix.
+
+        Please run `texxy --version` (or copy the version + build from the
+        **About** window) and paste the result below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: I dropped a 1080x1920 MP4, pressed Export, and ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version + build
+      description: Output of `texxy --version`, or the version/build from the About window.
+      placeholder: texxy 0.1.0 (build abc1234)
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: macOS 15.1, Apple M2
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error text / logs
+      description: |
+        Any error banner or terminal output. If you ran the CLI, the full
+        stderr is ideal. Note that the export prints progress on stderr.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have run the first-run **Setup** (ffmpeg + a model downloaded).
+          required: false

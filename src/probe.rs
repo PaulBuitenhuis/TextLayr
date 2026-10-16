@@ -3,11 +3,16 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::paths;
+use crate::source::Source;
+
 /// Where we found ffmpeg/ffprobe. Populated once at startup.
 #[derive(Debug, Clone)]
 pub struct Fftools {
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
+    /// Where the pair came from (bundled / downloaded / system / dev).
+    pub source: Source,
 }
 
 /// A probed video's essential properties, with rotation already applied so
@@ -33,16 +38,21 @@ pub struct VideoInfo {
     pub color_transfer: String,
 }
 
-/// Locate ffmpeg and ffprobe. Order: bundled Resources/bin -> vendor/<platform> -> PATH.
+/// Locate ffmpeg and ffprobe. Order: bundled Resources/bin -> downloaded
+/// (app data dir) -> vendor/<platform> (dev) -> PATH.
 pub fn find_ffmpeg() -> Result<Fftools> {
     let exe = std::env::current_exe().context("cannot locate current executable")?;
     let exe_dir = exe.parent().unwrap_or(Path::new("."));
 
-    // Candidate dirs, most specific first.
-    let mut dirs: Vec<PathBuf> = Vec::new();
+    // Candidate dirs, most specific first, each tagged with where it came from.
+    let mut dirs: Vec<(PathBuf, Source)> = Vec::new();
     // Bundled .app: Contents/Resources/bin (exe lives in Contents/MacOS).
     if let Some(resources) = exe_dir.parent().map(|d| d.join("Resources").join("bin")) {
-        dirs.push(resources);
+        dirs.push((resources, Source::Bundled));
+    }
+    // Downloaded by texxy on first run.
+    if let Some(bin) = paths::bin_dir() {
+        dirs.push((bin, Source::Downloaded));
     }
     // Repo layout: <crate>/vendor/<platform>
     let platform = if cfg!(target_os = "macos") {
@@ -55,7 +65,7 @@ pub fn find_ffmpeg() -> Result<Fftools> {
     // Walk up from the exe dir looking for a vendor folder (handles target/debug).
     let mut cur = exe_dir.to_path_buf();
     for _ in 0..5 {
-        dirs.push(cur.join("vendor").join(platform));
+        dirs.push((cur.join("vendor").join(platform), Source::Dev));
         if let Some(parent) = cur.parent() {
             cur = parent.to_path_buf();
         } else {
@@ -63,39 +73,66 @@ pub fn find_ffmpeg() -> Result<Fftools> {
         }
     }
 
-    let mut ffmpeg = None;
-    let mut ffprobe = None;
-    for d in &dirs {
+    let mut ffmpeg: Option<(PathBuf, Source)> = None;
+    let mut ffprobe: Option<(PathBuf, Source)> = None;
+    for (d, source) in &dirs {
         let f = d.join("ffmpeg");
         let p = d.join("ffprobe");
         if ffmpeg.is_none() && f.is_file() {
-            ffmpeg = Some(f);
+            ffmpeg = Some((f, *source));
         }
         if ffprobe.is_none() && p.is_file() {
-            ffprobe = Some(p);
+            ffprobe = Some((p, *source));
         }
         if ffmpeg.is_some() && ffprobe.is_some() {
             break;
         }
     }
 
-    // Fall back to PATH.
+    // Fall back to PATH (system-provided).
     if ffmpeg.is_none() {
-        ffmpeg = which("ffmpeg");
+        ffmpeg = which("ffmpeg").map(|p| (p, Source::System));
     }
     if ffprobe.is_none() {
-        ffprobe = which("ffprobe");
+        ffprobe = which("ffprobe").map(|p| (p, Source::System));
     }
 
-    let (Some(ffmpeg), Some(ffprobe)) = (ffmpeg, ffprobe) else {
+    let (Some((ffmpeg, ffmpeg_src)), Some((ffprobe, ffprobe_src))) = (ffmpeg, ffprobe) else {
         bail!(
             "ffmpeg/ffprobe not found. Bundle them in the app's Resources/bin, \
-             place them in vendor/{}/, or install them on your PATH.",
+             place them in vendor/{}/, install them on your PATH, or use the \
+             Setup screen to download them.",
             platform
         );
     };
 
-    Ok(Fftools { ffmpeg, ffprobe })
+    // Report the "weakest" provenance if the two disagree (e.g. bundled ffmpeg
+    // but a PATH ffprobe), so the About window never overstates self-containment.
+    let source = weaker(ffmpeg_src, ffprobe_src);
+
+    Ok(Fftools {
+        ffmpeg,
+        ffprobe,
+        source,
+    })
+}
+
+/// Rank provenance so a mixed pair reports the least self-contained source.
+fn weaker(a: Source, b: Source) -> Source {
+    fn rank(s: Source) -> u8 {
+        match s {
+            Source::Bundled => 0,
+            Source::Downloaded => 1,
+            Source::Dev => 2,
+            Source::Env => 3,
+            Source::System => 4,
+        }
+    }
+    if rank(a) >= rank(b) {
+        a
+    } else {
+        b
+    }
 }
 
 fn which(bin: &str) -> Option<PathBuf> {

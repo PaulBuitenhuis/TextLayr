@@ -1,245 +1,141 @@
-# texxy
+<p align="center">
+  <img src="assets/icon.png" width="120" alt="texxy">
+</p>
 
-Offline karaoke caption burner for short-form video. Drop in a video, review
-the transcript, export a new video with word-synced popup captions baked in.
+<p align="center">
+  <b>Offline karaoke caption burner for short-form video.</b><br>
+  Drop in a video, review the transcript, and export with word-synced popup captions baked in.<br>
+  No uploads, no accounts, no network after the one-time setup download.
+</p>
 
-**Design & plan:** see [DESIGN.md](./DESIGN.md).
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black.svg" alt="Platform: macOS (Apple Silicon)">
+  <a href="https://github.com/PaulBuitenhuis/texxy/actions/workflows/ci.yml"><img src="https://github.com/PaulBuitenhuis/texxy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
-**Status:** Milestone 4 (polish). Drop a video in the GUI, review the
-transcript, export with the button or **Ctrl+E**; every stage is also available
-headlessly. Style preferences persist between runs, a startup check reports any
-missing dependency (ffmpeg/ffprobe, model, fonts) instead of failing mid-export,
-and `scripts/package_macos.sh` builds a self-contained `texxy.app`.
+<p align="center">
+  <img src="docs/screenshots/overview.jpg" width="860" alt="texxy review screen: (1) live preview, (2) editable transcript, (3) caption styling, (4) fast local export">
+</p>
+
+## What it does
+
+- **Word-synced "popup" captions.** A few words on screen at a time, with the
+  spoken word lit up — the style popular on Reels/TikTok/Shorts.
+- **Whisper transcription, offline.** Speech-to-text runs locally on your Mac
+  via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with DTW word
+  timings for tight sync.
+- **Review before you burn.** Edit the transcript, tweak the style, and see a
+  live preview before exporting.
+- **All the caption styling you'd expect.** Font family, size, highlight/dim
+  colours, box colour/opacity, rounded corners, drop shadow, vertical position
+  and words-per-popup. Preferences persist between runs.
+- **Also a CLI.** The same pipeline is available headlessly for scripting.
 
 ## Requirements
 
-| Tool | Why | Notes |
-|---|---|---|
-| Rust (stable) | build | via `rustup` |
-| `clang` | builds whisper.cpp | present on Omarchy |
-| `make`, `g++` | C/C++ build | present |
-| `cmake` | whisper-rs builds whisper.cpp | see setup below if not on PATH |
-| `ffmpeg` + `ffprobe` | probe, audio extract, compositing, encode | system install is fine in dev |
+- macOS on Apple Silicon (arm64). (The code also runs on Linux for development;
+  release builds target macOS.)
+- `ffmpeg` + `ffprobe` and a whisper model — texxy downloads these on first run,
+  or uses ones you already have.
 
-## One-time setup
+## Install
 
-1. **Toolchain** (if missing):
-   ```sh
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-   ```
-2. **cmake** — if not installed system-wide and you lack sudo, drop a standalone
-   build somewhere on your `PATH` (e.g. `~/.local/bin`), including its `share/`
-   directory (e.g. `~/.local/share/cmake-<version>`), or install via your distro.
-3. **Model** — download once into `models/`:
-   ```sh
-   scripts/fetch_model.sh
-   ```
-   (~465 MB, English-optimized, offline thereafter. Overridable with
-   `$TEXXY_MODEL`; the script also takes an optional destination path.)
-4. **Fonts** — already bundled in `assets/fonts/` (OFL-licensed, ~1 MB):
-   Inter, Nunito, Libre Baskerville, each in Regular + Bold. To re-fetch:
-   ```sh
-   cd assets/fonts
-   for fam in "Inter:Inter" "Nunito:Nunito" "Libre+Baskerville:LibreBaskerville"; do
-     q="${fam%:*}"; n="${fam##*:}"; i=0
-     for u in $(curl -s "https://fonts.googleapis.com/css2?family=$q" | grep -oE 'https://[^)]+\.ttf'); do
-       [ $i -eq 0 ] && w=Regular || w=Bold
-       curl -sSL -o "$n-$w.ttf" "$u"; i=$((i+1))
-     done
-   done
-   ```
-   (Google Fonts' CSS API returns static TrueType when called without a
-   browser User-Agent.)
+Download the latest `texxy-<version>.dmg` from
+[Releases](https://github.com/PaulBuitenhuis/texxy/releases), open it, and drag
+**texxy** into **Applications**.
 
-## Build & run
+texxy is **not notarized** (no Apple Developer ID), so the very first launch
+needs a round trip through Gatekeeper:
 
-```sh
-cargo build --release
+1. **Right-click (or Control-click) the app → Open**, then confirm **Open**.
+   - or, in a terminal: `xattr -dr com.apple.quarantine /Applications/texxy.app`
 
-# macOS GUI: launch the *bundle*, not the raw binary. macOS runs a bare
-# executable it is asked to open through Terminal, which is why the binary
-# below pops a terminal window; the .app does not.
-scripts/package_macos.sh
-open dist/texxy.app          # or double-click dist/texxy.app in Finder
+After that it launches normally.
 
-# GUI from a terminal you already have open (fine on Linux too); drop zone,
-# or pre-loaded with a video as argv[1]
-./target/release/texxy
-./target/release/texxy "../samples/AI job search tips.mp4"
+### First run
 
-# headless (same pipeline; also selected automatically when --words, -o,
-# --png-dir, --graph, --encoder or a style flag is present — --gui forces GUI)
-./target/release/texxy "../samples/AI job search tips.mp4" --headless
-```
+The first time you open texxy it shows a **Setup** screen. It downloads:
 
-Pipeline: `ffprobe` (display dims + rotation, color tags) → ffmpeg audio
-extract (16 kHz mono f32le) → whisper transcription with DTW word timings
-(cached) → chunking → caption state PNGs → export: ffmpeg decode → Rust
-compositing of the state PNGs → ffmpeg encode → `AI job search tips_karaoke.mp4`
-(VAAPI H.264 by default, x264 `-crf 18` fallback, audio copied).
+- `ffmpeg` + `ffprobe` (unless it finds them on your `PATH`, e.g. via Homebrew)
+- a whisper model — **base.en** by default (~148 MB, fast); **small.en**
+  (~488 MB, more accurate) is selectable on the same screen.
+
+These are stored in `~/Library/Application Support/texxy/` — nothing else on
+your machine is touched. From then on texxy is fully offline.
+
+You can manage models from the **About** window: switch between installed ones,
+download the other, or remove one texxy downloaded (a dev-checkout or
+`$TEXXY_MODEL` model is never deleted).
+
+Prefer the terminal? `texxy --setup` does the same thing.
+
+## Using the app
+
+1. **Drop a video** (or pass a path on the command line).
+2. Wait while it extracts audio and transcribes. Progress is shown per phase.
+3. **Review** the transcript: click a chunk to jump the preview to it, edit any
+   text, and adjust the style panel on the right.
+4. **Export** (button or **⌘E**). The result is written next to the input as
+   `<name>_karaoke.mp4`, with a **Reveal in Finder** shortcut when it's done.
+
+A transcript is cached per input file (and per model), so re-rendering or
+restyling after the first pass is instant.
+
+## Command line
 
 ```sh
-texxy <video> [--words] [--no-cache] [-o out.mp4] [--png-dir dir]
-        [--font <family>] [--font-size <pct>] [--position <pct>] [--words-per <n>]
-        [--encoder auto|vaapi|videotoolbox|x264] [--graph] [--headless] [--gui]
+texxy                                    # open the GUI
+texxy video.mp4                          # GUI, pre-loaded with a video
+texxy video.mp4 --headless               # run the whole pipeline, no GUI
+texxy video.mp4 --words                  # print the (word, start, end) table and stop
+texxy --setup                            # download ffmpeg + model, then exit
+texxy --version                          # version + build hash
 ```
 
 | Option | Effect |
 |---|---|
-| `--words` | Milestone 1 behavior: print the `(start, end, word)` table and stop |
-| `--no-cache` | Ignore the cached transcript and re-transcribe |
-| `-o, --output` | Output path (default: `<input>_karaoke.mp4` next to the input) |
-| `--png-dir` | Render caption states + `filter_complex.txt` + `states.txt`, skip encoding |
-| `--font` | `Libre Baskerville` (default) · `Inter` · `Nunito` |
-| `--font-size` | Glyph size as % of frame height (default 3.4) |
-| `--position` | Caption box center as % of frame height (default 72) |
-| `--words-per` | Words per popup, 2–6 (default 3) |
-| `--encoder` | `auto` (default: VAAPI if `/dev/dri/renderD128` works, else VideoToolbox on macOS, else x264) · `vaapi` · `videotoolbox` (macOS; bitrate, limited-range) · `x264` (crf, exact range) |
-| `--graph` | Export via the M2 overlay-filter graph instead of the frame pipe (≈4.2 GB ffmpeg RAM) |
 | `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
+| `--words` | Print the word-timing table and stop |
+| `--no-cache` | Ignore the cached transcript and re-transcribe |
+| `-o, --output <path>` | Output path (default `<input>_karaoke.mp4`) |
+| `--model <base.en\|small.en>` | Whisper model to use |
+| `--png-dir <dir>` | Render caption states + filter script, skip encoding |
+| `--font <family>` | `Libre Baskerville` (default) · `Inter` · `Nunito` |
+| `--font-size <pct>` | Glyph size as % of frame height (default 3.4) |
+| `--position <pct>` | Caption box centre as % of frame height (default 72) |
+| `--words-per <n>` | Words per popup, 2–6 (default 3) |
+| `--encoder <name>` | `auto` (default) · `vaapi` · `videotoolbox` · `x264` |
+| `--graph` | Legacy overlay-graph encoder (higher RAM) |
+| `--setup` | Download missing dependencies and exit |
+| `-V, --version` | Print the version and build hash |
 
-Suppress progress on stderr, keep the table on stdout:
+## Building from source
 
-```sh
-./target/debug/texxy video.mp4 --words 2>/dev/null
-```
-
-## Packaging for macOS
-
-`scripts/package_macos.sh` builds a fully offline `dist/texxy.app`: the release
-binary plus ffmpeg, ffprobe, the whisper model and the fonts, all under
-`Contents/Resources/` (exactly where `probe.rs`/`model.rs`/`config.rs` look
-first).
-
-```sh
-scripts/fetch_model.sh        # once, if models/ is empty
-scripts/package_macos.sh      # -> dist/texxy.app
-open dist/texxy.app
-```
-
-| Env var | Purpose |
-|---|---|
-| `TEXXY_FFMPEG_DIR` | directory holding the `ffmpeg`/`ffprobe` to bundle (default: `vendor/macos/`, then `$PATH`) |
-| `TEXXY_MODEL` | model to bundle (default: `models/ggml-small.en.bin`) |
-| `TEXXY_VERSION` | `CFBundle` version string (default: `git describe`, else `0.1.0`) |
-| `CODESIGN_IDENTITY` | codesign identity; `-` (default) is ad-hoc |
-
-For a redistributable build, drop a static arm64 `ffmpeg` + `ffprobe` into
-`vendor/macos/` (e.g. from <https://evermeet.cx/ffmpeg/>); a Homebrew ffmpeg
-works too but pulls in more dylibs. The bundle is ad-hoc signed by default, so
-the first launch may need **Right click → Open**, or:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer setup (Rust,
+cmake/clang for whisper.cpp, and packaging). In short:
 
 ```sh
-xattr -dr com.apple.quarantine dist/texxy.app
+cargo build --release          # -> target/release/texxy
+scripts/package_macos.sh       # -> dist/texxy.app (+ .zip, .dmg)
 ```
 
-To ship beyond this machine, set `CODESIGN_IDENTITY` to a Developer ID and
-notarize.
+## How it works
 
-## Development notes
+`ffprobe` (display dimensions + rotation) → audio extract → whisper
+transcription with DTW word timings → chunking into popups → per-word caption
+PNGs → export: ffmpeg decode → Rust compositing → hardware encode
+(VideoToolbox on macOS; x264 fallback), audio copied.
 
-- **Vendored `whisper-rs-sys` patch.** Upstream `whisper-rs-sys` regenerates
-  bindgen bindings at build time; on this glibc that emits a `_IO_FILE` layout
-  assertion that fails to compile, and an opaque `whisper_full_params`. We vendor
-  a copy under `vendor/patch/whisper-rs-sys` (wired via `[patch.crates-io]`) that
-  uses the crate's prebuilt bindings and strips their compile-time layout tests.
-  Remove the patch once upstream ships a fix.
-- **DTW word timings.** Plain whisper token timestamps collapse several words onto
-  one boundary. We enable DTW (`DtwMode::ModelPreset::SmallEn`) on the context for
-  accurate per-word timings, plus a normalization pass that spreads any remaining
-  identical-timestamp clusters evenly and enforces a minimum word duration.
-- **whisper C logging** is redirected away from stdout via
-  `whisper_rs::install_logging_hooks()` (no log backend → logs dropped).
-- **Transcript cache.** whisper small.en costs ~6 min on the 222 s sample here, so
-  word timings are cached as JSON in the platform cache dir
-  (`~/.cache/texxy/<hash>.json`), keyed on input path + size + mtime. Every render
-  or style iteration then starts instantly. `--no-cache` forces a re-transcription.
-- **Caption states, not subtitles.** Each chunk of N words is rendered once per
-  highlighted word ("state") — a small RGBA PNG of just the caption box, with a
-  transparent surround. ffmpeg composites each state only during its word's
-  `enable='gte(t,a)*lt(t,b)'` window. Tight crops keep ~750 states at ~300 KB
-  instead of ~8 MB each (a full-frame approach would need ~4.5 GB of RSS).
-- **Still-image inputs, never `-loop`.** A looping image input would re-decode the
-  PNG for every frame; a plain `-i state.png` decodes once and the overlay repeats
-  it (`eof_action=repeat`).
-- **Minimum highlight windows.** Whisper's word starts can land 20 ms apart;
-  `Chunk::state_windows()` forces windows to be monotonic with a ≥0.1 s step that
-  tiles the chunk's span, so a highlight can't flash for two frames.
-- **ffmpeg 8/9 dropped `-filter_complex_script`.** It was replaced by the generic
-  "option value from file" syntax `-/filter_complex <file>`. `export.rs` probes
-  `ffmpeg -h full` once and uses whichever spelling the installed build accepts
-  (graph path; only reachable via `--graph` now).
-- **Graph RAM bomb → frame pipe is the default.** The M2 overlay graph passes
-  every state as its own ffmpeg input: 754 inputs cost **4.19 GB ffmpeg RSS**,
-  which swaps an 8 GB machine to death. `export.rs::export_pipe` instead runs
-  ffmpeg decoder → Rust `blend_straight` (lazy 1-entry state-PNG cache) →
-  encoder stdin: **453 MB** peak ffmpeg + ~24 MB texxy on the sample.
-  `--graph` keeps the old path.
-- **VAAPI by default.** `Encoder::Auto` probes `/dev/dri/renderD128` once;
-  `h264_vaapi` exports the sample in ~154 s at ~450 MB RSS vs ~1057 s at ~1 GB
-  for x264 `-crf 18`. Probe color tags are forwarded so the output matches the
-  graph path's tags (`yuvj420p/pc/bt709`).
-- **VideoToolbox on macOS.** `h264_videotoolbox` is rate-controlled by bitrate
-  (scaled to resolution × fps) rather than crf, and can only encode
-  limited-range `yuv420p` — ffmpeg rejects `yuv420p` + range `pc` — so its
-  output is always limited/tv even from a full-range source. `Auto` prefers it
-  on macOS (VAAPI first on Linux, x264 otherwise); pass `--encoder x264` for
-  the crf-based encode that preserves the source's range exactly. Measured on
-  an M-series Mac (222 s sample, 1080×1920): **37.7 s** with VideoToolbox vs
-  **162 s** with x264 (~4.3× faster). A failed hardware probe falls back to
-  x264 rather than erroring, for every `Encoder`.
-- **Preview scales like the export.** The preview renders the caption crop at
-  full source resolution (same `render_state_rgba` + placement math as the
-  export) and then scales it by the *same* factor the frame was downscaled by.
-  It must **not** resize the crop to the preview's full width, or captions
-  appear far larger in the preview than in the burned-in video. A test
-  (`ui/preview.rs`) composites a synthetic frame and asserts the caption's
-  width/height fraction matches the export's, so this can't regress.
-- **The build is stamped.** `build.rs` embeds the short git hash; the window
-  title shows `texxy <hash>` and the home screen keeps a faint `build <hash>`
-  in its bottom-right corner — so it's obvious which revision is running
-  (useful when checking whether a rebuild actually took effect).
-- **One theme module drives the look.** `ui/theme.rs` sets the type scale,
-  spacing, corner radii, accent colour, control height and widget palette, and
-  provides the shared button/card builders. Screens use those instead of
-  picking their own sizes, which is what keeps buttons aligned and consistent.
-- **Style persistence (M4).** The review style autosaves to
-  `~/Library/Application Support/texxy/config.json` (macOS) /
-  `~/.config/texxy/config.json` (Linux) ~0.4 s after it stops changing, written
-  atomically (temp + rename). Loaded at startup and on "Change video"; a
-  **Reset to defaults** button in the style panel. The CLI never reads it, so
-  headless runs stay deterministic. A field missing from the file falls back to
-  its default and out-of-range values are `sanitize()`d.
-- **Startup preflight (M4).** `deps::Check::run()` locates ffmpeg/ffprobe,
-  the model and the fonts up front. The GUI shows a "Setup required" screen
-  with per-item fix instructions and a **Re-check** button; the CLI prints one
-  consolidated error and exits before starting any work.
-- **Pipe re-timing uses `avg_frame_rate`, not `r_frame_rate`.** They coincide
-  for most CFR files, but the sample's `r_frame_rate` (179/6) is 0.08% off —
-  enough to drift video vs audio by ~0.2 s over 222 s. True VFR input would
-  need per-frame PTS handling (known limitation).
+Caption states are tight crops of just the caption box, so a few hundred of them
+stay small and the export's memory stays flat. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the deeper design notes.
 
-## Layout
+## License
 
-```
-src/
-  main.rs        arg parsing + headless CLI: probe → transcribe → chunk → render → export
-  pipeline.rs    shared orchestration (ingest + export) for CLI and GUI
-  probe.rs       ffprobe wrapper (rotation-aware display dims, color tags) + ffmpeg discovery
-  audio.rs       16 kHz mono f32le extraction + PCM read
-  transcribe.rs  whisper transcription, word merge, timing normalization, cache
-  model.rs       whisper model discovery
-  chunk.rs       word grouping into caption chunks + highlight windows
-  config.rs      Style struct (fonts, colors, sizes), font discovery, config persistence
-  deps.rs        startup dependency check (ffmpeg/model/fonts) + fix instructions
-  render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
-  export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
-  ui/            egui app: drop, ingest, review (preview/editor/style), export, done
-    theme.rs     macOS-flavoured style + shared button/card builders
-    preview.rs   live composited preview (same renderer as the export)
-assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
-models/          ggml-small.en.bin (downloaded, not committed)
-scripts/         fetch_model.sh + package_macos.sh (+ Info.plist)
-vendor/          static ffmpeg (macOS) + whisper-rs-sys patch
-DESIGN.md        full design & implementation plan
-```
+[MIT](LICENSE). Bundled fonts are under the SIL Open Font License — see
+[`assets/fonts/OFL.txt`](assets/fonts/OFL.txt) and
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+texxy invokes `ffmpeg`/`ffprobe` and the whisper model as separate programs; it
+does not link them, and they are not distributed with texxy.

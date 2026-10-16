@@ -84,7 +84,7 @@ const PROBE_DESC: &str = "gjpqyQ";
 
 impl Faces {
     pub fn load(style: &Style, px: f32) -> Result<Faces> {
-        let dir = config::find_fonts_dir()?;
+        let (dir, _) = config::find_fonts_dir()?;
         let (regular_path, bold_path) = config::font_paths(&dir, &style.font_family)?;
         let regular = fontdue::Font::from_bytes(
             config::load_font_bytes(&regular_path)?,
