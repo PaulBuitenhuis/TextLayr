@@ -3,6 +3,8 @@
 
 Produces:
   assets/icon.png     1024x1024 wordmark, used at runtime for the dock icon
+  assets/icon-mark.png  1024x1024 "T" monogram, for places too small to read
+                        the wordmark (favicons, site header/footer)
   assets/AppIcon.icns macOS bundle icon (referenced by Info.plist)
   assets/banner-{dark,light}.png  transparent wordmark lockup for the app
                                    header and the README (white ink for dark
@@ -15,6 +17,13 @@ the "y" ending on the bar's bottom edge — the karaoke highlight made a logo.
 The .icns is **adaptive**: the 16px and 32px slots hold a simplified "t"
 monogram instead of the wordmark, which is unreadable that small. (Finder and
 Dock use the per-size representation; only the runtime bitmap is fixed-size.)
+
+The same monogram is written to assets/icon-mark.png so that small placements —
+the site header and footer, and the favicon — can use it too.
+
+Note: the website keeps its own copies under docs/assets/ (icon.png, mark.png,
+banner-*.png, favicon.png). Re-run this script and copy them over after
+changing the mark:
 
 Requires Pillow + numpy, and macOS `iconutil` for the .icns step:
 
@@ -220,6 +229,14 @@ def main() -> int:
     wordmark.save(png)
     print(f"wrote {png.relative_to(ROOT)} ({png.stat().st_size // 1024} KiB)")
 
+    # Same monogram the .icns uses for its tiny slots, as a standalone asset so
+    # small placements (favicon, site header/footer) show a legible "T" instead
+    # of an unreadable smudge of the wordmark.
+    small = build_small()
+    mark_png = ASSETS / "icon-mark.png"
+    small.save(mark_png)
+    print(f"wrote {mark_png.relative_to(ROOT)} ({mark_png.stat().st_size // 1024} KiB)")
+
     for name, fg in (("banner-dark.png", WHITE), ("banner-light.png", DARK)):
         out = ASSETS / name
         build_banner(fg).save(out)
@@ -228,7 +245,7 @@ def main() -> int:
     if shutil.which("iconutil") is None:
         print("iconutil not found — skipping .icns (macOS only)", file=sys.stderr)
         return 0
-    write_icns(wordmark, build_small())
+    write_icns(wordmark, small)
     print(f"wrote {(ASSETS / 'AppIcon.icns').relative_to(ROOT)} (adaptive: T monogram at 16/32px)")
     return 0
 

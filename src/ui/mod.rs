@@ -22,6 +22,7 @@ use crate::install::{self, InstallProgress};
 use crate::model::{FoundModel, Model};
 use crate::pipeline::{self, ExportProgress, ExportSink, IngestProgress, Progress};
 use crate::source::Source;
+use crate::update;
 use preview::Frame;
 use review::{Action, ReviewState};
 
@@ -66,6 +67,26 @@ struct InstallStatus {
     progress: Option<f32>,
 }
 
+/// Where the app-update check/install currently stands.
+#[derive(Debug, Clone)]
+enum UpdateUi {
+    /// Not checked yet this session.
+    Unknown,
+    Checking,
+    UpToDate,
+    Available(update::Release),
+    Installing {
+        label: String,
+        /// `None` = indeterminate (extracting / validating).
+        progress: Option<f32>,
+    },
+    /// The bundle is about to be swapped; the app is closing to relaunch.
+    Ready,
+    /// Self-update wasn't possible; the installer was opened for a manual drag.
+    OpenedDmg,
+    Failed(String),
+}
+
 /// Messages from worker threads.
 enum Msg {
     Ingest(IngestProgress),
@@ -84,6 +105,15 @@ enum Msg {
     Install(InstallProgress),
     InstallOk,
     InstallErr(String),
+    /// Result of an update check; `manual` distinguishes a user-driven check
+    /// (whose failures are shown) from the silent launch check.
+    UpdateChecked {
+        result: Result<update::Release, String>,
+        manual: bool,
+    },
+    UpdateProgress(update::InstallProgress),
+    UpdateInstalled(update::InstallOutcome),
+    UpdateInstallErr(String),
 }
 
 pub struct App {
@@ -110,6 +140,12 @@ pub struct App {
     install_target: Option<Model>,
     /// A model the user has asked to remove, awaiting confirmation.
     pending_remove: Option<Model>,
+    /// App-update state (check / download / install).
+    update: UpdateUi,
+    /// Cancels the in-flight update check.
+    update_check_cancel: Option<Arc<AtomicBool>>,
+    /// Cancels the in-flight update download/install.
+    update_install_cancel: Option<Arc<AtomicBool>>,
     /// Whether the About window is showing.
     about_open: bool,
     /// Whether the open-source licenses window is showing.
@@ -171,6 +207,9 @@ impl App {
             install_cancel: None,
             install_target: None,
             pending_remove: None,
+            update: UpdateUi::Unknown,
+            update_check_cancel: None,
+            update_install_cancel: None,
             about_open: false,
             licenses_open: false,
             licenses_sel: 0,
@@ -235,13 +274,21 @@ impl App {
             .unwrap_or_else(|| self.saved_prefs.style.clone())
     }
 
+    /// The complete preferences to persist: live style/model plus the update
+    /// settings (which are changed directly on `saved_prefs`).
+    fn prefs_now(&self) -> config::Prefs {
+        config::Prefs {
+            style: self.current_style(),
+            model: self.model_pref,
+            auto_check_updates: self.saved_prefs.auto_check_updates,
+            last_update_check: self.saved_prefs.last_update_check,
+        }
+    }
+
     /// Persist preferences immediately — used when the model choice changes, so
     /// it sticks even if the app is quit before the debounce fires.
     fn persist_prefs(&mut self) {
-        let prefs = config::Prefs {
-            style: self.current_style(),
-            model: self.model_pref,
-        };
+        let prefs = self.prefs_now();
         self.saved_prefs = prefs.clone();
         self.prefs_save_at = None;
         if let Err(e) = config::save_prefs(&prefs) {
@@ -266,10 +313,7 @@ impl App {
         let now = Instant::now();
         let deadline = *self.prefs_save_at.get_or_insert(now + DEBOUNCE);
         if now >= deadline {
-            let prefs = config::Prefs {
-                style: self.current_style(),
-                model: self.model_pref,
-            };
+            let prefs = self.prefs_now();
             self.saved_prefs = prefs.clone();
             self.prefs_save_at = None;
             if let Err(e) = config::save_prefs(&prefs) {
@@ -315,6 +359,81 @@ impl App {
     /// Ask the in-flight install to stop.
     fn cancel_install(&mut self) {
         if let Some(cancel) = &self.install_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    // ── updates ───────────────────────────────────────────────────────────
+
+    /// Auto-check on launch when enabled and not checked in the last day.
+    fn maybe_auto_check_updates(&mut self) {
+        if !self.saved_prefs.auto_check_updates {
+            return;
+        }
+        if !matches!(self.update, UpdateUi::Unknown) {
+            return;
+        }
+        if let Some(last) = self.saved_prefs.last_update_check {
+            const A_DAY: u64 = 24 * 60 * 60;
+            if now_unix().saturating_sub(last) < A_DAY {
+                return;
+            }
+        }
+        self.start_update_check(false);
+    }
+
+    /// Ask GitHub for the newest release. `manual` checks surface failures and
+    /// ignore the throttle.
+    fn start_update_check(&mut self, manual: bool) {
+        if matches!(
+            self.update,
+            UpdateUi::Checking | UpdateUi::Installing { .. }
+        ) {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.update_check_cancel = Some(Arc::clone(&cancel));
+        self.update = UpdateUi::Checking;
+
+        let tx = self.tx.clone();
+        self.pending += 1;
+        std::thread::spawn(move || {
+            let result = update::fetch_latest(&cancel).map_err(|e| format!("{e:#}"));
+            let _ = tx.send(Msg::UpdateChecked { result, manual });
+        });
+    }
+
+    /// Download and install `release` on a worker thread.
+    fn start_update_install(&mut self, release: update::Release) {
+        if matches!(self.update, UpdateUi::Installing { .. }) {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.update_install_cancel = Some(Arc::clone(&cancel));
+        self.update = UpdateUi::Installing {
+            label: "starting…".into(),
+            progress: None,
+        };
+        self.error = None;
+
+        let tx = self.tx.clone();
+        let done_tx = tx.clone();
+        self.pending += 1;
+        std::thread::spawn(move || {
+            let mut sink: update::InstallSink = Box::new(move |p| {
+                let _ = tx.send(Msg::UpdateProgress(p));
+            });
+            let msg = match update::install(&release, &cancel, &mut sink) {
+                Ok(o) => Msg::UpdateInstalled(o),
+                Err(e) => Msg::UpdateInstallErr(format!("{e:#}")),
+            };
+            let _ = done_tx.send(msg);
+        });
+    }
+
+    /// Ask the in-flight update download/install to stop.
+    fn cancel_update_install(&mut self) {
+        if let Some(cancel) = &self.update_install_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -636,6 +755,86 @@ impl App {
                     self.error = Some(format!("install failed: {e}"));
                 }
             }
+            Msg::UpdateChecked { result, manual } => {
+                self.pending = self.pending.saturating_sub(1);
+                self.update_check_cancel = None;
+                // Record the attempt either way so the daily throttle holds
+                // even across a failed (e.g. offline) check.
+                self.saved_prefs.last_update_check = Some(now_unix());
+                self.persist_prefs();
+                match result {
+                    Ok(release) => {
+                        self.update = if update::forced()
+                            || update::is_newer(update::current_version(), &release.version)
+                        {
+                            UpdateUi::Available(release)
+                        } else {
+                            UpdateUi::UpToDate
+                        };
+                    }
+                    Err(e) => {
+                        self.update = if manual {
+                            UpdateUi::Failed(e)
+                        } else {
+                            // A silent check that can't reach the network just
+                            // leaves the app looking unchecked.
+                            UpdateUi::Unknown
+                        };
+                    }
+                }
+            }
+            Msg::UpdateProgress(p) => {
+                if let UpdateUi::Installing { label, progress } = &mut self.update {
+                    match p {
+                        update::InstallProgress::Downloading { got, total } => {
+                            *label = match total {
+                                Some(t) if t > 0 => format!(
+                                    "downloading TextLayr — {} of {}",
+                                    human_bytes(got),
+                                    human_bytes(t)
+                                ),
+                                _ => format!("downloading TextLayr — {}", human_bytes(got)),
+                            };
+                            *progress =
+                                total.filter(|t| *t > 0).map(|t| (got as f32 / t as f32).clamp(0.0, 1.0));
+                        }
+                        update::InstallProgress::Extracting => {
+                            *label = "extracting…".into();
+                            *progress = None;
+                        }
+                        update::InstallProgress::Validating => {
+                            *label = "checking the download…".into();
+                            *progress = None;
+                        }
+                        update::InstallProgress::Launching => {
+                            *label = "finishing up…".into();
+                            *progress = None;
+                        }
+                        update::InstallProgress::OpeningDmg => {
+                            *label = "opening the installer…".into();
+                            *progress = None;
+                        }
+                    }
+                }
+            }
+            Msg::UpdateInstalled(outcome) => {
+                self.pending = self.pending.saturating_sub(1);
+                self.update_install_cancel = None;
+                self.update = match outcome {
+                    update::InstallOutcome::SelfUpdate => UpdateUi::Ready,
+                    update::InstallOutcome::OpenedDmg => UpdateUi::OpenedDmg,
+                };
+            }
+            Msg::UpdateInstallErr(e) => {
+                self.pending = self.pending.saturating_sub(1);
+                self.update_install_cancel = None;
+                self.update = UpdateUi::Failed(format!("update failed: {e}"));
+                // Cancellation is a user action, not an error to shout about.
+                if !e.contains("cancelled") {
+                    eprintln!("      update failed: {e}");
+                    self.error = Some(format!("update failed: {e}"));
+                }
+            }
         }
     }
 
@@ -709,6 +908,11 @@ impl App {
                     self.reset_to_drop();
                 }
                 if theme::button(ui, "About").clicked() {
+                    self.about_open = true;
+                }
+                if matches!(&self.update, UpdateUi::Available(_))
+                    && theme::button(ui, "Update available").clicked()
+                {
                     self.about_open = true;
                 }
             });
@@ -985,6 +1189,14 @@ impl App {
         let mut open = true;
         let mut close = false;
         let mut open_licenses = false;
+        // Update controls are collected here and applied after the window
+        // closure, so the UI never re-enters `self` while it's borrowed.
+        let update_state = self.update.clone();
+        let auto_check = self.saved_prefs.auto_check_updates;
+        let mut check_updates = false;
+        let mut start_install_update: Option<update::Release> = None;
+        let mut cancel_install_update = false;
+        let mut set_auto_check: Option<bool> = None;
         egui::Window::new("About TextLayr")
             .open(&mut open)
             .collapsible(false)
@@ -1127,6 +1339,97 @@ impl App {
                 ui.separator();
                 ui.add_space(10.0);
 
+                // Updates: check for a newer release, download & install in
+                // place, and the auto-check preference. Actions are recorded
+                // here and applied after the window closure.
+                ui.label(egui::RichText::new("Updates").strong());
+                ui.add_space(4.0);
+                match &update_state {
+                    UpdateUi::Unknown => {
+                        ui.label(egui::RichText::new("Not checked yet.").weak());
+                    }
+                    UpdateUi::Checking => {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Spinner::new().size(14.0));
+                            ui.label(egui::RichText::new("Checking for updates…").weak());
+                        });
+                    }
+                    UpdateUi::UpToDate => {
+                        ui.label(egui::RichText::new("TextLayr is up to date.").weak());
+                    }
+                    UpdateUi::Available(r) => {
+                        ui.label(
+                            egui::RichText::new(format!("Version {} is available.", r.version))
+                                .color(theme::ACCENT),
+                        );
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if theme::button(ui, "Download & install").clicked() {
+                                start_install_update = Some(r.clone());
+                            }
+                            ui.hyperlink_to("Release notes", &r.notes_url);
+                        });
+                    }
+                    UpdateUi::Installing { label, progress } => {
+                        match progress {
+                            Some(p) => {
+                                ui.add(
+                                    egui::ProgressBar::new(*p)
+                                        .show_percentage()
+                                        .desired_width(ui.available_width())
+                                        .corner_radius(theme::ROUND),
+                                );
+                            }
+                            None => {
+                                ui.add(egui::Spinner::new().size(20.0));
+                            }
+                        }
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(label.as_str()).weak());
+                        if theme::button(ui, "Cancel").clicked() {
+                            cancel_install_update = true;
+                        }
+                    }
+                    UpdateUi::Ready => {
+                        ui.label(egui::RichText::new("Restarting to finish the update…").weak());
+                    }
+                    UpdateUi::OpenedDmg => {
+                        ui.label(
+                            egui::RichText::new(
+                                "The installer is open — drag TextLayr into Applications, then \
+                                 quit and reopen it.",
+                            )
+                            .weak(),
+                        );
+                    }
+                    UpdateUi::Failed(e) => {
+                        ui.colored_label(ui.visuals().error_fg_color, e.as_str());
+                    }
+                }
+
+                ui.add_space(8.0);
+                let busy = matches!(
+                    &update_state,
+                    UpdateUi::Checking | UpdateUi::Installing { .. } | UpdateUi::Ready
+                );
+                ui.horizontal(|ui| {
+                    if theme::button_enabled(ui, !busy, "Check for updates").clicked() {
+                        check_updates = true;
+                    }
+                    let mut auto = auto_check;
+                    if ui
+                        .checkbox(&mut auto, "Check automatically")
+                        .on_hover_text("Look for a new version once a day when TextLayr starts.")
+                        .changed()
+                    {
+                        set_auto_check = Some(auto);
+                    }
+                });
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
+
                 let fftools = self.deps.fftools.as_ref();
                 let ffmpeg = fftools.map(|t| (t.ffmpeg.clone(), t.source));
                 let ffprobe = fftools.map(|t| (t.ffprobe.clone(), t.source));
@@ -1156,6 +1459,20 @@ impl App {
             });
         if open_licenses {
             self.licenses_open = true;
+        }
+        // Apply the update actions collected during the draw.
+        if let Some(auto) = set_auto_check {
+            self.saved_prefs.auto_check_updates = auto;
+            self.persist_prefs();
+        }
+        if check_updates {
+            self.start_update_check(true);
+        }
+        if let Some(release) = start_install_update {
+            self.start_update_install(release);
+        }
+        if cancel_install_update {
+            self.cancel_update_install();
         }
         if !open || close {
             self.about_open = false;
@@ -1237,6 +1554,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.poll(&ctx);
         self.handle_drops(&ctx);
+        self.maybe_auto_check_updates();
 
         egui::Panel::top("header").show(ui, |ui| {
             self.header(ui);
@@ -1274,6 +1592,12 @@ impl eframe::App for App {
         self.about_window(&ctx);
         licenses::window(&ctx, &mut self.licenses_open, &mut self.licenses_sel);
         self.autosave_prefs(&ctx);
+
+        // The self-update helper is waiting for this process to exit before it
+        // swaps the bundle, so close the window once it is armed.
+        if matches!(self.update, UpdateUi::Ready) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 }
 
@@ -1341,6 +1665,14 @@ fn about_row_path(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
         }
     }
     ui.end_row();
+}
+
+/// Seconds since the Unix epoch, 0 if the clock is before it.
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Bytes as a short human string ("148 MB", "12.3 kB").

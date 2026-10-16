@@ -16,7 +16,7 @@ use textlayr::config::Style;
 use textlayr::install::{self, InstallProgress};
 use textlayr::model::Model;
 use textlayr::pipeline::{self, IngestProgress, Progress};
-use textlayr::{chunk, deps, export, render, transcribe, ui};
+use textlayr::{chunk, deps, export, render, transcribe, ui, update};
 
 /// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
@@ -29,6 +29,8 @@ struct Args {
     headless: bool,
     /// Download the missing dependencies (ffmpeg/model) and stop.
     setup: bool,
+    /// Check GitHub for a newer release, print the result, and stop.
+    check_updates: bool,
     /// Milestone 1 behavior: print the word table and stop (implies headless).
     words_only: bool,
     /// Ignore (and don't write) the transcript cache.
@@ -74,6 +76,7 @@ fn usage() -> ! {
     eprintln!("  --gui               Open the GUI (default when no other options)");
     eprintln!("  --headless          Run the pipeline without a GUI");
     eprintln!("  --setup             Download missing ffmpeg/model into the app data dir, then exit");
+    eprintln!("  --check-updates     Check GitHub for a newer TextLayr release, then exit");
     eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_textlayr.mp4)");
@@ -123,6 +126,7 @@ fn parse_args() -> Args {
             "--gui" => args.gui = true,
             "--headless" => args.headless = true,
             "--setup" => args.setup = true,
+            "--check-updates" => args.check_updates = true,
             "--words" => args.words_only = true,
             "--no-cache" => args.no_cache = true,
             "-o" | "--output" => {
@@ -211,6 +215,11 @@ fn main() {
 
     let args = parse_args();
 
+    // `--check-updates` is its own mode: ask GitHub, report, then exit.
+    if args.check_updates {
+        run_check_updates();
+    }
+
     // `--setup` is its own mode: fetch what's missing, then exit.
     if args.setup {
         if let Err(e) = run_setup(&args) {
@@ -240,6 +249,33 @@ fn main() {
     if let Err(e) = result {
         eprintln!("error: {e:#}");
         std::process::exit(1);
+    }
+}
+
+/// `--check-updates`: ask GitHub for the newest release and report whether this
+/// build is behind. Exit 0 when up to date, 10 when an update is available, and
+/// 1 on error (so scripts can distinguish "behind" from "couldn't tell").
+fn run_check_updates() -> ! {
+    let cancel = AtomicBool::new(false);
+    match update::fetch_latest(&cancel) {
+        Ok(release) => {
+            println!(
+                "current: {} (build {})",
+                update::current_version(),
+                env!("TEXTLAYR_GIT_HASH")
+            );
+            println!("latest:  {}  {}", release.version, release.notes_url);
+            if update::forced() || update::is_newer(update::current_version(), &release.version) {
+                println!("an update is available");
+                std::process::exit(10);
+            }
+            println!("up to date");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            std::process::exit(1);
+        }
     }
 }
 

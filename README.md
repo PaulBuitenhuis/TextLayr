@@ -8,10 +8,11 @@
 <p align="center">
   <b>Offline karaoke caption burner for short-form video.</b><br>
   Drop in a video, review the transcript, and export with word-synced popup captions baked in.<br>
-  No uploads, no accounts, no network after the one-time setup download.
+  No uploads, no accounts, and no network after the one-time setup download (beyond an optional once-a-day update check).
 </p>
 
 <p align="center">
+  <a href="https://paulbuitenhuis.github.io/TextLayr/"><img src="https://img.shields.io/badge/website-paulbuitenhuis.github.io%2FTextLayr-2f80ff.svg" alt="Website"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black.svg" alt="Platform: macOS (Apple Silicon)">
   <a href="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml"><img src="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -65,7 +66,9 @@ The first time you open TextLayr it shows a **Setup** screen. It downloads:
   (~488 MB, more accurate) is selectable on the same screen.
 
 These are stored in `~/Library/Application Support/textlayr/` — nothing else on
-your machine is touched. From then on TextLayr is fully offline.
+your machine is touched. From then on TextLayr works fully offline, apart from a
+once-a-day look for a new TextLayr release (you can switch that off in **About →
+Updates**).
 
 You can manage models from the **About** window: switch between installed ones,
 download the other, or remove one TextLayr downloaded (a dev-checkout or
@@ -85,6 +88,21 @@ Prefer the terminal? `textlayr --setup` does the same thing.
 A transcript is cached per input file (and per model), so re-rendering or
 restyling after the first pass is instant.
 
+### Updates
+
+TextLayr reads a small `latest.json` manifest attached to the newest GitHub
+release, on launch (at most once a day), and shows an **Update available** button
+next to **About** when there is a newer version. From **About → Updates** you can
+check on demand, read the release notes, or **Download & install** — the app
+verifies the download (SHA-256 from the manifest, plus a codesign /
+bundle-identifier / version check), swaps its own bundle in place and relaunches
+itself. If it can't (e.g. it is running from a quarantined "App Translocation"
+copy or a read-only location), it downloads the disk image and opens it so you
+can drag **TextLayr** into **Applications** by hand.
+
+Automatic checking can be turned off with the **Check automatically** box; the
+check is the only time TextLayr talks to the network after setup.
+
 ## Command line
 
 ```sh
@@ -93,6 +111,7 @@ textlayr video.mp4                          # GUI, pre-loaded with a video
 textlayr video.mp4 --headless               # run the whole pipeline, no GUI
 textlayr video.mp4 --words                  # print the (word, start, end) table and stop
 textlayr --setup                            # download ffmpeg + model, then exit
+textlayr --check-updates                    # check GitHub for a newer release (exit 10 if behind)
 textlayr --version                          # version + build hash
 ```
 
@@ -111,6 +130,7 @@ textlayr --version                          # version + build hash
 | `--encoder <name>` | `auto` (default) · `vaapi` · `videotoolbox` · `x264` |
 | `--graph` | Legacy overlay-graph encoder (higher RAM) |
 | `--setup` | Download missing dependencies and exit |
+| `--check-updates` | Check GitHub for a newer release and exit (0 up to date, 10 update available, 1 error) |
 | `-V, --version` | Print the version and build hash |
 
 ## Building from source
@@ -122,6 +142,11 @@ cmake/clang for whisper.cpp, and packaging). In short:
 cargo build --release          # -> target/release/textlayr
 scripts/package_macos.sh       # -> dist/TextLayr.app (+ .zip, .dmg)
 ```
+
+To exercise the in-app updater without publishing a release, `scripts/serve_updates_local.sh`
+packages a higher-versioned build, writes a matching `latest.json` and serves
+`dist/` over HTTP; run a scratch copy of the app with `TEXTLAYR_UPDATE_URL`
+pointed at it (the script prints the exact command).
 
 ## How it works
 

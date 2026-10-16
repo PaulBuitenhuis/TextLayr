@@ -176,7 +176,7 @@ pub fn load_font_bytes(path: &Path) -> Result<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 /// Bump when the on-disk shape changes incompatibly.
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 2;
 
 /// The persisted document. Wrapped (with a version) so future app preferences
 /// can be added without breaking old files.
@@ -187,6 +187,11 @@ struct Config {
     style: Style,
     /// Preferred whisper model (id form).
     model: Model,
+    /// Whether to check for a newer TextLayr release on launch.
+    auto_check_updates: bool,
+    /// Unix seconds of the last update check (success or failure), used to
+    /// throttle the automatic check to once a day.
+    last_update_check: Option<u64>,
 }
 
 impl Default for Config {
@@ -195,16 +200,32 @@ impl Default for Config {
             version: CONFIG_VERSION,
             style: Style::default(),
             model: Model::default(),
+            auto_check_updates: true,
+            last_update_check: None,
         }
     }
 }
 
-/// Everything that persists between runs: the caption style and the chosen
-/// whisper model.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// Everything that persists between runs: the caption style, the chosen whisper
+/// model, and the update preferences.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Prefs {
     pub style: Style,
     pub model: Model,
+    pub auto_check_updates: bool,
+    pub last_update_check: Option<u64>,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs {
+            style: Style::default(),
+            model: Model::default(),
+            // Checking on launch is on by default; the user can turn it off.
+            auto_check_updates: true,
+            last_update_check: None,
+        }
+    }
 }
 
 /// `<config dir>/textlayr/config.json` (`None` if the platform has no config dir).
@@ -233,6 +254,8 @@ pub fn load_prefs() -> Prefs {
             Prefs {
                 style,
                 model: cfg.model,
+                auto_check_updates: cfg.auto_check_updates,
+                last_update_check: cfg.last_update_check,
             }
         }
         Err(e) => {
@@ -259,6 +282,8 @@ pub fn save_prefs_to(path: &Path, prefs: &Prefs) -> Result<()> {
         version: CONFIG_VERSION,
         style: prefs.style.clone(),
         model: prefs.model,
+        auto_check_updates: prefs.auto_check_updates,
+        last_update_check: prefs.last_update_check,
     };
     let json = serde_json::to_vec_pretty(&cfg).context("serialize config")?;
     let tmp = path.with_extension("json.tmp");
@@ -284,12 +309,16 @@ mod tests {
             version: CONFIG_VERSION,
             style: style.clone(),
             model: Model::SmallEn,
+            auto_check_updates: false,
+            last_update_check: Some(1_700_000_000),
         })
         .unwrap();
         let back: Config = serde_json::from_slice(&json).unwrap();
         assert_eq!(back.style, style);
         assert_eq!(back.version, CONFIG_VERSION);
         assert_eq!(back.model, Model::SmallEn);
+        assert!(!back.auto_check_updates);
+        assert_eq!(back.last_update_check, Some(1_700_000_000));
     }
 
     #[test]
@@ -299,6 +328,9 @@ mod tests {
         assert_eq!(cfg.style.font_size_pct, 9.0);
         assert_eq!(cfg.style.font_family, Style::default().font_family);
         assert_eq!(cfg.model, Model::default());
+        // Update checking is on by default even for a config that predates it.
+        assert!(cfg.auto_check_updates);
+        assert_eq!(cfg.last_update_check, None);
     }
 
     #[test]
@@ -312,6 +344,8 @@ mod tests {
                 ..Style::default()
             },
             model: Model::SmallEn,
+            auto_check_updates: false,
+            last_update_check: Some(42),
         };
         save_prefs_to(&path, &prefs).unwrap();
         assert!(path.is_file());
@@ -323,6 +357,8 @@ mod tests {
         assert_eq!(cfg.style.position_pct, 33.0);
         assert_eq!(cfg.style.dim, Color::new(9, 8, 7, 255));
         assert_eq!(cfg.model, Model::SmallEn);
+        assert!(!cfg.auto_check_updates);
+        assert_eq!(cfg.last_update_check, Some(42));
     }
 
     #[test]

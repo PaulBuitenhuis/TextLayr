@@ -20,6 +20,7 @@ pub mod render;
 pub mod source;
 pub mod transcribe;
 pub mod ui;
+pub mod update;
 
 /// One-time migration from the project's former name (`texxy`).
 ///

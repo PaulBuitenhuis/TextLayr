@@ -27,6 +27,38 @@ jobs:
           TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
         run: scripts/package_macos.sh
 
+      - name: Checksums + update manifest
+        working-directory: dist
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        # SHA256SUMS is for humans/other tooling; latest.json is what the in-app
+        # updater reads (via releases/latest/download/latest.json).
+        run: |
+          set -euo pipefail
+          shasum -a 256 TextLayr-*.zip TextLayr-*.dmg > SHA256SUMS
+
+          zip_name=$(basename "$(ls TextLayr-*.zip | head -1)")
+          zip_sha=$(shasum -a 256 "$zip_name" | awk '{print $1}')
+          zip_size=$(stat -f%z "$zip_name")
+          dmg_name=$(basename "$(ls TextLayr-*.dmg | head -1)")
+          dmg_sha=$(shasum -a 256 "$dmg_name" | awk '{print $1}')
+          dmg_size=$(stat -f%z "$dmg_name")
+
+          cat > latest.json <<EOF
+          {
+            "version": "$VERSION",
+            "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v$VERSION",
+            "zip": { "name": "$zip_name", "sha256": "$zip_sha", "size": $zip_size },
+            "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size }
+          }
+          EOF
+
+          # Version-agnostic aliases so the website can link to a URL that never
+          # changes: releases/latest/download/TextLayr.dmg. Copied after
+          # SHA256SUMS so only the versioned files appear in the checksums.
+          cp "$dmg_name" TextLayr.dmg
+          cp "$zip_name" TextLayr.zip
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
@@ -34,3 +66,7 @@ jobs:
           files: |
             dist/TextLayr-*.dmg
             dist/TextLayr-*.zip
+            dist/TextLayr.dmg
+            dist/TextLayr.zip
+            dist/SHA256SUMS
+            dist/latest.json

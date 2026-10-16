@@ -6,6 +6,32 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **In-app updates.** TextLayr reads a small `latest.json` manifest attached to
+  the newest GitHub release (via the stable
+  `releases/latest/download/latest.json` URL), falling back to the GitHub REST
+  API for releases cut before the manifest existed. It checks at most once a day
+  (toggleable in **About → Updates**), shows an **Update available** button, and
+  can download, verify, swap its own bundle in place and relaunch. When
+  self-update isn't possible — a quarantined/translocated or read-only copy — it
+  downloads the `.dmg` and opens it for a manual drag instead. Downloads are
+  verified against the SHA-256 in the manifest, and the extracted app is checked
+  for the expected bundle identifier, version and codesign signature before
+  anything is replaced.
+- **`--check-updates`** CLI flag: report whether a newer release exists and exit
+  (0 up to date, 10 update available, 1 error) for scripting.
+- **`scripts/serve_updates_local.sh`** and the `$TEXTLAYR_UPDATE_URL` /
+  `$TEXTLAYR_UPDATE_FORCE` / `$TEXTLAYR_UPDATE_SKIP_CODESIGN` overrides, so the
+  updater can be exercised against a local fake release without publishing.
+
+### Changed
+
+- The release workflow also publishes a `latest.json` update manifest (alongside
+  `SHA256SUMS`).
+- Preferences persist the update-check settings. Existing config files load
+  unchanged; automatic update checks default to on and can be switched off.
+
 ## [0.2.0] - 2026-10-16
 
 The project is now **TextLayr** (formerly *texxy*), renamed to avoid confusion
