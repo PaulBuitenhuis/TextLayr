@@ -34,7 +34,14 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11's digest `Output` no longer implements `LowerHex`, so format the
+    // bytes ourselves (lowercase hex, matching the pinned checksums).
+    let mut hex = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 /// Ask the server for the total size (best effort — some CDNs omit it).
