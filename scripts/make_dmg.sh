@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a drag-to-Applications .dmg for texxy.
+# Build a drag-to-Applications .dmg for TextLayr.
 #
 # The mounted image has the app on the left, an "Applications" alias on the
 # right, and an arrow between them, so the usual "drag here to install" flow
@@ -8,7 +8,7 @@
 # scripting is unavailable.
 #
 # Usage:
-#   scripts/make_dmg.sh <path/to/texxy.app> <version> <output.dmg>
+#   scripts/make_dmg.sh <path/to/TextLayr.app> <version> <output.dmg>
 set -euo pipefail
 
 app="${1:?usage: make_dmg.sh <app> <version> <out.dmg>}"
@@ -21,7 +21,7 @@ background="$repo_root/assets/dmg-background.png"
 [[ -d "$app" ]] || { echo "error: no app at $app" >&2; exit 1; }
 [[ -f "$background" ]] || { echo "error: no background at $background (run scripts/make_dmg_background.py)" >&2; exit 1; }
 
-volname="texxy"
+volname="TextLayr"
 # Window geometry must match scripts/make_dmg_background.py.
 win_w=640
 win_h=400
@@ -31,7 +31,7 @@ app_pos="160, 180"
 link_pos="480, 180"
 
 # A volume keeps its name even if the mount point gets a " 1" suffix. Two disks
-# both named "texxy" make `tell disk "texxy"` ambiguous and the layout lands on
+# both named "TextLayr" make `tell disk "TextLayr"` ambiguous and the layout lands on
 # the wrong one, so make sure the name is free first (this bit us during
 # development, leaving images with no .DS_Store at all).
 detach_volume() {

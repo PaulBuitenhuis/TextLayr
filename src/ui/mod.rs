@@ -28,7 +28,7 @@ use review::{Action, ReviewState};
 /// The project and developer, credited in the About window.
 const DEVELOPER: &str = "Paul Buitenhuis";
 const DEVELOPER_URL: &str = "https://github.com/PaulBuitenhuis";
-const REPO_URL: &str = "https://github.com/PaulBuitenhuis/texxy";
+const REPO_URL: &str = "https://github.com/PaulBuitenhuis/TextLayr";
 
 /// Where the app is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,7 +201,7 @@ impl App {
         }
     }
 
-    /// Delete a model texxy downloaded, then refresh discovery.
+    /// Delete a model TextLayr downloaded, then refresh discovery.
     fn remove_model(&mut self, found: &crate::model::FoundModel) {
         match crate::model::remove_downloaded(found) {
             Ok(()) => {
@@ -654,7 +654,7 @@ impl App {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.add_space(2.0);
-            ui.label(egui::RichText::new("texxy").size(17.0).strong());
+            ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
             ui.add_space(6.0);
             ui.separator();
             ui.add_space(2.0);
@@ -740,7 +740,7 @@ impl App {
         painter.text(
             center + egui::vec2(0.0, 32.0),
             egui::Align2::CENTER_CENTER,
-            "or run   texxy <video.mp4>",
+            "or run   textlayr <video.mp4>",
             egui::FontId::monospace(12.5),
             v.weak_text_color().gamma_multiply(0.75),
         );
@@ -824,7 +824,7 @@ impl App {
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new(
-                    "texxy downloads ffmpeg and a whisper model the first time it runs.",
+                    "TextLayr downloads ffmpeg and a whisper model the first time it runs.",
                 )
                 .weak(),
             );
@@ -963,7 +963,7 @@ impl App {
         let mut open = true;
         let mut close = false;
         let mut open_licenses = false;
-        egui::Window::new("About texxy")
+        egui::Window::new("About TextLayr")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -971,14 +971,14 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_max_width(470.0);
                 ui.vertical_centered(|ui| {
-                    ui.heading("texxy");
+                    ui.heading("TextLayr");
                     ui.add_space(2.0);
                     ui.label(egui::RichText::new("Offline karaoke caption burner").weak());
                     ui.add_space(8.0);
                     ui.label(format!(
                         "Version {}   ·   build {}",
                         env!("CARGO_PKG_VERSION"),
-                        env!("TEXXY_GIT_HASH")
+                        env!("TEXTLAYR_GIT_HASH")
                     ));
                 });
 
@@ -1033,7 +1033,7 @@ impl App {
                                 f.path.display().to_string()
                             } else {
                                 format!(
-                                    "{}\n\nTo remove it, delete that file — texxy \
+                                    "{}\n\nTo remove it, delete that file — TextLayr \
                                      only deletes models it downloaded itself.",
                                     f.path.display()
                                 )
@@ -1258,10 +1258,10 @@ impl eframe::App for App {
 /// Launch the GUI, optionally pre-loading a video.
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("texxy")
+        .with_title("TextLayr")
         .with_inner_size([1320.0, 840.0])
         .with_min_inner_size([1040.0, 660.0]);
-    // texxy's own icon. Without this, eframe falls back to the egui logo.
+    // TextLayr's own icon. Without this, eframe falls back to the egui logo.
     if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icon.png")) {
         viewport = viewport.with_icon(icon);
     }
@@ -1270,7 +1270,7 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "texxy",
+        "textlayr",
         options,
         Box::new(move |cc| Ok(Box::new(App::new(cc, initial)))),
     )

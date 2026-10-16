@@ -1,6 +1,6 @@
-# Contributing to texxy
+# Contributing to TextLayr
 
-Thanks for taking a look. texxy is a small, focused project: an offline karaoke
+Thanks for taking a look. TextLayr is a small, focused project: an offline karaoke
 caption burner for short-form video. Issues and pull requests are welcome.
 
 - [Project layout](#project-layout)
@@ -45,7 +45,7 @@ vendor/          static ffmpeg (macOS dev) + whisper-rs-sys build patch
 
 ## Development setup
 
-texxy targets **macOS on Apple Silicon**; it also builds and runs on Linux,
+TextLayr targets **macOS on Apple Silicon**; it also builds and runs on Linux,
 which is a convenient dev environment. You need:
 
 | Tool | Why | Notes |
@@ -62,7 +62,7 @@ Then:
    ```sh
    scripts/fetch_model.sh                 # ggml-small.en.bin (~488 MB)
    ```
-   Overridable with `$TEXXY_MODEL`; the script also takes an optional
+   Overridable with `$TEXTLAYR_MODEL`; the script also takes an optional
    destination path.
 2. **Fonts** — already bundled in `assets/fonts/` (OFL-licensed). To re-fetch,
    see the loop in the repo history / Google Fonts' static-TTF CSS API.
@@ -75,15 +75,15 @@ cargo build --release
 # macOS: launch the *bundle*, not the raw binary (macOS runs a bare executable
 # through Terminal, which is why the binary pops a terminal window).
 scripts/package_macos.sh
-open dist/texxy.app
+open dist/TextLayr.app
 
 # GUI straight from a terminal (fine on Linux too); drop zone, or pass a video:
-./target/release/texxy
-./target/release/texxy path/to/video.mp4
+./target/release/textlayr
+./target/release/textlayr path/to/video.mp4
 
 # headless pipeline (also selected automatically when any output/style flag is
 # present; --gui forces the GUI):
-./target/release/texxy path/to/video.mp4 --headless
+./target/release/textlayr path/to/video.mp4 --headless
 ```
 
 ## Tests
@@ -133,7 +133,7 @@ not download anything or require a model.
   video ~0.2 s over 222 s. True VFR input would need per-frame PTS handling (a
   known limitation).
 - **The build is stamped.** `build.rs` embeds the short git hash; the window
-  title and the home screen's corner show `build <hash>`, and `texxy --version`
+  title and the home screen's corner show `build <hash>`, and `textlayr --version`
   prints it.
 - **One theme module drives the look.** `ui/theme.rs` sets the type scale,
   spacing, radii, accent colour, control height and widget palette; screens use
@@ -146,10 +146,10 @@ not download anything or require a model.
   don't need Python.
 - **Models are user-managed.** The About window lists every supported model with
   its installed state, lets you switch between installed ones, download a
-  missing one, and remove a model texxy downloaded (`model::remove_downloaded`
-  only ever touches texxy's own copy in the app data dir — never a bundled,
-  `$TEXXY_MODEL` or dev-checkout file). If the stored preference isn't
-  installed, texxy adopts whichever model is, so the shown choice always equals
+  missing one, and remove a model TextLayr downloaded (`model::remove_downloaded`
+  only ever touches TextLayr's own copy in the app data dir — never a bundled,
+  `$TEXTLAYR_MODEL` or dev-checkout file). If the stored preference isn't
+  installed, TextLayr adopts whichever model is, so the shown choice always equals
   the model in use.
 
 ## Third-party licenses
@@ -172,7 +172,7 @@ inlined too.
 scripts/package_macos.sh
 ```
 
-builds `dist/texxy.app` and `dist/texxy-<version>.{zip,dmg}`. The bundle holds
+builds `dist/TextLayr.app` and `dist/TextLayr-<version>.{zip,dmg}`. The bundle holds
 the binary and fonts only; `ffmpeg`/`probe` and the model are downloaded on first
 run. The build is ad-hoc signed and **not notarized**, so first launch on another
 Mac needs Right click → Open (or `xattr -dr com.apple.quarantine`).

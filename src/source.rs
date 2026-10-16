@@ -1,6 +1,6 @@
 //! Where a runtime dependency was found.
 //!
-//! The About window shows these labels so it's obvious whether texxy is using
+//! The About window shows these labels so it's obvious whether TextLayr is using
 //! something bundled with the app, something it downloaded on first run, or
 //! something the user's system happens to provide. Without this, a dev build
 //! that quietly fell back to `$PATH` looks identical to a self-contained one.
@@ -8,9 +8,9 @@
 /// Provenance of a located dependency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// Shipped inside `texxy.app/Contents/Resources`.
+    /// Shipped inside `TextLayr.app/Contents/Resources`.
     Bundled,
-    /// Downloaded by texxy into the platform data directory.
+    /// Downloaded by TextLayr into the platform data directory.
     Downloaded,
     /// Found on the user's `PATH` or provided by the system.
     System,

@@ -1,13 +1,13 @@
 # Security Policy
 
-texxy is a self-contained, offline desktop app: it makes no network requests
+TextLayr is a self-contained, offline desktop app: it makes no network requests
 after the one-time setup download, has no accounts, no telemetry, and runs no
 server. That keeps the attack surface small, but it is not zero — this document
 describes what is worth reporting and how.
 
 ## Supported versions
 
-Only the **latest release** is supported. texxy is pre-1.0, so fixes ship as a
+Only the **latest release** is supported. TextLayr is pre-1.0, so fixes ship as a
 new release rather than as backports to older versions.
 
 | Version | Supported |
@@ -19,13 +19,13 @@ new release rather than as backports to older versions.
 
 Please report privately through GitHub, **not** a public issue:
 
-**[Report a vulnerability →](https://github.com/PaulBuitenhuis/texxy/security/advisories/new)**
+**[Report a vulnerability →](https://github.com/PaulBuitenhuis/TextLayr/security/advisories/new)**
 (repo **Security** tab → *Report a vulnerability*). If it is already enabled,
 this opens a private advisory only you and the maintainer can see.
 
 Helpful to include:
 
-- affected version + build (`texxy --version`, or the About window),
+- affected version + build (`textlayr --version`, or the About window),
 - your macOS version and chip,
 - a description of the impact and a minimal way to reproduce it,
 - a sample file, if the issue depends on a specific input.
@@ -39,23 +39,23 @@ Helpful to include:
   against pinned SHA-256 hashes before use. Anything that bypasses the
   checksum, leaves a partial download trusted, or resolves the wrong artifact
   is in scope.
-- **Untrusted media handling.** texxy feeds arbitrary user video/audio to
+- **Untrusted media handling.** TextLayr feeds arbitrary user video/audio to
   `ffprobe`, `ffmpeg`, and whisper.cpp. A crafted input that escapes the
-  intended processing — e.g. via unsafe handling on texxy's side — is in scope.
-- **Subprocess invocation.** texxy invokes `curl`, `ditto`, `xattr`, `ffmpeg`,
+  intended processing — e.g. via unsafe handling on TextLayr's side — is in scope.
+- **Subprocess invocation.** TextLayr invokes `curl`, `ditto`, `xattr`, `ffmpeg`,
   and `ffprobe` directly (no shell). A crafted file path or value that changes
-  the arguments texxy passes to those tools is in scope.
-- **Dependency chain.** Vulnerabilities in texxy's own Rust dependencies, and in
+  the arguments TextLayr passes to those tools is in scope.
+- **Dependency chain.** Vulnerabilities in TextLayr's own Rust dependencies, and in
   the vendored `whisper-rs-sys` patch (`vendor/patch/whisper-rs-sys`), that are
-  exploitable through texxy.
+  exploitable through TextLayr.
 
 ### Out of scope
 
 - Bugs in upstream `ffmpeg`, `whisper.cpp`, or the downloaded model files that
-  are **not** reachable through texxy — please report those upstream. (If texxy
+  are **not** reachable through TextLayr — please report those upstream. (If TextLayr
   mishandles their output or passes them something dangerous, that *is* ours.)
 - Issues that already require code execution or admin rights on the machine, a
-  root-compromised `PATH`, or a malicious `$TEXXY_MODEL` file you placed
+  root-compromised `PATH`, or a malicious `$TEXTLAYR_MODEL` file you placed
   yourself.
 - The app being unsigned/not notarized (a known, documented trade-off — see the
   README), or Gatekeeper prompts on first launch.
@@ -66,7 +66,7 @@ Helpful to include:
   every request is checksum-pinned.
 - **No shell.** External tools are spawned with explicit argument vectors.
 - **Nothing redistributed.** `ffmpeg`/`ffprobe` (GPL) and the models are
-  downloaded by your machine and invoked as separate programs; texxy links and
+  downloaded by your machine and invoked as separate programs; TextLayr links and
   ships none of them.
 - **Minimal dependencies**, audited in CI by `cargo audit` (see
   `.github/workflows/ci.yml`).

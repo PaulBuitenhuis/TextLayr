@@ -1,8 +1,8 @@
-//! texxy binary: dispatches between the GUI and the headless CLI.
+//! TextLayr binary: dispatches between the GUI and the headless CLI.
 //!
-//! - `texxy` → GUI (drop screen)
-//! - `texxy video.mp4` → GUI with the video pre-loaded
-//! - `texxy video.mp4 --headless` (or any of `--words`/`-o`/`--png-dir`/style
+//! - `textlayr` → GUI (drop screen)
+//! - `textlayr video.mp4` → GUI with the video pre-loaded
+//! - `textlayr video.mp4 --headless` (or any of `--words`/`-o`/`--png-dir`/style
 //!   flags) → the Milestone 1–2 headless pipeline
 
 use std::path::PathBuf;
@@ -12,11 +12,11 @@ use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
-use texxy::config::Style;
-use texxy::install::{self, InstallProgress};
-use texxy::model::Model;
-use texxy::pipeline::{self, IngestProgress, Progress};
-use texxy::{chunk, deps, export, render, transcribe, ui};
+use textlayr::config::Style;
+use textlayr::install::{self, InstallProgress};
+use textlayr::model::Model;
+use textlayr::pipeline::{self, IngestProgress, Progress};
+use textlayr::{chunk, deps, export, render, transcribe, ui};
 
 /// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
@@ -65,7 +65,7 @@ impl StyleOverrides {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: texxy [video.mp4] [options]");
+    eprintln!("usage: textlayr [video.mp4] [options]");
     eprintln!();
     eprintln!("Burns word-synced karaoke captions into a video.");
     eprintln!("Without headless options the GUI opens (a video argument is pre-loaded).");
@@ -93,9 +93,9 @@ fn usage() -> ! {
 /// bug report) can tell exactly which revision is running.
 fn version() -> ! {
     println!(
-        "texxy {} (build {})",
+        "textlayr {} (build {})",
         env!("CARGO_PKG_VERSION"),
-        env!("TEXXY_GIT_HASH")
+        env!("TEXTLAYR_GIT_HASH")
     );
     std::process::exit(0);
 }
@@ -205,6 +205,10 @@ where
 }
 
 fn main() {
+    // Adopt any pre-rename (`texxy`) data/config/cache before anything reads or
+    // creates those directories.
+    textlayr::migrate_legacy_dirs();
+
     let args = parse_args();
 
     // `--setup` is its own mode: fetch what's missing, then exit.
@@ -217,7 +221,7 @@ fn main() {
     }
 
     // Any output/style option implies the headless pipeline; --gui wins over
-    // that so `texxy --gui --font Inter` can still open the GUI.
+    // that so `textlayr --gui --font Inter` can still open the GUI.
     let headless = !args.gui
         && (args.headless
             || args.words_only

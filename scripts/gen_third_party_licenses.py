@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate THIRD_PARTY_LICENSES.md from the resolved dependency graph.
 
-texxy statically links ~400 Rust crates, plus it bundles the caption fonts and a
+TextLayr statically links ~400 Rust crates, plus it bundles the caption fonts and a
 copy of whisper.cpp. MIT/Apache-2.0/BSD/Zlib etc. all require that the copyright
 notice and license text travel with a binary distribution, so this script walks
 `cargo metadata`, collects every crate's shipped license/notice files, and emits
@@ -124,7 +124,7 @@ def collect_license_files(pkg: dict) -> list[tuple[str, str]]:
 
 def main() -> int:
     meta = load_metadata()
-    root_name = next(p["name"] for p in meta["packages"] if p["name"] == "texxy")
+    root_name = next(p["name"] for p in meta["packages"] if p["name"] == "textlayr")
     wanted = normal_dependency_ids(meta, root_name)
 
     packages = sorted(
@@ -152,7 +152,7 @@ def main() -> int:
     a("# Third-party licenses")
     a("")
     a(
-        "texxy is released under the MIT License (see [LICENSE](./LICENSE)). It "
+        "TextLayr is released under the MIT License (see [LICENSE](./LICENSE)). It "
         "builds on the work below; this file reproduces the notices and license "
         "texts those projects require a redistributed binary to carry."
     )
@@ -161,7 +161,7 @@ def main() -> int:
     a("")
     a("## Bundled at build time")
     a("")
-    a("These ship inside `texxy.app` (or, for whisper.cpp, are compiled into the binary):")
+    a("These ship inside `TextLayr.app` (or, for whisper.cpp, are compiled into the binary):")
     a("")
     a("- **Caption fonts** — Inter, Nunito and Libre Baskerville, each under the "
       "SIL Open Font License 1.1.")
@@ -182,11 +182,11 @@ def main() -> int:
     a("## Not bundled")
     a("")
     a(
-        "`ffmpeg` and `ffprobe` are **not** distributed with texxy. They are either "
+        "`ffmpeg` and `ffprobe` are **not** distributed with TextLayr. They are either "
         "found on your `PATH`, installed via Homebrew, or downloaded by you on first "
         "run. The whisper model (`ggml-*.bin`) is likewise downloaded on demand. "
         "Those components carry their own licenses, which you accept when you obtain "
-        "them; texxy merely invokes them as separate programs."
+        "them; TextLayr merely invokes them as separate programs."
     )
     a("")
     a(f"## Dependency inventory ({len(packages)} crates)")

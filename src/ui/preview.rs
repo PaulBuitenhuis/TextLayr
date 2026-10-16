@@ -327,7 +327,7 @@ mod tests {
         // The regression: the preview must not stretch the crop to full width.
         assert!(preview_w < 0.5, "caption stretched to full width: {preview_w:.3}");
 
-        let dir = std::path::Path::new("/tmp/texxy_diag");
+        let dir = std::path::Path::new("/tmp/textlayr_diag");
         std::fs::create_dir_all(dir).unwrap();
         image::RgbaImage::from_raw(src_w, src_h, full)
             .unwrap()

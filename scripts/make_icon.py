@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate texxy's application icon.
+"""Generate TextLayr's application icon.
 
 Produces:
   assets/icon.png     1024x1024 wordmark, used at runtime for the dock icon
   assets/AppIcon.icns macOS bundle icon (referenced by Info.plist)
 
-The mark is the word "texxy" in white (Inter, the same family the app can
+The mark is the word "TextLayr" in white (Inter, the same family the app can
 caption with) sitting on an accent-blue highlight bar, with the descender of
 the "y" ending on the bar's bottom edge — the karaoke highlight made a logo.
 
@@ -42,14 +42,14 @@ ACCENT = (10, 132, 255, 255)  # theme::ACCENT
 WHITE = (247, 249, 252, 255)
 
 # Wordmark geometry, in 1024-space.
-TEXT = "texxy"
+TEXT = "TextLayr"
 TEXT_WIDTH = 780  # near the width of the squircle's flat area
 RULE_H = 84  # highlight bar height
 RULE_PAD = 8  # how far the bar extends past the word on each side
 NUDGE_Y = -18  # optical centring of the whole lockup
 
 # Small-mark geometry: a single "t" large enough to read at 16px.
-SMALL_GLYPH = "t"
+SMALL_GLYPH = "T"
 SMALL_HEIGHT = 700
 SMALL_NUDGE_Y = -10
 
@@ -138,7 +138,7 @@ def build() -> Image.Image:
 
 
 def build_small() -> Image.Image:
-    """Simplified "t" monogram for the tiny icon slots."""
+    """Simplified "T" monogram for the tiny icon slots."""
     img = squircle_bg()
     font = fit(SMALL_GLYPH, target_h=SMALL_HEIGHT * SS)
     paint_white(img, text_mask(SMALL_GLYPH, font, centered_y(SMALL_GLYPH, font, SMALL_NUDGE_Y)))
@@ -185,7 +185,7 @@ def main() -> int:
         print("iconutil not found — skipping .icns (macOS only)", file=sys.stderr)
         return 0
     write_icns(wordmark, build_small())
-    print(f"wrote {(ASSETS / 'AppIcon.icns').relative_to(ROOT)} (adaptive: t monogram at 16/32px)")
+    print(f"wrote {(ASSETS / 'AppIcon.icns').relative_to(ROOT)} (adaptive: T monogram at 16/32px)")
     return 0
 
 

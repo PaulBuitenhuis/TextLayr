@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" width="120" alt="texxy">
+  <img src="assets/icon.png" width="120" alt="TextLayr">
 </p>
 
 <p align="center">
@@ -11,11 +11,11 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black.svg" alt="Platform: macOS (Apple Silicon)">
-  <a href="https://github.com/PaulBuitenhuis/texxy/actions/workflows/ci.yml"><img src="https://github.com/PaulBuitenhuis/texxy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml"><img src="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overview.jpg" width="860" alt="texxy review screen: (1) live preview, (2) editable transcript, (3) caption styling, (4) fast local export">
+  <img src="docs/screenshots/overview.jpg" width="860" alt="TextLayr review screen: (1) live preview, (2) editable transcript, (3) caption styling, (4) fast local export">
 </p>
 
 ## What it does
@@ -36,39 +36,39 @@
 
 - macOS on Apple Silicon (arm64). (The code also runs on Linux for development;
   release builds target macOS.)
-- `ffmpeg` + `ffprobe` and a whisper model — texxy downloads these on first run,
+- `ffmpeg` + `ffprobe` and a whisper model — TextLayr downloads these on first run,
   or uses ones you already have.
 
 ## Install
 
-Download the latest `texxy-<version>.dmg` from
-[Releases](https://github.com/PaulBuitenhuis/texxy/releases), open it, and drag
-**texxy** into **Applications**.
+Download the latest `TextLayr-<version>.dmg` from
+[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), open it, and drag
+**TextLayr** into **Applications**.
 
-texxy is **not notarized** (no Apple Developer ID), so the very first launch
+TextLayr is **not notarized** (no Apple Developer ID), so the very first launch
 needs a round trip through Gatekeeper:
 
 1. **Right-click (or Control-click) the app → Open**, then confirm **Open**.
-   - or, in a terminal: `xattr -dr com.apple.quarantine /Applications/texxy.app`
+   - or, in a terminal: `xattr -dr com.apple.quarantine /Applications/TextLayr.app`
 
 After that it launches normally.
 
 ### First run
 
-The first time you open texxy it shows a **Setup** screen. It downloads:
+The first time you open TextLayr it shows a **Setup** screen. It downloads:
 
 - `ffmpeg` + `ffprobe` (unless it finds them on your `PATH`, e.g. via Homebrew)
 - a whisper model — **base.en** by default (~148 MB, fast); **small.en**
   (~488 MB, more accurate) is selectable on the same screen.
 
-These are stored in `~/Library/Application Support/texxy/` — nothing else on
-your machine is touched. From then on texxy is fully offline.
+These are stored in `~/Library/Application Support/textlayr/` — nothing else on
+your machine is touched. From then on TextLayr is fully offline.
 
 You can manage models from the **About** window: switch between installed ones,
-download the other, or remove one texxy downloaded (a dev-checkout or
-`$TEXXY_MODEL` model is never deleted).
+download the other, or remove one TextLayr downloaded (a dev-checkout or
+`$TEXTLAYR_MODEL` model is never deleted).
 
-Prefer the terminal? `texxy --setup` does the same thing.
+Prefer the terminal? `textlayr --setup` does the same thing.
 
 ## Using the app
 
@@ -85,12 +85,12 @@ restyling after the first pass is instant.
 ## Command line
 
 ```sh
-texxy                                    # open the GUI
-texxy video.mp4                          # GUI, pre-loaded with a video
-texxy video.mp4 --headless               # run the whole pipeline, no GUI
-texxy video.mp4 --words                  # print the (word, start, end) table and stop
-texxy --setup                            # download ffmpeg + model, then exit
-texxy --version                          # version + build hash
+textlayr # open the GUI
+textlayr video.mp4                          # GUI, pre-loaded with a video
+textlayr video.mp4 --headless               # run the whole pipeline, no GUI
+textlayr video.mp4 --words                  # print the (word, start, end) table and stop
+textlayr --setup                            # download ffmpeg + model, then exit
+textlayr --version                          # version + build hash
 ```
 
 | Option | Effect |
@@ -116,8 +116,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer setup (Rust,
 cmake/clang for whisper.cpp, and packaging). In short:
 
 ```sh
-cargo build --release          # -> target/release/texxy
-scripts/package_macos.sh       # -> dist/texxy.app (+ .zip, .dmg)
+cargo build --release          # -> target/release/textlayr
+scripts/package_macos.sh       # -> dist/TextLayr.app (+ .zip, .dmg)
 ```
 
 ## How it works
@@ -137,5 +137,5 @@ stay small and the export's memory stays flat. See
 [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt) and
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-texxy invokes `ffmpeg`/`ffprobe` and the whisper model as separate programs; it
-does not link them, and they are not distributed with texxy.
+textlayr invokes `ffmpeg`/`ffprobe` and the whisper model as separate programs; it
+does not link them, and they are not distributed with TextLayr.

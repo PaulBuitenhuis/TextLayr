@@ -2,8 +2,8 @@
 //!
 //! The [`Style`] struct is the single source of truth for how captions look.
 //! It is persisted as JSON in the platform config dir (Milestone 4):
-//! `~/Library/Application Support/texxy/config.json` on macOS,
-//! `~/.config/texxy/config.json` on Linux. The CLI keeps the built-in
+//! `~/Library/Application Support/textlayr/config.json` on macOS,
+//! `~/.config/textlayr/config.json` on Linux. The CLI keeps the built-in
 //! defaults and never reads this file, so headless runs stay deterministic.
 
 use anyhow::{bail, Context, Result};
@@ -61,7 +61,7 @@ pub struct Style {
 impl Default for Style {
     fn default() -> Self {
         Style {
-            // The serif default matches the reference look texxy was built for:
+            // The serif default matches the reference look TextLayr was built for:
             // a small rounded box with serif-ish caption text.
             font_family: "Libre Baskerville".to_string(),
             font_size_pct: 3.4,
@@ -97,13 +97,13 @@ impl Style {
 
 /// Locate the bundled `assets/fonts` directory, and where it came from.
 ///
-/// Order: `$TEXXY_FONTS` → bundled `Contents/Resources/assets/fonts` →
+/// Order: `$TEXTLAYR_FONTS` → bundled `Contents/Resources/assets/fonts` →
 /// `assets/fonts` next to / above the executable (dev) → under the current
 /// directory (dev).
 pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
     let mut candidates: Vec<(PathBuf, Source)> = Vec::new();
 
-    if let Ok(env) = std::env::var("TEXXY_FONTS") {
+    if let Ok(env) = std::env::var("TEXTLAYR_FONTS") {
         candidates.push((PathBuf::from(env), Source::Env));
     }
 
@@ -143,7 +143,7 @@ pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
 
     bail!(
         "bundled fonts not found (looked for assets/fonts/LibreBaskerville-Regular.ttf). \
-         Set $TEXXY_FONTS to the directory holding the caption fonts."
+         Set $TEXTLAYR_FONTS to the directory holding the caption fonts."
     )
 }
 
@@ -207,12 +207,12 @@ pub struct Prefs {
     pub model: Model,
 }
 
-/// `<config dir>/texxy/config.json` (`None` if the platform has no config dir).
+/// `<config dir>/textlayr/config.json` (`None` if the platform has no config dir).
 ///
-/// macOS: `~/Library/Application Support/texxy/config.json`.
-/// Linux: `~/.config/texxy/config.json`.
+/// macOS: `~/Library/Application Support/textlayr/config.json`.
+/// Linux: `~/.config/textlayr/config.json`.
 pub fn config_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("texxy").join("config.json"))
+    Some(dirs::config_dir()?.join("textlayr").join("config.json"))
 }
 
 /// Load persisted preferences, falling back to defaults when the file is

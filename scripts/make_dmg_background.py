@@ -41,7 +41,7 @@ def main() -> int:
         font = ImageFont.truetype(str(ASSETS / "fonts" / "Inter-Regular.ttf"), 15)
     except OSError:
         font = ImageFont.load_default()
-    d.text((W // 2, 300), "Drag texxy to Applications", font=font, fill=TEXT, anchor="mm")
+    d.text((W // 2, 300), "Drag TextLayr to Applications", font=font, fill=TEXT, anchor="mm")
 
     out = ASSETS / "dmg-background.png"
     img.save(out)

@@ -1,18 +1,18 @@
 [package]
-name = "texxy"
-version = "0.1.0"
+name = "textlayr"
+version = "0.2.0"
 edition = "2021"
 description = "Offline karaoke caption burner for short-form video"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/PaulBuitenhuis/texxy"
-homepage = "https://github.com/PaulBuitenhuis/texxy"
+repository = "https://github.com/PaulBuitenhuis/TextLayr"
+homepage = "https://github.com/PaulBuitenhuis/TextLayr"
 authors = ["Paul Buitenhuis <7597185+PaulBuitenhuis@users.noreply.github.com>"]
 keywords = ["video", "captions", "subtitles", "whisper", "ffmpeg"]
 categories = ["multimedia::video", "command-line-utilities"]
 
 [[bin]]
-name = "texxy"
+name = "textlayr"
 path = "src/main.rs"
 
 [dependencies]

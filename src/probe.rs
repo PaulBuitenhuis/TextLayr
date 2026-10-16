@@ -50,7 +50,7 @@ pub fn find_ffmpeg() -> Result<Fftools> {
     if let Some(resources) = exe_dir.parent().map(|d| d.join("Resources").join("bin")) {
         dirs.push((resources, Source::Bundled));
     }
-    // Downloaded by texxy on first run.
+    // Downloaded by TextLayr on first run.
     if let Some(bin) = paths::bin_dir() {
         dirs.push((bin, Source::Downloaded));
     }

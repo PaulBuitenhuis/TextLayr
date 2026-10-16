@@ -65,7 +65,7 @@ impl Check {
             out.push(Problem {
                 what: "whisper model".to_string(),
                 how: "Click Install to download it, run scripts/fetch_model.sh, or set \
-                      $TEXXY_MODEL to its path."
+                      $TEXTLAYR_MODEL to its path."
                     .to_string(),
                 installable: true,
             });
@@ -73,8 +73,8 @@ impl Check {
         if self.fonts.is_none() {
             out.push(Problem {
                 what: "caption fonts".to_string(),
-                how: "Expected assets/fonts/*.ttf next to the app; set $TEXXY_FONTS to \
-                      the directory holding them. These ship with texxy, so a missing \
+                how: "Expected assets/fonts/*.ttf next to the app; set $TEXTLAYR_FONTS to \
+                      the directory holding them. These ship with TextLayr, so a missing \
                       copy means a broken install."
                     .to_string(),
                 installable: false,

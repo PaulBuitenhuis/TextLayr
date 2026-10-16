@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   macos:
-    name: build texxy.app + attach to release
+    name: build TextLayr.app + attach to release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
@@ -24,7 +24,7 @@ jobs:
 
       - name: Package (app + zip + dmg)
         env:
-          TEXXY_VERSION: ${{ steps.version.outputs.value }}
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
         run: scripts/package_macos.sh
 
       - name: Publish release
@@ -32,5 +32,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/texxy-*.dmg
-            dist/texxy-*.zip
+            dist/TextLayr-*.dmg
+            dist/TextLayr-*.zip

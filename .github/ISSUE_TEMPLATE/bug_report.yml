@@ -1,5 +1,5 @@
 name: Bug report
-description: Something went wrong while using texxy
+description: Something went wrong while using TextLayr
 labels: ["bug"]
 body:
   - type: markdown
@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for the report. A few details make this much faster to fix.
 
-        Please run `texxy --version` (or copy the version + build from the
+        Please run `textlayr --version` (or copy the version + build from the
         **About** window) and paste the result below.
   - type: textarea
     id: what-happened
@@ -21,8 +21,8 @@ body:
     id: version
     attributes:
       label: Version + build
-      description: Output of `texxy --version`, or the version/build from the About window.
-      placeholder: texxy 0.1.0 (build abc1234)
+      description: Output of `textlayr --version`, or the version/build from the About window.
+      placeholder: textlayr 0.2.0 (build abc1234)
     validations:
       required: true
   - type: input

@@ -16,5 +16,5 @@ fn main() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "no-git".to_string());
-    println!("cargo:rustc-env=TEXXY_GIT_HASH={hash}");
+    println!("cargo:rustc-env=TEXTLAYR_GIT_HASH={hash}");
 }

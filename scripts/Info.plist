@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>texxy</string>
+    <string>TextLayr</string>
     <key>CFBundleDisplayName</key>
-    <string>texxy</string>
+    <string>TextLayr</string>
     <key>CFBundleIdentifier</key>
-    <string>com.paulbuitenhuis.texxy</string>
+    <string>com.paulbuitenhuis.textlayr</string>
     <key>CFBundleExecutable</key>
-    <string>texxy</string>
+    <string>TextLayr</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
@@ -27,7 +27,7 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 Paul Buitenhuis — MIT licensed. https://github.com/PaulBuitenhuis/texxy</string>
+    <string>Copyright © 2026 Paul Buitenhuis — MIT licensed. https://github.com/PaulBuitenhuis/TextLayr</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

@@ -228,7 +228,7 @@ mod tests {
 
             egui::Panel::top("t").show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("texxy").size(17.0).strong());
+                    ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
                     ui.separator();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let _ = button(ui, "Change video");

@@ -236,7 +236,7 @@ pub fn cache_path(input: &Path, kind: Model) -> Option<PathBuf> {
     mtime.hash(&mut h);
     kind.id().hash(&mut h);
 
-    let dir = dirs::cache_dir()?.join("texxy");
+    let dir = dirs::cache_dir()?.join("textlayr");
     Some(dir.join(format!("{:016x}.json", h.finish())))
 }
 

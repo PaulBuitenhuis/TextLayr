@@ -1,4 +1,4 @@
-texxy bundles three font families, each licensed under the SIL Open Font
+TextLayr bundles three font families, each licensed under the SIL Open Font
 License, Version 1.1. Their copyright notices follow, then the license text.
 
   Inter              Copyright (c) 2016 The Inter Project Authors

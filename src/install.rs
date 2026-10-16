@@ -1,14 +1,14 @@
-//! First-run installation: fetch the pieces texxy needs but doesn't bundle.
+//! First-run installation: fetch the pieces TextLayr needs but doesn't bundle.
 //!
-//! texxy ships only its own binary and fonts. On first run the setup screen can
+//! TextLayr ships only its own binary and fonts. On first run the setup screen can
 //! download `ffmpeg`/`ffprobe` and the chosen whisper model into
-//! `~/Library/Application Support/texxy/`, where discovery looks for them
+//! `~/Library/Application Support/textlayr/`, where discovery looks for them
 //! afterwards. Everything is checksum-pinned (see [`crate::download`]).
 //!
-//! `ffmpeg`/`ffprobe` are **not** redistributed by texxy: they are downloaded
+//! `ffmpeg`/`ffprobe` are **not** redistributed by TextLayr: they are downloaded
 //! straight from osxexperts.net by the user's machine. Those builds are GPL
-//! (they include x264/x265); texxy merely invokes them as separate programs, so
-//! this has no bearing on texxy's own MIT license.
+//! (they include x264/x265); TextLayr merely invokes them as separate programs, so
+//! this has no bearing on TextLayr's own MIT license.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -195,7 +195,7 @@ pub fn install(preferred: Model, mut sink: InstallSink, cancel: Arc<AtomicBool>)
     // Make sure the fonts the app renders with are present; they're bundled and
     // can't be installed.
     if config::find_fonts_dir().is_err() {
-        bail!("caption fonts are missing — reinstall texxy");
+        bail!("caption fonts are missing — reinstall TextLayr");
     }
 
     Ok(())

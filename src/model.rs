@@ -1,6 +1,6 @@
 //! Whisper model identity, discovery and download metadata.
 //!
-//! texxy uses an English-only whisper.cpp model. `base.en` is the default
+//! TextLayr uses an English-only whisper.cpp model. `base.en` is the default
 //! (~148 MB — quick to fetch on first run); `small.en` (~488 MB) is the
 //! optional accuracy upgrade. Each model has a fixed download URL (pinned to a
 //! HuggingFace revision so it can never change under us) and a SHA-256.
@@ -101,7 +101,7 @@ fn candidates(model: Model) -> Vec<(PathBuf, Source)> {
     let file = model.file_name();
     let mut out: Vec<(PathBuf, Source)> = Vec::new();
 
-    if let Ok(env_path) = std::env::var("TEXXY_MODEL") {
+    if let Ok(env_path) = std::env::var("TEXTLAYR_MODEL") {
         out.push((PathBuf::from(env_path), Source::Env));
     }
 
@@ -166,14 +166,14 @@ pub fn resolve(preferred: Model) -> Option<FoundModel> {
     fallbacks.into_iter().find_map(locate)
 }
 
-/// Delete a model that texxy downloaded.
+/// Delete a model that TextLayr downloaded.
 ///
-/// Only touches texxy's own copy in the app data directory — a bundled, env-var
+/// Only touches TextLayr's own copy in the app data directory — a bundled, env-var
 /// or dev-checkout model belongs to someone else and is never removed here.
 pub fn remove_downloaded(found: &FoundModel) -> Result<()> {
     if found.source != Source::Downloaded {
         bail!(
-            "not removing the {} model at {} (texxy only deletes models it downloaded)",
+            "not removing the {} model at {} (TextLayr only deletes models it downloaded)",
             found.source.label(),
             found.path.display()
         );

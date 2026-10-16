@@ -1,16 +1,16 @@
-//! Platform directories texxy owns for files it downloads at runtime.
+//! Platform directories TextLayr owns for files it downloads at runtime.
 //!
 //! Kept separate from the source checkout so a downloaded binary or model is
 //! visible and removable without touching the repo or the `.app` bundle.
 //!
-//! - macOS: `~/Library/Application Support/texxy/`
-//! - Linux: `~/.local/share/texxy/`
+//! - macOS: `~/Library/Application Support/textlayr/`
+//! - Linux: `~/.local/share/textlayr/`
 
 use std::path::PathBuf;
 
-/// Per-user data directory for texxy (`None` if the platform has none).
+/// Per-user data directory for TextLayr (`None` if the platform has none).
 pub fn data_dir() -> Option<PathBuf> {
-    Some(dirs::data_dir()?.join("texxy"))
+    Some(dirs::data_dir()?.join("textlayr"))
 }
 
 /// Where downloaded `ffmpeg`/`ffprobe` live.
