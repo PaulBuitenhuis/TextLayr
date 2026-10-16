@@ -26,7 +26,7 @@ sha2 = "0.11"
 
 # Transcription (whisper.cpp bindings). CPU by default on Linux; the `metal`
 # feature is enabled on macOS in the target-specific section below.
-whisper-rs = "0.14"
+whisper-rs = "0.16"
 
 # Text rasterization for caption overlays.
 fontdue = "0.9"

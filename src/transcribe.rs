@@ -82,17 +82,21 @@ pub fn transcribe(
         .full(params, samples)
         .context("whisper inference failed")?;
 
-    let n_segments = state.full_n_segments().context("full_n_segments failed")?;
+    // whisper-rs 0.16 exposes segments/tokens as borrowing handles rather than
+    // index-based FFI calls.
+    let n_segments = state.full_n_segments();
     let mut words: Vec<Word> = Vec::new();
     for seg in 0..n_segments {
-        let n_tokens = state.full_n_tokens(seg).context("full_n_tokens failed")?;
+        let Some(segment) = state.get_segment(seg) else {
+            continue;
+        };
+        let n_tokens = segment.n_tokens();
         for tok in 0..n_tokens {
-            let data = state
-                .full_get_token_data(seg, tok)
-                .context("full_get_token_data failed")?;
-            let text = state
-                .full_get_token_text_lossy(seg, tok)
-                .unwrap_or_default();
+            let Some(token) = segment.get_token(tok) else {
+                continue;
+            };
+            let text = token.to_str_lossy().unwrap_or_default();
+            let data = token.token_data();
 
             // Filter out non-word tokens: whisper emits timestamp tokens
             // (id < 50364-ish range for multilingual, and special marker tokens)
