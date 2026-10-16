@@ -40,6 +40,20 @@ detach_volume() {
         hdiutil detach "$mp" -force -quiet 2>/dev/null || true
     done
 }
+
+# `hdiutil detach` transiently returns exit 16 ("Resource busy") while the OS is
+# still finished with the volume (Spotlight indexing, Finder flushing
+# .DS_Store). Under `set -e` that aborted the whole packaging step on CI, so
+# retry a few times and only force-detach as a last resort.
+detach_retry() {
+    local mp="$1"
+    for _ in 1 2 3 4 5; do
+        hdiutil detach "$mp" -quiet && return 0
+        sleep 2
+    done
+    hdiutil detach "$mp" -force -quiet || true
+}
+
 detach_volume
 sleep 1
 [[ -e "/Volumes/$volname" ]] && { echo "error: /Volumes/$volname is in use; eject it and retry" >&2; exit 1; }
@@ -101,7 +115,7 @@ if [[ $layout_ok -eq 1 && ! -f "$mountpoint/.DS_Store" ]]; then
     echo "    warning: no .DS_Store after layout; Finder may not have applied it" >&2
     layout_ok=0
 fi
-hdiutil detach "$mountpoint" -quiet
+detach_retry "$mountpoint"
 
 echo "==> compressing"
 rm -f "$out"
@@ -115,7 +129,7 @@ if [[ -n "$verify_mp" ]]; then
     else
         echo "==> warning: .DS_Store missing from the final image — no arrow/positions" >&2
     fi
-    hdiutil detach "$verify_mp" -quiet
+    detach_retry "$verify_mp"
 fi
 
 echo "==> done: $out"
