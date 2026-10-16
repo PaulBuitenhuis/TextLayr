@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Rust dependencies (Cargo.lock / Cargo.toml).
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "cargo"
+    groups:
+      # Batch routine bumps so Dependabot isn't noisy.
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # Keep the GitHub Actions used by CI/release current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

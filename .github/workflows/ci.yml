@@ -16,3 +16,15 @@ jobs:
       # whisper.cpp builds through cmake + clang, both present on the runner.
       - name: cargo test
         run: cargo test --locked --all-targets
+
+  audit:
+    name: cargo audit (dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Reads Cargo.lock only (no build) and fails on any RustSec advisory.
+      - name: cargo audit
+        run: cargo audit
