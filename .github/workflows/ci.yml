@@ -10,7 +10,7 @@ jobs:
     name: build + test (macOS)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # whisper.cpp builds through cmake + clang, both present on the runner.
@@ -21,7 +21,7 @@ jobs:
     name: cargo audit (dependencies)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
