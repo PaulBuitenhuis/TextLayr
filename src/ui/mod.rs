@@ -127,6 +127,17 @@ pub struct App {
     pending: usize,
     /// Generation counter so stale frame extractions are dropped.
     frame_token: u64,
+    /// The wordmark banner shown in the header (None if it failed to decode).
+    banner: Option<egui::TextureHandle>,
+}
+
+/// Decode the bundled wordmark banner into a texture for the header.
+fn load_banner(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let bytes = include_bytes!("../../assets/banner-dark.png");
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    Some(ctx.load_texture("wordmark", color, egui::TextureOptions::LINEAR))
 }
 
 impl App {
@@ -169,6 +180,7 @@ impl App {
             rx,
             pending: 0,
             frame_token: 0,
+            banner: load_banner(&cc.egui_ctx),
         };
         if let Some(path) = initial {
             if !path.is_file() {
@@ -654,7 +666,17 @@ impl App {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.add_space(2.0);
-            ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
+            match &self.banner {
+                Some(banner) => {
+                    // Render the wordmark at text-ish height, keeping its aspect.
+                    let h = 24.0;
+                    let w = h * banner.size()[0] as f32 / banner.size()[1] as f32;
+                    ui.add(egui::Image::new(banner).fit_to_exact_size(egui::vec2(w, h)));
+                }
+                None => {
+                    ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
+                }
+            }
             ui.add_space(6.0);
             ui.separator();
             ui.add_space(2.0);
@@ -1416,4 +1438,23 @@ fn reveal(path: &Path) -> Result<()> {
     });
     cmd.arg(dir).spawn()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wordmark banner is embedded, decodes, and renders as an image
+    /// without panicking (covers the `include_bytes!` asset + texture path).
+    #[test]
+    fn wordmark_banner_decodes_and_renders() {
+        let ctx = egui::Context::default();
+        let banner = load_banner(&ctx).expect("banner should decode");
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let h = 24.0;
+            let w = h * banner.size()[0] as f32 / banner.size()[1] as f32;
+            ui.add(egui::Image::new(&banner).fit_to_exact_size(egui::vec2(w, h)));
+        });
+        out.textures_delta.clear();
+    }
 }

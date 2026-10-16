@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/icon.png" width="120" alt="TextLayr">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
+    <img src="assets/banner-light.png" width="360" alt="TextLayr">
+  </picture>
 </p>
 
 <p align="center">

@@ -4,6 +4,9 @@
 Produces:
   assets/icon.png     1024x1024 wordmark, used at runtime for the dock icon
   assets/AppIcon.icns macOS bundle icon (referenced by Info.plist)
+  assets/banner-{dark,light}.png  transparent wordmark lockup for the app
+                                   header and the README (white ink for dark
+                                   backgrounds, dark ink for light ones)
 
 The mark is the word "TextLayr" in white (Inter, the same family the app can
 caption with) sitting on an accent-blue highlight bar, with the descender of
@@ -40,6 +43,7 @@ BG_TOP = (40, 44, 54, 255)
 BG_BOTTOM = (15, 17, 22, 255)
 ACCENT = (10, 132, 255, 255)  # theme::ACCENT
 WHITE = (247, 249, 252, 255)
+DARK = (28, 31, 38, 255)  # wordmark ink for the light-background banner
 
 # Wordmark geometry, in 1024-space.
 TEXT = "TextLayr"
@@ -52,6 +56,10 @@ NUDGE_Y = -18  # optical centring of the whole lockup
 SMALL_GLYPH = "T"
 SMALL_HEIGHT = 700
 SMALL_NUDGE_Y = -10
+
+# Banner geometry: the transparent wordmark lockup used in the app header and
+# the README (no squircle background, so it works on any page colour).
+BANNER_H = 160  # output pixel height (displayed ~22px, so generously oversampled)
 
 FONT_PATH = ASSETS / "fonts" / "Inter-Bold.ttf"
 
@@ -110,10 +118,14 @@ def mono(level: int) -> Image.Image:
     return Image.new("L", (C, C), level)
 
 
-def paint_white(img: Image.Image, mask: Image.Image) -> None:
+def paint(img: Image.Image, mask: Image.Image, rgb) -> None:
     img.alpha_composite(
-        Image.merge("RGBA", (mono(WHITE[0]), mono(WHITE[1]), mono(WHITE[2]), mask))
+        Image.merge("RGBA", (mono(rgb[0]), mono(rgb[1]), mono(rgb[2]), mask))
     )
+
+
+def paint_white(img: Image.Image, mask: Image.Image) -> None:
+    paint(img, mask, WHITE)
 
 
 def centered_y(text: str, font: ImageFont.FreeTypeFont, nudge: int) -> int:
@@ -143,6 +155,33 @@ def build_small() -> Image.Image:
     font = fit(SMALL_GLYPH, target_h=SMALL_HEIGHT * SS)
     paint_white(img, text_mask(SMALL_GLYPH, font, centered_y(SMALL_GLYPH, font, SMALL_NUDGE_Y)))
     return img.resize((SIZE, SIZE), Image.LANCZOS)
+
+
+def build_banner(fg) -> Image.Image:
+    """Transparent wordmark lockup: "TextLayr" over the accent highlight bar,
+    with no background so it sits on the app header or a README of any colour.
+    Cropped tight and scaled to BANNER_H."""
+    img = Image.new("RGBA", (C, C), (0, 0, 0, 0))
+    font = fit(TEXT, target_w=TEXT_WIDTH * SS)
+    y = centered_y(TEXT, font, NUDGE_Y)
+    mask = text_mask(TEXT, font, y)
+    left, top, right, bottom = ink_bounds(mask)
+
+    rule_h = RULE_H * SS
+    bar = (left - RULE_PAD * SS, bottom - rule_h, right + RULE_PAD * SS, bottom)
+    rrect(img, bar, rule_h // 2, ACCENT)
+    paint(img, mask, fg)
+
+    pad = 6 * SS
+    box = (
+        max(min(left, bar[0]) - pad, 0),
+        max(min(top, bar[1]) - pad, 0),
+        min(max(right, bar[2]) + pad, C),
+        min(max(bottom, bar[3]) + pad, C),
+    )
+    img = img.crop(box)
+    scale = BANNER_H / img.height
+    return img.resize((max(1, round(img.width * scale)), BANNER_H), Image.LANCZOS)
 
 
 def write_icns(wordmark: Image.Image, small: Image.Image) -> None:
@@ -180,6 +219,11 @@ def main() -> int:
     png = ASSETS / "icon.png"
     wordmark.save(png)
     print(f"wrote {png.relative_to(ROOT)} ({png.stat().st_size // 1024} KiB)")
+
+    for name, fg in (("banner-dark.png", WHITE), ("banner-light.png", DARK)):
+        out = ASSETS / name
+        build_banner(fg).save(out)
+        print(f"wrote {out.relative_to(ROOT)} ({out.stat().st_size // 1024} KiB)")
 
     if shutil.which("iconutil") is None:
         print("iconutil not found — skipping .icns (macOS only)", file=sys.stderr)
