@@ -271,6 +271,9 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
 .cta-alt { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
 .cta-alt a { color: var(--accent); }
 
+/* In-page anchors land under the 62px sticky header without this. */
+section[id] { scroll-margin-top: 78px; }
+
 .btn {
   display: inline-flex; align-items: center; gap: 9px;
   font: inherit; font-weight: 700; font-size: 0.97rem;
