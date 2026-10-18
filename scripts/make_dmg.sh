@@ -24,11 +24,13 @@ background="$repo_root/assets/dmg-background.png"
 volname="TextLayr"
 # Window geometry must match scripts/make_dmg_background.py.
 win_w=640
-win_h=400
+win_h=520
 win_x=240
 win_y=160
-app_pos="160, 180"
-link_pos="480, 180"
+app_pos="160, 170"
+link_pos="480, 170"
+note_pos="320, 385"
+note_name="Before you open this.txt"
 
 # A volume keeps its name even if the mount point gets a " 1" suffix. Two disks
 # both named "TextLayr" make `tell disk "TextLayr"` ambiguous and the layout lands on
@@ -63,10 +65,47 @@ trap 'rm -rf "$work"' EXIT
 
 stage="$work/stage"
 mkdir -p "$stage"
-cp -R "$app" "$stage/"
+# `ditto` rather than `cp -R`: it preserves the bundle's extended attributes and
+# therefore its ad-hoc code signature.
+ditto "$app" "$stage/$(basename "$app")"
 ln -s /Applications "$stage/Applications"
 mkdir -p "$stage/.background"
 cp "$background" "$stage/.background/background.png"
+
+# The Gatekeeper note rides along in the image: .txt opens without any security
+# prompt, so the instruction is there before anyone tries the app.
+cat > "$stage/Before you open this.txt" <<'NOTE'
+TextLayr is free and open source, so it isn't notarized with a paid Apple
+Developer ID. macOS blocks apps like that the first time — this is expected,
+and it only happens once.
+
+  1. Drag TextLayr onto the Applications shortcut in this window.
+     (Do this first. Opening it straight from the disk image makes macOS run
+     a temporary read-only copy, which stops TextLayr updating itself later.)
+
+  2. Open TextLayr from your Applications folder. macOS will refuse.
+
+  3. Click "Done" in the warning — not "Move to Trash".
+
+  4. Open  System Settings -> Privacy & Security  and scroll to "Security".
+     Click "Open Anyway" next to the message about TextLayr, enter an admin
+     password, then open the app again.
+     (The button only appears for about an hour after you tried to open it.)
+
+No button, or you'd rather not? Open Terminal and run:
+
+  xattr -dr com.apple.quarantine /Applications/TextLayr.app
+
+If it says TextLayr "is damaged and can't be opened", that's the same thing
+and the same command fixes it.
+
+Prefer to skip all of this entirely? Install from the terminal instead —
+files downloaded with curl are never blocked:
+
+  curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
+
+Full details: https://paulbuitenhuis.github.io/TextLayr/
+NOTE
 
 rw="$work/$volname-rw.dmg"
 echo "==> staging and building a read-write image"
@@ -96,6 +135,7 @@ tell application "Finder"
         set background picture of viewOptions to file ".background:background.png"
         set position of item "$(basename "$app")" of container window to {$app_pos}
         set position of item "Applications" of container window to {$link_pos}
+        set position of item "$note_name" of container window to {$note_pos}
         update without registering applications
         delay 1
         close

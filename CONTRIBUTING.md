@@ -185,8 +185,25 @@ scripts/package_macos.sh
 
 builds `dist/TextLayr.app` and `dist/TextLayr-<version>.{zip,dmg}`. The bundle holds
 the binary and fonts only; `ffmpeg`/`probe` and the model are downloaded on first
-run. The build is ad-hoc signed and **not notarized**, so first launch on another
-Mac needs Right click → Open (or `xattr -dr com.apple.quarantine`).
+run.
+
+The build is ad-hoc signed and **not notarized**, so a copy that arrives with the
+`com.apple.quarantine` flag — anything downloaded in a browser or AirDropped — is
+refused by Gatekeeper on first launch. Two ways round it, both documented in the
+README: install with `docs/install.sh` (curl downloads are never quarantined), or
+let the user clear the flag with `xattr -dr com.apple.quarantine`. Note macOS 15
+**removed** the old "right-click → Open" shortcut, so that advice is dead.
+
+`docs/install.sh` is the terminal installer, served straight from GitHub Pages at
+<https://paulbuitenhuis.github.io/TextLayr/install.sh>. It resolves the release
+from `latest.json`, verifies the SHA-256, unpacks with `ditto` (keeping the
+signature) and installs to `/Applications` or `~/Applications`. Test it before
+pushing with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PaulBuitenhuis/TextLayr/main/docs/install.sh \
+  | sh -s -- --dir /tmp/install-test --no-open
+```
 
 The `.dmg` is a drag-to-Applications installer: when mounted it shows the app on
 the left and an `Applications` alias on the right, with an arrow background.

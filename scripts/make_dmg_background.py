@@ -17,13 +17,17 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 
 # Must match scripts/make_dmg.sh.
-W, H = 640, 400
-APP_X, APP_Y = 160, 180
-LINK_X, LINK_Y = 480, 180
+# Two rows: the app/Applications pair up top, and the "Before you open this"
+# note below, because an app this size needs explaining before it's launched.
+W, H = 640, 520
+APP_X, APP_Y = 160, 170
+LINK_X, LINK_Y = 480, 170
+NOTE_X, NOTE_Y = 320, 385
 
 BG = (246, 246, 248)
 ARROW = (183, 183, 191)
 TEXT = (138, 138, 146)
+HINT = (170, 170, 178)
 
 
 def main() -> int:
@@ -39,9 +43,18 @@ def main() -> int:
 
     try:
         font = ImageFont.truetype(str(ASSETS / "fonts" / "Inter-Regular.ttf"), 15)
+        small = ImageFont.truetype(str(ASSETS / "fonts" / "Inter-Regular.ttf"), 13)
     except OSError:
         font = ImageFont.load_default()
-    d.text((W // 2, 300), "Drag TextLayr to Applications", font=font, fill=TEXT, anchor="mm")
+        small = font
+    d.text((W // 2, 290), "Drag TextLayr to Applications", font=font, fill=TEXT, anchor="mm")
+    d.text(
+        (W // 2, 320),
+        "macOS blocks the first launch — the note below has the one-time fix",
+        font=small,
+        fill=HINT,
+        anchor="mm",
+    )
 
     out = ASSETS / "dmg-background.png"
     img.save(out)

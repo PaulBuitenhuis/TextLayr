@@ -19,8 +19,10 @@
 #   TEXTLAYR_VERSION     version string (default: `git describe --tags`, else the
 #                     version in Cargo.toml)
 #   CODESIGN_IDENTITY codesign identity; "-" = ad-hoc (default). TextLayr is not
-#                     notarized, so a distributed build needs Right click > Open
-#                     (or `xattr -dr com.apple.quarantine`) on first launch.
+#                     notarized, so a build that reaches a user's Mac as a browser
+#                     download is refused by Gatekeeper. `docs/install.sh` (curl,
+#                     so never quarantined) or the one-time "Open Anyway"/`xattr`
+#                     route from the README are the ways through it.
 #   SKIP_ARCHIVES=1   build only dist/TextLayr.app (no zip/dmg)
 set -euo pipefail
 
@@ -102,5 +104,14 @@ echo "First run downloads ffmpeg + a whisper model (~190 MB) into:"
 echo "  ~/Library/Application Support/textlayr/"
 echo "Prefer to do that headlessly?  \"$contents/MacOS/TextLayr\" --setup"
 echo
-echo "This build is ad-hoc signed and NOT notarized. On another Mac, first launch"
-echo "needs Right click > Open, or:  xattr -dr com.apple.quarantine \"$app\""
+echo "This build is ad-hoc signed and NOT notarized, so Gatekeeper refuses it on a"
+echo "machine that receives it as a browser/AirDrop download (macOS 15 also removed"
+echo "the old \"right-click > Open\" bypass). Two ways round it, both in the README:"
+echo
+echo "  1. have them install with the script, which never sets the quarantine flag:"
+echo "       curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh"
+echo "  2. or clear the flag on the installed copy:"
+echo "       xattr -dr com.apple.quarantine \"/Applications/TextLayr.app\""
+echo
+echo "For a browser download the user can also allow it once in System Settings >"
+echo "Privacy & Security > Open Anyway (admin account, within an hour of trying)."

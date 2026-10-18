@@ -14,6 +14,25 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   app). The landing page gained a `Support` section (using Ko-fi's in-page
   widget and floating button), a nav link and an FAQ entry; the README gained a
   `Support` section with Ko-fi's badge. Entirely optional.
+- **`install.sh`: install from the terminal, with no security prompt at all.**
+  Files fetched with `curl` never receive the `com.apple.quarantine` flag that
+  browsers and AirDrop attach, so Gatekeeper is never consulted:
+
+  ```sh
+  curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
+  ```
+
+  It reads the same `latest.json` manifest the app's updater trusts, verifies the
+  download's SHA-256, unpacks with `ditto` (preserving the code signature), and
+  installs to `/Applications` or `~/Applications` — never asking for a password.
+  Verified before writing any docs: a `curl` download carries no quarantine
+  attribute, a quarantined copy is silently refused, and `xattr -dr` restores it.
+- **The disk image now carries its own instructions.** `Before you open this.txt`
+  (a text file, so it opens with no security prompt) sits in the installer window
+  below the drag-to-Applications row, with the one-time Gatekeeper steps and the
+  `xattr` fallback; the image's background gained a second line pointing at it.
+  The app is also staged with `ditto` now, so its signature always survives
+  packaging.
 
 ### Changed
 
@@ -62,6 +81,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Change video**) invalidated the in-flight preview-frame generation by parking
   its counter at `u64::MAX`, and the next frame request added one to it — an
   overflow panic in debug builds. The counter now wraps.
+- **Installing no longer sends people down a dead end.** Since macOS 15,
+  right-click → **Open** does not bypass Gatekeeper, and Homebrew removed the
+  `--no-quarantine` escape hatch in late 2025 — but the README, the website and
+  the packaging script all still recommended the right-click route, which is why
+  a fresh Mac couldn't open the app.
 
 ## [0.2.1] - 2026-10-17
 

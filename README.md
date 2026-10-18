@@ -45,17 +45,65 @@
 
 ## Install
 
+TextLayr is free and open source, so it isn't signed with a paid Apple Developer
+ID and can't be notarized. macOS therefore refuses to open it the way it opens a
+paid app. There are two ways in — the first avoids that entirely.
+
+### Terminal — no warnings, no password (recommended)
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
+```
+
+Files fetched with `curl` don't carry the `com.apple.quarantine` flag that
+browsers and AirDrop add to downloads, so Gatekeeper is never consulted: TextLayr
+installs and opens like any other app. The script reads the same release manifest
+the app's own updater trusts, checks the download's SHA-256, unpacks it with
+`ditto` (which preserves the code signature) and installs to `/Applications` — or
+`~/Applications` when `/Applications` isn't writable. It never asks for a
+password. Read it first if you prefer:
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | less
+```
+
+Options go through `sh -s --`, e.g. `... | sh -s -- --dir ~/Applications
+--no-open`. Uninstall with `rm -rf /Applications/TextLayr.app`.
+
+### Disk image — point and click
+
 Download the latest `TextLayr-<version>.dmg` from
-[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), open it, and drag
-**TextLayr** into **Applications**.
+[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), then:
 
-TextLayr is **not notarized** (no Apple Developer ID), so the very first launch
-needs a round trip through Gatekeeper:
+1. **Drag TextLayr into Applications before opening it.** Launching it from the
+   disk image makes macOS run it from a temporary read-only copy, which stops it
+   updating itself later.
+2. **Open it from your Applications folder.** macOS blocks the first launch:
 
-1. **Right-click (or Control-click) the app → Open**, then confirm **Open**.
-   - or, in a terminal: `xattr -dr com.apple.quarantine /Applications/TextLayr.app`
+   1. Double-click it, then click **Done** in the warning — don't choose *Move
+      to Trash*.
+   2. Open   → **System Settings → Privacy & Security** and scroll to
+      **Security**.
+   3. Click **Open Anyway** next to the message about TextLayr, enter an admin
+      password, and confirm.
+   4. Open the app again.
 
-After that it launches normally.
+   It has to be an admin account, and the **Open Anyway** button only shows for
+   about an hour after the blocked attempt. macOS 15 removed the old
+   "right-click → Open" shortcut, which is why this goes via System Settings now.
+
+   **No button, or you'd rather not?** Clear the flag instead:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/TextLayr.app
+   ```
+
+   Swap in `~/Applications` if that's where you put it. If macOS says TextLayr
+   **"is damaged and can't be opened"**, that's the same mechanism and the same
+   command fixes it.
+
+You only ever do this once. After the first launch TextLayr updates itself, and
+the app downloads those updates itself — so they never trip Gatekeeper.
 
 ### First run
 
@@ -67,11 +115,11 @@ The first time you open TextLayr it shows a **Setup** screen. It downloads:
 
 These are stored in `~/Library/Application Support/textlayr/` — nothing else on
 your machine is touched. From then on TextLayr works fully offline, apart from a
-once-a-day look for a new TextLayr release (you can switch that off in **About →
-Updates**).
+once-a-day look for a new TextLayr release (you can switch that off in
+**Settings → Updates**).
 
-You can manage models from the **About** window: switch between installed ones,
-download the other, or remove one TextLayr downloaded (a dev-checkout or
+You can manage models from the **Settings** window: switch between installed
+ones, download the other, or remove one TextLayr downloaded (a dev-checkout or
 `$TEXTLAYR_MODEL` model is never deleted).
 
 Prefer the terminal? `textlayr --setup` does the same thing.
@@ -92,9 +140,9 @@ restyling after the first pass is instant.
 
 TextLayr reads a small `latest.json` manifest attached to the newest GitHub
 release, on launch (at most once a day), and shows an **Update available** button
-next to **About** when there is a newer version. From **About → Updates** you can
-check on demand, read the release notes, or **Download & install** — the app
-verifies the download (SHA-256 from the manifest, plus a codesign /
+next to **Settings** when there is a newer version. From **Settings → Updates**
+you can check on demand, read the release notes, or **Download & install** — the
+app verifies the download (SHA-256 from the manifest, plus a codesign /
 bundle-identifier / version check), swaps its own bundle in place and relaunches
 itself. If it can't (e.g. it is running from a quarantined "App Translocation"
 copy or a read-only location), it downloads the disk image and opens it so you
@@ -158,6 +206,14 @@ PNGs → export: ffmpeg decode → Rust compositing → hardware encode
 Caption states are tight crops of just the caption box, so a few hundred of them
 stay small and the export's memory stays flat. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the deeper design notes.
+
+## Support
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U6R0290CU2)
+
+TextLayr is free and open source, and always will be. If it saves you time,
+you can buy me a coffee - it's completely optional. Starring or sharing the
+project helps just as much.
 
 ## License
 
