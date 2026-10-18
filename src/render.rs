@@ -10,9 +10,10 @@
 
 use crate::chunk::Chunk;
 use crate::config::{self, Color, Style};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use fontdue::{Font, FontSettings};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// One rendered highlight state with the time window it should be visible.
 #[derive(Debug, Clone)]
@@ -396,16 +397,28 @@ fn render_state(faces: &Faces, style: &Style, words: &[String], active: usize, f
 ///
 /// `on_state` receives 0..=1 after each state (for the GUI's export progress).
 /// Returns states in chronological order with their visibility windows.
+/// Render every caption state for `chunks` into `out_dir`.
+///
+/// `cancel` is polled once per state; when it is set the pass stops with a
+/// "cancelled" error (part-rendered PNGs are left to the caller's temp dir).
+#[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn render_states(
     style: &Style,
     chunks: &[Chunk],
     frame_w: u32,
     frame_h: u32,
     out_dir: &Path,
+    cancel: &AtomicBool,
     mut on_state: impl FnMut(f32),
 ) -> Result<Vec<CaptionState>> {
     let mut style = style.clone();
     style.sanitize();
+
+    // Checked before the fonts are loaded so a cancel that arrives before the
+    // pass starts doesn't pay for it.
+    if cancel.load(Ordering::Relaxed) {
+        bail!("export cancelled");
+    }
 
     let font_px = font_px(&style, frame_h);
     let faces = Faces::load(&style, font_px)?;
@@ -424,6 +437,9 @@ pub fn render_states(
         let words: Vec<String> = chunk.words.iter().map(|w| w.text.clone()).collect();
         let windows = chunk.state_windows();
         for (k, &(start, end)) in windows.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                bail!("export cancelled");
+            }
             let path = out_dir.join(format!("c{ci:04}_s{k:02}.png"));
             render_state(&faces, &style, &words, k, font_px, frame_w, &path)
                 .with_context(|| format!("failed to render state {k} of chunk {ci}"))?;
@@ -439,4 +455,42 @@ pub fn render_states(
         }
     }
     Ok(states)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A cancel that lands before the pass starts stops it immediately, and the
+    /// message says "cancelled" so the GUI can tell it from a failure.
+    #[test]
+    fn a_cancelled_pass_stops_without_rendering() {
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = AtomicBool::new(true);
+        let err = render_states(
+            &Style::default(),
+            &[],
+            200,
+            200,
+            dir.path(),
+            &cancel,
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("cancelled"), "{err:#}");
+        assert!(
+            std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+            "nothing should be written"
+        );
+    }
+
+    /// With nothing to render and no cancel, the pass is a clean no-op.
+    #[test]
+    fn an_empty_pass_renders_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = AtomicBool::new(false);
+        let states =
+            render_states(&Style::default(), &[], 200, 200, dir.path(), &cancel, |_| {}).unwrap();
+        assert!(states.is_empty());
+    }
 }

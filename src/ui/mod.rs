@@ -20,7 +20,9 @@ use crate::config::{self, Style};
 use crate::deps;
 use crate::install::{self, InstallProgress};
 use crate::model::{FoundModel, Model};
-use crate::pipeline::{self, ExportProgress, ExportSink, IngestProgress, Progress};
+use crate::pipeline::{
+    self, ExportPhase, ExportProgress, ExportSink, IngestProgress, Progress,
+};
 use crate::source::Source;
 use crate::update;
 use preview::Frame;
@@ -30,6 +32,8 @@ use review::{Action, ReviewState};
 const DEVELOPER: &str = "Paul Buitenhuis";
 const DEVELOPER_URL: &str = "https://github.com/PaulBuitenhuis";
 const REPO_URL: &str = "https://github.com/PaulBuitenhuis/TextLayr";
+/// Optional donations page, opened in the user's browser.
+const SUPPORT_URL: &str = "https://ko-fi.com/U6R0290CU2";
 
 /// Where the app is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +45,33 @@ enum Stage {
     Done,
 }
 
+/// The selected tab in the About window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AboutTab {
+    About,
+    Models,
+    Updates,
+    Diagnostics,
+}
+
+impl AboutTab {
+    const ALL: [AboutTab; 4] = [
+        AboutTab::About,
+        AboutTab::Models,
+        AboutTab::Updates,
+        AboutTab::Diagnostics,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            AboutTab::About => "About",
+            AboutTab::Models => "Models",
+            AboutTab::Updates => "Updates",
+            AboutTab::Diagnostics => "Diagnostics",
+        }
+    }
+}
+
 struct IngestStatus {
     file: PathBuf,
     label: String,
@@ -50,14 +81,45 @@ struct IngestStatus {
     model: Option<Model>,
 }
 
+/// Live export progress: which pass is running and how far along it is.
 struct ExportStatus {
-    label: String,
-    progress: f32,
+    /// File being written, shown under the heading.
+    file: String,
+    /// The pass currently running.
+    phase: ExportPhase,
+    /// 0..=1 within the current pass (that pass's own bar).
+    phase_frac: f32,
+    /// 0..=1 across the whole export; drives the time estimate.
+    overall: f32,
+    /// Caption states the render pass will produce, for the step detail.
+    states: usize,
+    /// When the export started, for the time estimate.
+    started: Instant,
+}
+
+impl ExportStatus {
+    /// Estimated time left, derived from how far we are and how long it took.
+    ///
+    /// `None` burns the first couple of seconds (and the last sliver) rather
+    /// than quoting a number that swings wildly.
+    fn remaining(&self) -> Option<Duration> {
+        let elapsed = self.started.elapsed().as_secs_f64();
+        let done = self.overall as f64;
+        if elapsed < 2.0 || done <= 0.02 || done >= 1.0 {
+            return None;
+        }
+        let left = (elapsed / done) - elapsed;
+        // Round to 5s: the raw number jitters every frame and reads as noise.
+        Some(Duration::from_secs_f64(((left / 5.0).round() * 5.0).max(5.0)))
+    }
 }
 
 struct DoneInfo {
     output: PathBuf,
     secs: f64,
+    width: u32,
+    height: u32,
+    duration_secs: f64,
 }
 
 /// Progress of a first-run install (ffmpeg/model downloads).
@@ -100,6 +162,9 @@ enum Msg {
     ExportOk {
         output: PathBuf,
         secs: f64,
+        width: u32,
+        height: u32,
+        duration_secs: f64,
     },
     ExportErr(String),
     Install(InstallProgress),
@@ -136,6 +201,8 @@ pub struct App {
     install: Option<InstallStatus>,
     /// Cancels the in-flight install.
     install_cancel: Option<Arc<AtomicBool>>,
+    /// Cancels the in-flight export.
+    export_cancel: Option<Arc<AtomicBool>>,
     /// The model the in-flight install is fetching (selected on success).
     install_target: Option<Model>,
     /// A model the user has asked to remove, awaiting confirmation.
@@ -148,6 +215,8 @@ pub struct App {
     update_install_cancel: Option<Arc<AtomicBool>>,
     /// Whether the About window is showing.
     about_open: bool,
+    /// Selected tab in the About window.
+    about_tab: AboutTab,
     /// Whether the open-source licenses window is showing.
     licenses_open: bool,
     /// Selected section in the licenses window.
@@ -163,7 +232,8 @@ pub struct App {
     pending: usize,
     /// Generation counter so stale frame extractions are dropped.
     frame_token: u64,
-    /// The wordmark banner shown in the header (None if it failed to decode).
+    /// The wordmark banner, shown in the header and the About window
+    /// (None if it failed to decode).
     banner: Option<egui::TextureHandle>,
 }
 
@@ -205,12 +275,14 @@ impl App {
             model_pref,
             install: None,
             install_cancel: None,
+            export_cancel: None,
             install_target: None,
             pending_remove: None,
             update: UpdateUi::Unknown,
             update_check_cancel: None,
             update_install_cancel: None,
             about_open: false,
+            about_tab: AboutTab::About,
             licenses_open: false,
             licenses_sel: 0,
             saved_prefs,
@@ -252,9 +324,9 @@ impl App {
         }
     }
 
-    /// Delete a model TextLayr downloaded, then refresh discovery.
+    /// Delete a model file TextLayr manages, then refresh discovery.
     fn remove_model(&mut self, found: &crate::model::FoundModel) {
-        match crate::model::remove_downloaded(found) {
+        match crate::model::remove_located(found) {
             Ok(()) => {
                 self.pending_remove = None;
                 self.recheck_deps();
@@ -264,6 +336,45 @@ impl App {
                 self.error = Some(format!("{e:#}"));
             }
         }
+    }
+
+    /// A plain-text snapshot of the resolved runtime pieces, for pasting into a
+    /// bug report from the Diagnostics tab.
+    fn copy_diagnostics_report(&self) -> String {
+        fn line(out: &mut String, label: &str, value: Option<&(PathBuf, Source)>) {
+            match value {
+                Some((p, source)) => {
+                    out.push_str(&format!("{label}: {} ({})\n", p.display(), source.label()));
+                }
+                None => out.push_str(&format!("{label}: not found\n")),
+            }
+        }
+
+        let mut out = String::new();
+        out.push_str(&format!(
+            "TextLayr {} (build {})\n",
+            env!("CARGO_PKG_VERSION"),
+            env!("TEXTLAYR_GIT_HASH")
+        ));
+        out.push_str(&format!(
+            "OS: {} / {}\n\n",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
+
+        let fftools = self.deps.fftools.as_ref();
+        let ffmpeg = fftools.map(|t| (t.ffmpeg.clone(), t.source));
+        let ffprobe = fftools.map(|t| (t.ffprobe.clone(), t.source));
+        let model = self.deps.model.as_ref().map(|m| (m.path.clone(), m.source));
+        line(&mut out, "ffmpeg", ffmpeg.as_ref());
+        line(&mut out, "ffprobe", ffprobe.as_ref());
+        line(&mut out, "model", model.as_ref());
+        line(&mut out, "fonts", self.deps.fonts.as_ref());
+        match config::config_path() {
+            Some(p) => out.push_str(&format!("config: {}\n", p.display())),
+            None => out.push_str("config: (default location)\n"),
+        }
+        out
     }
 
     /// The style currently in effect: the review style, or the last saved one.
@@ -495,7 +606,13 @@ impl App {
         let tools = r.tools.clone();
         let input = r.input.clone();
 
-        self.frame_token += 1;
+        // Bumped, not assigned: `reset_to_drop` parks this counter so that
+        // in-flight extractions fall on the floor, and a plain `+= 1` used to
+        // overflow the moment a second video was opened after an export.
+        // Bumped, not assigned: `reset_to_drop` parks this counter so that
+        // in-flight extractions fall on the floor, and a plain `+= 1` used to
+        // overflow the moment a second video was opened after an export.
+        self.frame_token = self.frame_token.wrapping_add(1);
         let token = self.frame_token;
         let tx = self.tx.clone();
         self.pending += 1;
@@ -524,19 +641,30 @@ impl App {
         let info = r.info.clone();
         let style = r.style.clone();
         let output = pipeline::default_output(&input);
+        // The render pass makes one PNG per caption state; the step row shows
+        // the count, and it is the same arithmetic the pipeline does.
+        let states: usize = chunks.iter().map(|c| c.state_windows().len()).sum();
 
         self.error = None;
         self.export = Some(ExportStatus {
-            label: "starting…".into(),
-            progress: 0.0,
+            file: file_label(&output),
+            phase: ExportPhase::Rendering,
+            phase_frac: 0.0,
+            overall: 0.0,
+            states,
+            started: Instant::now(),
         });
         self.stage = Stage::Export;
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.export_cancel = Some(Arc::clone(&cancel));
 
         let tx = self.tx.clone();
         let done_tx = tx.clone();
         let sink: ExportSink = Box::new(move |p| {
             let _ = tx.send(Msg::Export(p));
         });
+        let dims = (info.display_width, info.display_height, info.duration_secs);
         self.pending += 1;
         std::thread::spawn(move || {
             let started = std::time::Instant::now();
@@ -548,12 +676,17 @@ impl App {
                 &chunks,
                 &style,
                 crate::export::Encoder::Auto,
+                &cancel,
                 sink,
             ) {
                 Ok(()) => {
+                    let (width, height, duration_secs) = dims;
                     let _ = done_tx.send(Msg::ExportOk {
                         output,
                         secs: started.elapsed().as_secs_f64(),
+                        width,
+                        height,
+                        duration_secs,
                     });
                 }
                 Err(e) => {
@@ -563,7 +696,19 @@ impl App {
         });
     }
 
+    /// Ask the in-flight export to stop; the worker kills ffmpeg and drops the
+    /// half-written file, then reports a cancel back through the message pump.
+    fn cancel_export(&mut self) {
+        if let Some(cancel) = &self.export_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn reset_to_drop(&mut self) {
+        // If an export is somehow still in flight, stop it rather than leaving
+        // a worker holding a temp dir and a half-written file.
+        self.cancel_export();
+        self.export_cancel = None;
         self.stage = Stage::Drop;
         self.input = None;
         self.ingest = None;
@@ -572,8 +717,9 @@ impl App {
         self.done = None;
         self.error = None;
         self.warn = None;
-        // Drop any in-flight frame extraction.
-        self.frame_token = u64::MAX;
+// Invalidate any in-flight frame extraction: its token no longer
+        // matches, so the result is dropped when it arrives.
+        self.frame_token = self.frame_token.wrapping_add(1);
     }
 
     // ── message pump ──────────────────────────────────────────────────────
@@ -670,32 +816,45 @@ impl App {
             }
             Msg::Export(p) => {
                 if let Some(st) = &mut self.export {
-                    match p {
-                        ExportProgress::Rendering(f) => {
-                            st.label = "rendering caption states…".into();
-                            st.progress = f;
-                        }
-                        ExportProgress::Encoding(f) => {
-                            st.label = "encoding with ffmpeg…".into();
-                            st.progress = f;
-                        }
-                    }
+                    st.phase = p.phase;
+                    st.phase_frac = p.phase_frac;
+                    st.overall = p.overall;
                 }
             }
-            Msg::ExportOk { output, secs } => {
+            Msg::ExportOk {
+                output,
+                secs,
+                width,
+                height,
+                duration_secs,
+            } => {
                 self.pending = self.pending.saturating_sub(1);
                 self.export = None;
-                self.done = Some(DoneInfo { output, secs });
+                self.export_cancel = None;
+                self.done = Some(DoneInfo {
+                    output,
+                    secs,
+                    width,
+                    height,
+                    duration_secs,
+                });
                 self.stage = Stage::Done;
             }
             Msg::ExportErr(e) => {
                 self.pending = self.pending.saturating_sub(1);
                 self.export = None;
-                // The banner shows this to the user; stderr is the only place
-                // a headless harness (or a terminal user) can see it too.
-                eprintln!("      export failed: {e}");
-                self.error = Some(e);
-                self.stage = Stage::Review;
+                self.export_cancel = None;
+                // Cancelling is the user's own doing: drop back to review, with
+                // every edit intact, and don't shout about it.
+                if e.contains("cancelled") {
+                    self.stage = Stage::Review;
+                } else {
+                    // The banner shows this to the user; stderr is the only
+                    // place a headless harness (or a terminal user) can see it.
+                    eprintln!("      export failed: {e}");
+                    self.error = Some(e);
+                    self.stage = Stage::Review;
+                }
             }
             Msg::Install(p) => {
                 if let Some(st) = &mut self.install {
@@ -863,60 +1022,67 @@ impl App {
     // ── screens ───────────────────────────────────────────────────────────
 
     fn header(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.add_space(2.0);
-            match &self.banner {
-                Some(banner) => {
-                    // Render the wordmark at text-ish height, keeping its aspect.
-                    let h = 24.0;
-                    let w = h * banner.size()[0] as f32 / banner.size()[1] as f32;
-                    ui.add(egui::Image::new(banner).fit_to_exact_size(egui::vec2(w, h)));
-                }
-                None => {
-                    ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
-                }
-            }
-            ui.add_space(6.0);
-            ui.separator();
-            ui.add_space(2.0);
-            match &self.stage {
-                Stage::Drop => {
-                    ui.label(egui::RichText::new("offline karaoke caption burner").weak());
-                }
-                Stage::Ingest => {
-                    if let Some(st) = &self.ingest {
-                        ui.label(file_label(&st.file));
+        // Fill the bar's content box and centre the row in it, so the padding
+        // above and below is equal whatever the widgets happen to measure.
+        let h = ui.available_height();
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), h),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add_space(2.0);
+                match &self.banner {
+                    Some(banner) => {
+                        // Render the wordmark at text-ish height, keeping its aspect.
+                        let h = 24.0;
+                        let w = h * banner.size()[0] as f32 / banner.size()[1] as f32;
+                        ui.add(egui::Image::new(banner).fit_to_exact_size(egui::vec2(w, h)));
+                    }
+                    None => {
+                        ui.label(egui::RichText::new("TextLayr").size(17.0).strong());
                     }
                 }
-                Stage::Review => {
-                    if let Some(r) = &self.review {
-                        ui.label(file_label(&r.input));
-                        ui.label(
-                            egui::RichText::new(format!("· {} popups", r.chunks.len())).weak(),
-                        );
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(2.0);
+                match &self.stage {
+                    Stage::Drop => {
+                        ui.label(egui::RichText::new("offline karaoke caption burner").weak());
+                    }
+                    Stage::Ingest => {
+                        if let Some(st) = &self.ingest {
+                            ui.label(file_label(&st.file));
+                        }
+                    }
+                    Stage::Review => {
+                        if let Some(r) = &self.review {
+                            ui.label(file_label(&r.input));
+                            ui.label(
+                                egui::RichText::new(format!("· {} popups", r.chunks.len())).weak(),
+                            );
+                        }
+                    }
+                    Stage::Export => {
+                        ui.label(egui::RichText::new("exporting…").weak());
+                    }
+                    Stage::Done => {
+                        ui.label(egui::RichText::new("export complete").weak());
                     }
                 }
-                Stage::Export => {
-                    ui.label(egui::RichText::new("exporting…").weak());
-                }
-                Stage::Done => {
-                    ui.label(egui::RichText::new("export complete").weak());
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.stage == Stage::Review && theme::button(ui, "Change video").clicked() {
-                    self.reset_to_drop();
-                }
-                if theme::button(ui, "About").clicked() {
-                    self.about_open = true;
-                }
-                if matches!(&self.update, UpdateUi::Available(_))
-                    && theme::button(ui, "Update available").clicked()
-                {
-                    self.about_open = true;
-                }
-            });
-        });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.stage == Stage::Review && theme::button(ui, "Change video").clicked() {
+                        self.reset_to_drop();
+                    }
+                    if theme::button(ui, "Settings").clicked() {
+                        self.about_open = true;
+                    }
+                    if matches!(&self.update, UpdateUi::Available(_))
+                        && theme::button(ui, "Update available").clicked()
+                    {
+                        self.about_open = true;
+                    }
+                });
+            },
+        );
         ui.add_space(1.0);
     }
 
@@ -1070,7 +1236,7 @@ impl App {
                 }
                 ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("You can change this later from About.").weak(),
+                    egui::RichText::new("You can change this later from Settings.").weak(),
                 );
             });
         });
@@ -1137,51 +1303,218 @@ impl App {
         centered_block(ui, &file, &label, st.progress);
     }
 
+    /// The export in progress: one row per pass, each with its own bar, plus a
+    /// time estimate and a way out.
     fn screen_export(&mut self, ui: &mut egui::Ui) {
         let Some(st) = &self.export else { return };
-        let label = st.label.clone();
-        centered_block(ui, "Exporting", &label, Some(st.progress));
+        let file = st.file.clone();
+        let phase = st.phase;
+        let phase_frac = st.phase_frac;
+        let states = st.states;
+        let remaining = st.remaining();
+        let cancelling = self
+            .export_cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::Relaxed));
+        let mut cancel = false;
+
+        // A fixed-width column, centred. `set_max_width` alone would be undone
+        // by the full-width `add_space` calls above it (they widen `min_rect`,
+        // and egui never shrinks below that), so the column is allocated to an
+        // explicit size instead.
+        let h = ui.available_height();
+        // Sit it near the optical middle, like the ingest screen.
+        ui.add_space((h * 0.5 - 118.0).max(24.0));
+        column(ui, h, |ui| {
+            ui.heading("Exporting");
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(&file).weak());
+            ui.add_space(28.0);
+
+            for p in ExportPhase::ALL {
+                let detail = match p {
+                    ExportPhase::Rendering => format!("{states} states"),
+                    ExportPhase::Encoding => String::new(),
+                };
+                let state = if p == phase {
+                    Pass::Running(phase_frac)
+                } else if p.before(phase) {
+                    Pass::Done
+                } else {
+                    Pass::Waiting
+                };
+                export_pass(ui, p, state, &detail);
+                ui.add_space(16.0);
+            }
+
+            // Always reserve the estimate line so Cancel doesn't shuffle as the
+            // first estimate appears.
+            ui.label(
+                egui::RichText::new(match remaining {
+                    Some(d) => format!("about {} remaining", rough_secs(d.as_secs_f64())),
+                    None => String::new(),
+                })
+                .weak()
+                .small(),
+            );
+            ui.add_space(18.0);
+            if cancelling {
+                ui.label(egui::RichText::new("Cancelling…").weak());
+            } else if theme::fixed_button(ui, true, 120.0, "Cancel").clicked() {
+                cancel = true;
+            }
+        });
+
+        if cancel {
+            self.cancel_export();
+        }
     }
 
     fn screen_done(&mut self, ui: &mut egui::Ui) {
         let Some(d) = &self.done else { return };
         let output = d.output.clone();
         let secs = d.secs;
-        let size_mb = std::fs::metadata(&output)
-            .map(|m| m.len() as f64 / 1e6)
-            .unwrap_or(0.0);
+        let (width, height, duration_secs) = (d.width, d.height, d.duration_secs);
+        let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
 
-        centered(ui, 88.0, |ui| {
-            ui.heading("Export complete");
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new(file_label(&output)).strong());
-            ui.add_space(2.0);
-            ui.label(
-                egui::RichText::new(format!("{size_mb:.1} MB · took {secs:.0}s")).weak(),
-            );
-            ui.add_space(18.0);
-            ui.vertical_centered(|ui| {
-                ui.set_max_width(260.0);
-                let reveal_label = if cfg!(target_os = "macos") {
-                    "Reveal in Finder"
-                } else {
-                    "Show in folder"
-                };
-                if theme::primary_button(ui, true, reveal_label).clicked() {
-                    if let Err(e) = reveal(&output) {
-                        self.error = Some(format!("could not open folder: {e}"));
-                    }
-                }
-                ui.add_space(8.0);
-                if theme::wide_button(ui, true, "New video").clicked() {
-                    self.reset_to_drop();
-                }
-            });
+        // The frame the preview already has: no extra ffmpeg pass, and it has
+        // the caption burned in, so the screen shows what was made rather than
+        // just naming it.
+        let poster = self
+            .review
+            .as_ref()
+            .and_then(|r| r.preview.texture().zip(r.preview.image_size()));
+
+        let mut open_video = false;
+        let mut reveal_output = false;
+        let mut new_video = false;
+        let mut support = false;
+
+        let avail = ui.available_size();
+        // Scale the poster to the room we have, so a short window still fits the
+        // whole block (there is no scroll area on this screen). Portrait video
+        // is capped by height, which is why the budget is height-based.
+        let poster_max_h = ((avail.y - 290.0) * 0.75).clamp(90.0, 340.0);
+        let poster_size = poster.map(|(_, (iw, ih))| {
+            let aspect = ih as f32 / iw.max(1) as f32;
+            let w = COLUMN_W.min(poster_max_h / aspect.max(0.01));
+            egui::vec2(w, w * aspect)
         });
+
+        let block = poster_size.map(|s| s.y).unwrap_or(0.0) + 290.0;
+        let top = ((avail.y - block) * 0.5).max(16.0);
+        ui.add_space(top);
+
+        column(ui, (avail.y - top).max(1.0), |ui| {
+            if let (Some((tex, _)), Some(size)) = (poster, poster_size) {
+                let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                ui.painter().image(tex.id(), rect, uv, egui::Color32::WHITE);
+                ui.painter().rect_stroke(
+                    rect,
+                    theme::ROUND_LG as f32,
+                    egui::Stroke::new(1.0, theme::BORDER),
+                    egui::StrokeKind::Inside,
+                );
+                if resp.hovered() {
+                    // A soft play affordance: dim the frame, float a disc with a
+                    // hand-drawn triangle (the bundled fonts have no ▶).
+                    ui.painter().rect_filled(
+                        rect,
+                        theme::ROUND_LG as f32,
+                        egui::Color32::from_black_alpha(96),
+                    );
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    let c = rect.center();
+                    ui.painter()
+                        .circle_filled(c, 26.0, egui::Color32::from_white_alpha(232));
+                    let r = 11.0;
+                    ui.painter().add(egui::Shape::convex_polygon(
+                        vec![
+                            egui::pos2(c.x - r * 0.42, c.y - r),
+                            egui::pos2(c.x - r * 0.42, c.y + r),
+                            egui::pos2(c.x + r * 0.78, c.y),
+                        ],
+                        theme::SURFACE,
+                        egui::Stroke::NONE,
+                    ));
+                }
+                if resp.clicked() {
+                    open_video = true;
+                }
+                resp.on_hover_text("Open video");
+                ui.add_space(20.0);
+            }
+
+            ui.label(
+                egui::RichText::new("\u{2714}")
+                    .size(15.0)
+                    .color(theme::SUCCESS)
+                    .strong(),
+            );
+            ui.add_space(2.0);
+            ui.heading("Export complete");
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(file_label(&output)).strong());
+            ui.add_space(3.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "{width}×{height}  ·  {}  ·  {}  ·  exported in {}",
+                    mmss(duration_secs),
+                    human_bytes(size),
+                    rough_secs(secs),
+                ))
+                .weak()
+                .small(),
+            );
+
+            ui.add_space(22.0);
+            if theme::primary_button(ui, true, "Open video").clicked() {
+                open_video = true;
+            }
+            ui.add_space(10.0);
+            // Secondary actions as real buttons, muted against the accent one
+            // above and centred as a pair.
+            let actions = centred_buttons(ui, &[reveal_label(), "New video"]);
+            if actions.first().is_some_and(|r| r.clicked()) {
+                reveal_output = true;
+            }
+            if actions.get(1).is_some_and(|r| r.clicked()) {
+                new_video = true;
+            }
+
+            ui.add_space(24.0);
+            ui.separator();
+            ui.add_space(12.0);
+            ui.label(
+                egui::RichText::new("TextLayr is free and open source — thank you for using it.")
+                    .weak()
+                    .small(),
+            );
+            ui.add_space(8.0);
+            if theme::icon_button(ui, "\u{2615}", theme::COFFEE, "Buy me a coffee").clicked() {
+                support = true;
+            }
+        });
+
+        if open_video {
+            if let Err(e) = open_file(&output) {
+                self.error = Some(format!("could not open video: {e}"));
+            }
+        }
+        if reveal_output {
+            if let Err(e) = reveal(&output) {
+                self.error = Some(format!("could not open folder: {e}"));
+            }
+        }
+        if support {
+            ui.ctx().open_url(egui::OpenUrl::new_tab(SUPPORT_URL));
+        }
+        if new_video {
+            self.reset_to_drop();
+        }
     }
 
-    /// A small modal with the credits, version/build, the model selector and
-    /// the resolved runtime paths (with their provenance).
     fn about_window(&mut self, ctx: &egui::Context) {
         if !self.about_open {
             return;
@@ -1189,276 +1522,529 @@ impl App {
         let mut open = true;
         let mut close = false;
         let mut open_licenses = false;
-        // Update controls are collected here and applied after the window
-        // closure, so the UI never re-enters `self` while it's borrowed.
+        let mut buy_coffee = false;
+        let mut reveal_path: Option<PathBuf> = None;
+
+        // Actions are collected during the draw and applied after the window
+        // closure, so the UI never re-enters `self` while it is borrowed.
         let update_state = self.update.clone();
         let auto_check = self.saved_prefs.auto_check_updates;
         let mut check_updates = false;
         let mut start_install_update: Option<update::Release> = None;
         let mut cancel_install_update = false;
         let mut set_auto_check: Option<bool> = None;
-        egui::Window::new("About TextLayr")
+
+        // Bound the panel to the viewport so a short display can't clip it.
+        let screen_h = ctx.input(|i| i.viewport_rect().height());
+        let max_h = (screen_h - 80.0).clamp(420.0, 660.0);
+        let mut tab_idx = AboutTab::ALL
+            .iter()
+            .position(|t| *t == self.about_tab)
+            .unwrap_or(0);
+
+        egui::Window::new("Settings")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .fixed_size(egui::vec2(500.0, max_h))
             .show(ctx, |ui| {
-                ui.set_max_width(470.0);
-                ui.vertical_centered(|ui| {
-                    ui.heading("TextLayr");
-                    ui.add_space(2.0);
-                    ui.label(egui::RichText::new("Offline karaoke caption burner").weak());
-                    ui.add_space(8.0);
-                    ui.label(format!(
-                        "Version {}   ·   build {}",
-                        env!("CARGO_PKG_VERSION"),
-                        env!("TEXTLAYR_GIT_HASH")
-                    ));
-                });
+                ui.set_width(476.0);
 
-                ui.add_space(12.0);
+                // ── tab strip ─────────────────────────────────────────────
+                let labels: Vec<&str> = AboutTab::ALL.iter().map(|t| t.label()).collect();
+                if theme::segmented(ui, &mut tab_idx, &labels) {
+                    self.about_tab = AboutTab::ALL[tab_idx];
+                }
+                ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
 
-                // Credits + links.
-                ui.vertical_centered(|ui| {
-                    ui.label(format!("Made by {DEVELOPER}"));
-                    ui.add_space(2.0);
-                    ui.horizontal(|ui| {
-                        // Centre the row manually; egui has no "centered horizontal".
-                        ui.add_space((ui.available_width() - 190.0).max(0.0) * 0.5);
-                        ui.hyperlink_to("GitHub", DEVELOPER_URL);
-                        ui.label("·");
-                        ui.hyperlink_to("Source", REPO_URL);
-                        ui.label("·");
-                        ui.label("MIT licensed");
-                    });
-                    ui.add_space(8.0);
-                    if theme::button(ui, "Open source licenses").clicked() {
-                        open_licenses = true;
-                    }
-                });
-
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                // Models: what's installed, which is in use, and how to change
-                // it. Only installed models can be selected; the rest offer a
-                // Download button.
-                let in_use = self.deps.model.as_ref().map(|f| f.model);
-                let models: Vec<(Model, Option<FoundModel>)> = Model::ALL
-                    .iter()
-                    .map(|m| (*m, crate::model::locate(*m)))
-                    .collect();
-                let pending = self.pending_remove;
-                let mut chosen = self.model_pref;
-                let mut download: Option<Model> = None;
-                let mut remove: Option<FoundModel> = None;
-                let mut set_pending: Option<Option<Model>> = None;
-
-                ui.label(egui::RichText::new("Model").strong());
-                ui.add_space(4.0);
-                for (m, found) in &models {
-                    ui.horizontal(|ui| match found {
-                        Some(f) => {
-                            ui.radio_value(&mut chosen, *m, m.label());
-                            let tip = if f.source == Source::Downloaded {
-                                f.path.display().to_string()
-                            } else {
-                                format!(
-                                    "{}\n\nTo remove it, delete that file — TextLayr \
-                                     only deletes models it downloaded itself.",
-                                    f.path.display()
-                                )
-                            };
-                            if in_use == Some(*m) {
-                                ui.label(
-                                    egui::RichText::new("in use").color(theme::ACCENT).small(),
-                                )
-                                .on_hover_text(tip);
-                            } else {
-                                ui.label(egui::RichText::new(f.source.label()).weak().small())
-                                    .on_hover_text(tip);
+                // ── footer pinned to the bottom (Mac-panel feel) ──────────
+                egui::Panel::bottom("about_footer")
+                    .show_separator_line(false)
+                    .show(ui, |ui| {
+                        // Draw the rule ourselves so there's exactly one.
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        ui.vertical_centered(|ui| {
+                            if theme::fixed_button(ui, true, 120.0, "Close").clicked() {
+                                close = true;
                             }
-                            if f.source == Source::Downloaded {
-                                if pending == Some(*m) {
-                                    if theme::button(ui, "Confirm remove").clicked() {
-                                        remove = Some(f.clone());
+                        });
+                        ui.add_space(6.0);
+                    });
+
+                // ── tab body (scrolls only if a tab overflows) ────────────
+                egui::ScrollArea::vertical()
+                    .id_salt("about_body")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let tab = self.about_tab;
+                        match tab {
+                            AboutTab::About => {
+                                ui.vertical_centered(|ui| {
+                                    // The wordmark, exactly as on the main screen.
+                                    match self.banner.as_ref() {
+                                        Some(banner) => {
+                                            let w = 232.0;
+                                            let h = w * banner.size()[1] as f32
+                                                / banner.size()[0] as f32;
+                                            ui.add(
+                                                egui::Image::new(banner)
+                                                    .fit_to_exact_size(egui::vec2(w, h)),
+                                            );
+                                        }
+                                        None => {
+                                            ui.label(
+                                                egui::RichText::new("TextLayr")
+                                                    .size(22.0)
+                                                    .strong(),
+                                            );
+                                        }
                                     }
-                                    if theme::button(ui, "Keep").clicked() {
-                                        set_pending = Some(None);
+                                    ui.add_space(10.0);
+                                    ui.label(
+                                        egui::RichText::new("Offline karaoke caption burner")
+                                            .weak(),
+                                    );
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "Version {}   ·   build {}",
+                                            env!("CARGO_PKG_VERSION"),
+                                            env!("TEXTLAYR_GIT_HASH")
+                                        ))
+                                        .weak(),
+                                    );
+
+                                    ui.add_space(12.0);
+
+                                    // "Made with ❤ by Paul Buitenhuis", heart tinted warm.
+                                    let mut job = egui::text::LayoutJob {
+                                        halign: egui::Align::Center,
+                                        ..Default::default()
+                                    };
+                                    let fmt = |color: egui::Color32| egui::TextFormat {
+                                        font_id: egui::FontId::proportional(13.5),
+                                        color,
+                                        ..Default::default()
+                                    };
+                                    let ink = ui.visuals().text_color();
+                                    let tail = format!(" by {DEVELOPER}");
+                                    job.append("Made with ", 0.0, fmt(ink));
+                                    job.append("\u{2764}", 0.0, fmt(theme::HEART));
+                                    job.append(&tail, 0.0, fmt(ink));
+                                    ui.label(job);
+
+                                    ui.add_space(6.0);
+
+                                    // Links, centred by hand (no centered horizontal).
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(
+                                            (ui.available_width() - 188.0).max(0.0) * 0.5,
+                                        );
+                                        ui.hyperlink_to("GitHub", DEVELOPER_URL);
+                                        ui.label("·");
+                                        ui.hyperlink_to("Source", REPO_URL);
+                                        ui.label("·");
+                                        ui.label("MIT licensed");
+                                    });
+
+                                    ui.add_space(8.0);
+                                    if theme::button(ui, "Open source licenses").clicked() {
+                                        open_licenses = true;
                                     }
-                                } else if theme::button(ui, "Remove").clicked() {
-                                    set_pending = Some(Some(*m));
+                                });
+
+                                ui.add_space(14.0);
+                                // Support lives in a card so it reads as a
+                                // deliberate section, not a footnote.
+                                theme::card(ui, |ui| {
+                                    ui.vertical_centered(|ui| {
+                                        ui.label(
+                                            egui::RichText::new("Support TextLayr").strong(),
+                                        );
+                                        ui.add_space(6.0);
+
+                                        // A LayoutJob so both wrapped lines centre,
+                                        // not just the block.
+                                        let mut job = egui::text::LayoutJob {
+                                            halign: egui::Align::Center,
+                                            ..Default::default()
+                                        };
+                                        job.append(
+                                            "TextLayr is free and always will be — a \
+                                             one-person project. If it saved you time, \
+                                             a coffee is always appreciated.",
+                                            0.0,
+                                            egui::TextFormat {
+                                                font_id: egui::FontId::proportional(13.5),
+                                                color: ui.visuals().weak_text_color(),
+                                                ..Default::default()
+                                            },
+                                        );
+                                        ui.label(job);
+
+                                        ui.add_space(12.0);
+                                        if theme::icon_button(
+                                            ui,
+                                            "\u{2615}",
+                                            theme::COFFEE,
+                                            "Buy me a coffee",
+                                        )
+                                        .clicked()
+                                        {
+                                            buy_coffee = true;
+                                        }
+                                    });
+                                });
+                            }
+                            AboutTab::Models => {
+                                // What's installed, which is in use, and how to
+                                // change it. Each model is its own block with its
+                                // own actions — "Use" switches to an installed one.
+                                let in_use = self.deps.model.as_ref().map(|f| f.model);
+                                let models: Vec<(Model, Option<FoundModel>)> = Model::ALL
+                                    .iter()
+                                    .map(|m| (*m, crate::model::locate(*m)))
+                                    .collect();
+                                let pending = self.pending_remove;
+                                let installing = self
+                                    .install
+                                    .as_ref()
+                                    .map(|st| (st.label.clone(), st.progress));
+                                let install_target = self.install_target;
+                                let mut chosen = self.model_pref;
+                                let mut download: Option<Model> = None;
+                                let mut remove: Option<FoundModel> = None;
+                                let mut set_pending: Option<Option<Model>> = None;
+                                let mut cancel_install = false;
+
+                                ui.label(egui::RichText::new("Transcription model").strong());
+                                ui.add_space(2.0);
+                                ui.label(
+                                    egui::RichText::new(
+                                        "TextLayr transcribes locally with Whisper. A bigger \
+                                         model is slower but more accurate.",
+                                    )
+                                    .weak(),
+                                );
+                                ui.add_space(10.0);
+
+                                // An in-flight download gets its own card, so it
+                                // is obvious and can be cancelled without leaving.
+                                if let Some((label, progress)) = &installing {
+                                    theme::card(ui, |ui| {
+                                        ui.label(egui::RichText::new(label.as_str()).weak());
+                                        ui.add_space(8.0);
+                                        match progress {
+                                            Some(p) => {
+                                                ui.add(
+                                                    egui::ProgressBar::new(*p)
+                                                        .show_percentage()
+                                                        .desired_width(ui.available_width())
+                                                        .corner_radius(theme::ROUND),
+                                                );
+                                            }
+                                            None => {
+                                                ui.add(egui::Spinner::new().size(20.0));
+                                            }
+                                        }
+                                        ui.add_space(10.0);
+                                        if theme::button(ui, "Cancel download").clicked() {
+                                            cancel_install = true;
+                                        }
+                                    });
+                                    ui.add_space(10.0);
+                                }
+
+                                for (m, found) in &models {
+                                    // Each model is a self-contained block: its name,
+                                    // its status, then its own buttons directly
+                                    // beneath — so no action can be mistaken for
+                                    // another model's.
+                                    ui.label(egui::RichText::new(m.label()).strong());
+                                    match found {
+                                        Some(f) => {
+                                            let active = in_use == Some(*m);
+                                            if active {
+                                                ui.label(
+                                                    egui::RichText::new("Active model")
+                                                        .color(theme::ACCENT)
+                                                        .small(),
+                                                )
+                                                .on_hover_text(f.path.display().to_string());
+                                            } else {
+                                                ui.label(
+                                                    egui::RichText::new(f.source.label())
+                                                        .weak()
+                                                        .small(),
+                                                )
+                                                .on_hover_text(f.path.display().to_string());
+                                            }
+                                            ui.add_space(6.0);
+                                            ui.horizontal(|ui| {
+                                                if install_target == Some(*m)
+                                                    && installing.is_some()
+                                                {
+                                                    ui.label(
+                                                        egui::RichText::new("Downloading…")
+                                                            .color(theme::ACCENT)
+                                                            .small(),
+                                                    );
+                                                } else if pending == Some(*m) {
+                                                    ui.label(
+                                                        egui::RichText::new(format!(
+                                                            "Remove {}?",
+                                                            m.id()
+                                                        ))
+                                                        .weak()
+                                                        .small(),
+                                                    );
+                                                    if theme::button(ui, "Remove").clicked() {
+                                                        remove = Some(f.clone());
+                                                    }
+                                                    if theme::button(ui, "Keep").clicked() {
+                                                        set_pending = Some(None);
+                                                    }
+                                                } else {
+                                                    if !active
+                                                        && theme::button(ui, "Use").clicked()
+                                                    {
+                                                        chosen = *m;
+                                                    }
+                                                    if f.source.removable() {
+                                                        if theme::button(ui, "Remove").clicked() {
+                                                            set_pending = Some(Some(*m));
+                                                        }
+                                                    } else if theme::button(ui, reveal_label())
+                                                        .on_hover_text(
+                                                            "TextLayr only deletes models it \
+                                                             downloaded — reveal this one to \
+                                                             remove it yourself.",
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        reveal_path = Some(f.path.clone());
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        None => {
+                                            ui.label(
+                                                egui::RichText::new("Not installed")
+                                                    .weak()
+                                                    .small(),
+                                            );
+                                            ui.add_space(6.0);
+                                            ui.horizontal(|ui| {
+                                                if install_target == Some(*m)
+                                                    && installing.is_some()
+                                                {
+                                                    ui.label(
+                                                        egui::RichText::new("Downloading…")
+                                                            .color(theme::ACCENT)
+                                                            .small(),
+                                                    );
+                                                } else if theme::button(ui, "Download")
+                                                    .clicked()
+                                                {
+                                                    download = Some(*m);
+                                                }
+                                            });
+                                        }
+                                    }
+                                    ui.add_space(18.0);
+                                }
+                                // No model at all: make that explicit rather
+                                // than looking fine.
+                                if models.iter().all(|(_, f)| f.is_none()) {
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "No model installed yet — download one to start.",
+                                        )
+                                        .color(ui.visuals().warn_fg_color)
+                                        .small(),
+                                    );
+                                }
+
+                                if let Some(Some(m)) = set_pending {
+                                    self.pending_remove = Some(m);
+                                } else if set_pending.is_some() {
+                                    self.pending_remove = None;
+                                }
+                                if let Some(f) = remove {
+                                    self.remove_model(&f);
+                                }
+                                if cancel_install {
+                                    self.cancel_install();
+                                }
+                                if let Some(m) = download {
+                                    // Stay in the window; progress shows inline.
+                                    self.start_install(m);
+                                } else if chosen != self.model_pref {
+                                    self.pending_remove = None;
+                                    self.model_pref = chosen;
+                                    self.persist_prefs();
+                                    self.recheck_deps();
+                                }
+                            }
+                            AboutTab::Updates => {
+                                // Check for a newer release, download & install
+                                // in place, and the auto-check preference.
+                                match &update_state {
+                                    UpdateUi::Unknown => {
+                                        ui.label(egui::RichText::new("Not checked yet.").weak());
+                                    }
+                                    UpdateUi::Checking => {
+                                        ui.horizontal(|ui| {
+                                            ui.add(egui::Spinner::new().size(14.0));
+                                            ui.label(
+                                                egui::RichText::new("Checking for updates…")
+                                                    .weak(),
+                                            );
+                                        });
+                                    }
+                                    UpdateUi::UpToDate => {
+                                        ui.label(
+                                            egui::RichText::new("TextLayr is up to date.").weak(),
+                                        );
+                                    }
+                                    UpdateUi::Available(r) => {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "Version {} is available.",
+                                                r.version
+                                            ))
+                                            .color(theme::ACCENT),
+                                        );
+                                        ui.add_space(6.0);
+                                        ui.horizontal(|ui| {
+                                            if theme::button(ui, "Download & install").clicked() {
+                                                start_install_update = Some(r.clone());
+                                            }
+                                            ui.hyperlink_to("Release notes", &r.notes_url);
+                                        });
+                                    }
+                                    UpdateUi::Installing { label, progress } => {
+                                        match progress {
+                                            Some(p) => {
+                                                ui.add(
+                                                    egui::ProgressBar::new(*p)
+                                                        .show_percentage()
+                                                        .desired_width(ui.available_width())
+                                                        .corner_radius(theme::ROUND),
+                                                );
+                                            }
+                                            None => {
+                                                ui.add(egui::Spinner::new().size(20.0));
+                                            }
+                                        }
+                                        ui.add_space(4.0);
+                                        ui.label(egui::RichText::new(label.as_str()).weak());
+                                        if theme::button(ui, "Cancel").clicked() {
+                                            cancel_install_update = true;
+                                        }
+                                    }
+                                    UpdateUi::Ready => {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                "Restarting to finish the update…",
+                                            )
+                                            .weak(),
+                                        );
+                                    }
+                                    UpdateUi::OpenedDmg => {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                "The installer is open — drag TextLayr into \
+                                                 Applications, then quit and reopen it.",
+                                            )
+                                            .weak(),
+                                        );
+                                    }
+                                    UpdateUi::Failed(e) => {
+                                        ui.colored_label(ui.visuals().error_fg_color, e.as_str());
+                                    }
+                                }
+
+                                ui.add_space(8.0);
+                                let busy = matches!(
+                                    &update_state,
+                                    UpdateUi::Checking | UpdateUi::Installing { .. } | UpdateUi::Ready
+                                );
+                                ui.horizontal(|ui| {
+                                    if theme::button_enabled(ui, !busy, "Check for updates")
+                                        .clicked()
+                                    {
+                                        check_updates = true;
+                                    }
+                                    let mut auto = auto_check;
+                                    if ui
+                                        .checkbox(&mut auto, "Check automatically")
+                                        .on_hover_text(
+                                            "Look for a new version once a day when TextLayr \
+                                             starts.",
+                                        )
+                                        .changed()
+                                    {
+                                        set_auto_check = Some(auto);
+                                    }
+                                });
+                            }
+                            AboutTab::Diagnostics => {
+                                ui.label(
+                                    egui::RichText::new(
+                                        "TextLayr uses the files below. If something isn't \
+                                         working, check that each one exists — or copy this \
+                                         report into a bug report.",
+                                    )
+                                    .weak(),
+                                );
+                                ui.add_space(12.0);
+
+                                let fftools = self.deps.fftools.as_ref();
+                                let ffmpeg = fftools.map(|t| (t.ffmpeg.clone(), t.source));
+                                let ffprobe = fftools.map(|t| (t.ffprobe.clone(), t.source));
+                                let model =
+                                    self.deps.model.as_ref().map(|m| (m.path.clone(), m.source));
+                                let fonts = self.deps.fonts.clone();
+                                let config = config::config_path();
+
+                                let entries = [
+                                    ("ffmpeg", ffmpeg.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
+                                    ("ffprobe", ffprobe.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
+                                    ("model", model.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
+                                    ("fonts", fonts.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
+                                    ("config", config.as_deref().map(|p| (p, None))),
+                                ];
+                                for (label, value) in entries {
+                                    if let Some(p) = diagnostic_entry(ui, label, value) {
+                                        reveal_path = Some(p);
+                                    }
+                                }
+
+                                ui.add_space(4.0);
+                                if theme::button(ui, "Copy diagnostics report").clicked() {
+                                    ui.ctx().copy_text(self.copy_diagnostics_report());
                                 }
                             }
                         }
-                        None => {
-                            ui.add_space(18.0);
-                            ui.add(
-                                egui::Label::new(egui::RichText::new(m.label()).weak()).truncate(),
-                            );
-                            if theme::button(ui, "Download").clicked() {
-                                download = Some(*m);
-                            }
-                        }
                     });
-                }
-                // No model at all: make that explicit rather than looking fine.
-                if models.iter().all(|(_, f)| f.is_none()) {
-                    ui.add_space(2.0);
-                    ui.label(
-                        egui::RichText::new("No model installed yet.")
-                            .color(ui.visuals().warn_fg_color)
-                            .small(),
-                    );
-                }
-
-                if let Some(Some(m)) = set_pending {
-                    self.pending_remove = Some(m);
-                } else if set_pending.is_some() {
-                    self.pending_remove = None;
-                }
-                if let Some(f) = remove {
-                    self.remove_model(&f);
-                }
-                if let Some(m) = download {
-                    // The download progress lives on the main screen, so get out
-                    // of the way.
-                    self.about_open = false;
-                    self.start_install(m);
-                } else if chosen != self.model_pref {
-                    self.pending_remove = None;
-                    self.model_pref = chosen;
-                    self.persist_prefs();
-                    self.recheck_deps();
-                }
-
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                // Updates: check for a newer release, download & install in
-                // place, and the auto-check preference. Actions are recorded
-                // here and applied after the window closure.
-                ui.label(egui::RichText::new("Updates").strong());
-                ui.add_space(4.0);
-                match &update_state {
-                    UpdateUi::Unknown => {
-                        ui.label(egui::RichText::new("Not checked yet.").weak());
-                    }
-                    UpdateUi::Checking => {
-                        ui.horizontal(|ui| {
-                            ui.add(egui::Spinner::new().size(14.0));
-                            ui.label(egui::RichText::new("Checking for updates…").weak());
-                        });
-                    }
-                    UpdateUi::UpToDate => {
-                        ui.label(egui::RichText::new("TextLayr is up to date.").weak());
-                    }
-                    UpdateUi::Available(r) => {
-                        ui.label(
-                            egui::RichText::new(format!("Version {} is available.", r.version))
-                                .color(theme::ACCENT),
-                        );
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            if theme::button(ui, "Download & install").clicked() {
-                                start_install_update = Some(r.clone());
-                            }
-                            ui.hyperlink_to("Release notes", &r.notes_url);
-                        });
-                    }
-                    UpdateUi::Installing { label, progress } => {
-                        match progress {
-                            Some(p) => {
-                                ui.add(
-                                    egui::ProgressBar::new(*p)
-                                        .show_percentage()
-                                        .desired_width(ui.available_width())
-                                        .corner_radius(theme::ROUND),
-                                );
-                            }
-                            None => {
-                                ui.add(egui::Spinner::new().size(20.0));
-                            }
-                        }
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new(label.as_str()).weak());
-                        if theme::button(ui, "Cancel").clicked() {
-                            cancel_install_update = true;
-                        }
-                    }
-                    UpdateUi::Ready => {
-                        ui.label(egui::RichText::new("Restarting to finish the update…").weak());
-                    }
-                    UpdateUi::OpenedDmg => {
-                        ui.label(
-                            egui::RichText::new(
-                                "The installer is open — drag TextLayr into Applications, then \
-                                 quit and reopen it.",
-                            )
-                            .weak(),
-                        );
-                    }
-                    UpdateUi::Failed(e) => {
-                        ui.colored_label(ui.visuals().error_fg_color, e.as_str());
-                    }
-                }
-
-                ui.add_space(8.0);
-                let busy = matches!(
-                    &update_state,
-                    UpdateUi::Checking | UpdateUi::Installing { .. } | UpdateUi::Ready
-                );
-                ui.horizontal(|ui| {
-                    if theme::button_enabled(ui, !busy, "Check for updates").clicked() {
-                        check_updates = true;
-                    }
-                    let mut auto = auto_check;
-                    if ui
-                        .checkbox(&mut auto, "Check automatically")
-                        .on_hover_text("Look for a new version once a day when TextLayr starts.")
-                        .changed()
-                    {
-                        set_auto_check = Some(auto);
-                    }
-                });
-
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                let fftools = self.deps.fftools.as_ref();
-                let ffmpeg = fftools.map(|t| (t.ffmpeg.clone(), t.source));
-                let ffprobe = fftools.map(|t| (t.ffprobe.clone(), t.source));
-                let model = self.deps.model.as_ref().map(|m| (m.path.clone(), m.source));
-                let fonts = self.deps.fonts.clone();
-                let config = config::config_path();
-
-                egui::Grid::new("about_grid")
-                    .num_columns(3)
-                    .spacing([14.0, 6.0])
-                    .min_col_width(62.0)
-                    .max_col_width(320.0)
-                    .show(ui, |ui| {
-                        about_row(ui, "ffmpeg", ffmpeg.as_ref());
-                        about_row(ui, "ffprobe", ffprobe.as_ref());
-                        about_row(ui, "model", model.as_ref());
-                        about_row(ui, "fonts", fonts.as_ref());
-                        about_row_path(ui, "config", config.as_deref());
-                    });
-
-                ui.add_space(16.0);
-                ui.vertical_centered(|ui| {
-                    if theme::fixed_button(ui, true, 120.0, "Close").clicked() {
-                        close = true;
-                    }
-                });
             });
+
         if open_licenses {
             self.licenses_open = true;
+        }
+        if buy_coffee {
+            ctx.open_url(egui::OpenUrl::new_tab(SUPPORT_URL));
+        }
+        if let Some(p) = reveal_path {
+            if let Err(e) = reveal(&p) {
+                self.error = Some(format!("could not open folder: {e}"));
+            }
         }
         // Apply the update actions collected during the draw.
         if let Some(auto) = set_auto_check {
@@ -1556,10 +2142,16 @@ impl eframe::App for App {
         self.handle_drops(&ctx);
         self.maybe_auto_check_updates();
 
-        egui::Panel::top("header").show(ui, |ui| {
-            self.header(ui);
-        });
+        // ⌘, is the standard "open settings" chord on macOS.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
+            self.about_open = true;
+        }
 
+        egui::Panel::top("header")
+            .exact_size(theme::HEADER_H)
+            .show(ui, |ui| {
+                self.header(ui);
+            });
         if let Some(err) = self.error.clone() {
             let color = ui.visuals().error_fg_color;
             if banner(ui, "error_banner", color, &err) {
@@ -1624,47 +2216,76 @@ pub fn run(initial: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// One `label → path (provenance)` row in the About grid; a missing value shows
-/// in red.
-fn about_row(ui: &mut egui::Ui, label: &str, value: Option<&(PathBuf, Source)>) {
-    ui.label(egui::RichText::new(label).weak());
-    match value {
-        Some((p, source)) => {
-            ui.add(
-                egui::Label::new(egui::RichText::new(p.display().to_string()).small().monospace())
-                    .truncate(),
-            )
-            .on_hover_text(p.display().to_string());
-            ui.label(egui::RichText::new(source.label()).weak().small());
+/// One entry in the Diagnostics tab: a status dot, the item name and its
+/// provenance, the full (wrapped, selectable) path, and copy/reveal actions.
+///
+/// Returns a path to reveal in the file manager if the user asked for it.
+fn diagnostic_entry(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: Option<(&Path, Option<&str>)>,
+) -> Option<PathBuf> {
+    let mut reveal = None;
+    ui.horizontal_wrapped(|ui| {
+        status_dot(ui, value.is_some());
+        ui.label(egui::RichText::new(label).strong());
+        match value {
+            Some((_, Some(source))) => {
+                ui.label(egui::RichText::new(source).weak().small());
+            }
+            Some((_, None)) => {}
+            None => {
+                ui.label(
+                    egui::RichText::new("not found")
+                        .color(ui.visuals().error_fg_color)
+                        .small(),
+                );
+            }
         }
-        None => {
-            let color = ui.visuals().error_fg_color;
-            ui.label(egui::RichText::new("not found").color(color));
-            ui.label("");
-        }
+    });
+    if let Some((path, _)) = value {
+        let text = path.display().to_string();
+        ui.add(
+            egui::Label::new(egui::RichText::new(text.clone()).monospace().small())
+                .wrap()
+                .selectable(true),
+        );
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if theme::button(ui, "Copy").clicked() {
+                ui.ctx().copy_text(text.clone());
+            }
+            if theme::button(ui, reveal_label()).clicked() {
+                reveal = Some(path.to_path_buf());
+            }
+        });
     }
-    ui.end_row();
+    ui.add_space(10.0);
+    reveal
 }
 
-/// A `label → path` row with no provenance (used for the config path).
-fn about_row_path(ui: &mut egui::Ui, label: &str, value: Option<&Path>) {
-    ui.label(egui::RichText::new(label).weak());
-    match value {
-        Some(p) => {
-            ui.add(
-                egui::Label::new(egui::RichText::new(p.display().to_string()).small().monospace())
-                    .truncate(),
-            )
-            .on_hover_text(p.display().to_string());
-            ui.label("");
-        }
-        None => {
-            let color = ui.visuals().error_fg_color;
-            ui.label(egui::RichText::new("not found").color(color));
-            ui.label("");
-        }
+/// "Reveal in Finder" on macOS, "Show in folder" elsewhere.
+fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Reveal in Finder"
+    } else {
+        "Show in folder"
     }
-    ui.end_row();
+}
+
+/// A small filled dot used for the Diagnostics status (drawn, not a glyph —
+/// the bundled UI fonts have no suitable circle character).
+fn status_dot(ui: &mut egui::Ui, ok: bool) {
+    let diameter = 9.0;
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(diameter, diameter), egui::Sense::hover());
+    let color = if ok {
+        theme::SUCCESS
+    } else {
+        ui.visuals().error_fg_color
+    };
+    ui.painter()
+        .circle_filled(rect.center(), diameter * 0.5, color);
 }
 
 /// Seconds since the Unix epoch, 0 if the clock is before it.
@@ -1728,6 +2349,137 @@ fn centered(ui: &mut egui::Ui, above_center: f32, add: impl FnOnce(&mut egui::Ui
     );
 }
 
+/// Width of the centred column the export and done screens lay out in: wide
+/// enough for the metadata line, narrow enough not to sprawl on a big window.
+const COLUMN_W: f32 = 460.0;
+
+/// Run `add` inside a fixed-width column, centred in the space left.
+///
+/// Two egui details make this more than a `set_max_width` call: full-width
+/// `add_space` calls widen the ui's `min_rect` (and egui never shrinks below
+/// that), and a panel's own layout is `Align::Min`, so a child is placed at the
+/// left however narrow it is. An explicit centred rect avoids both — and gives
+/// inner `right_to_left` layouts the column's right edge to align to.
+fn column<R>(ui: &mut egui::Ui, height: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let avail = ui.available_rect_before_wrap();
+    let w = COLUMN_W.min(avail.width()).max(1.0);
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(avail.center().x - w * 0.5, avail.top()),
+        egui::vec2(w, height.max(0.0)),
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+        add,
+    )
+    .inner
+}
+
+/// A row of secondary buttons, centred as a group in the column.
+///
+/// The widths are measured first (as [`theme::segmented`] does) because the
+/// buttons are content-sized: centring them by splitting the row in half would
+/// leave the pair off-centre whenever the labels differ in length.
+fn centred_buttons(ui: &mut egui::Ui, labels: &[&str]) -> Vec<egui::Response> {
+    let gap = ui.spacing().item_spacing.x;
+    let widths: Vec<f32> = labels.iter().map(|l| theme::button_width(ui, l)).collect();
+    let total: f32 = widths.iter().sum::<f32>() + gap * (labels.len().saturating_sub(1)) as f32;
+    let mut out = Vec::with_capacity(labels.len());
+    ui.horizontal(|ui| {
+        ui.add_space(((COLUMN_W - total) * 0.5).max(0.0));
+        for (label, w) in labels.iter().zip(&widths) {
+            out.push(theme::fixed_button(ui, true, *w, label));
+        }
+    });
+    out
+}
+
+/// How one export pass reads in the step list.
+#[derive(Clone, Copy)]
+enum Pass {
+    /// Not started.
+    Waiting,
+    /// Running now, with its own 0..=1 fraction.
+    Running(f32),
+    /// Finished (so the list length stays stable while the export runs).
+    Done,
+}
+
+/// One row of the export step list: a status mark, the pass name, and either its
+/// own bar (while running), a detail (once done), or nothing (still to come).
+fn export_pass(ui: &mut egui::Ui, phase: ExportPhase, state: Pass, detail: &str) {
+    ui.horizontal(|ui| {
+        // Drawn, not glyphs: the bundled fonts have no ● / ○ / ▶.
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+        let c = rect.center();
+        match state {
+            Pass::Done => {
+                ui.painter().text(
+                    c,
+                    egui::Align2::CENTER_CENTER,
+                    "\u{2714}",
+                    egui::FontId::proportional(14.0),
+                    theme::SUCCESS,
+                );
+            }
+            Pass::Running(_) => {
+                ui.painter().circle_filled(c, 4.5, theme::ACCENT);
+            }
+            Pass::Waiting => {
+                ui.painter().circle_stroke(
+                    c,
+                    4.0,
+                    egui::Stroke::new(1.5, ui.visuals().weak_text_color()),
+                );
+            }
+        }
+
+        let name = egui::RichText::new(phase.label());
+        ui.label(match state {
+            Pass::Running(_) => name.strong(),
+            _ => name.weak(),
+        });
+
+        let right = match state {
+            Pass::Running(f) => format!("{:.0}%", f * 100.0),
+            Pass::Done => detail.to_owned(),
+            Pass::Waiting => String::new(),
+        };
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(egui::RichText::new(right).weak().small());
+        });
+    });
+
+    if let Pass::Running(f) = state {
+        ui.add_space(7.0);
+        ui.add(
+            egui::ProgressBar::new(f)
+                .desired_width(COLUMN_W)
+                .corner_radius(theme::ROUND),
+        );
+    }
+}
+
+/// `m:ss` for a video duration.
+fn mmss(secs: f64) -> String {
+    let total = secs.max(0.0).round() as u64;
+    format!("{}:{:02}", total / 60, total % 60)
+}
+
+/// A loose duration for elapsed/estimated time ("48s", "2m 12s"). Deliberately
+/// not a clock time, so it can't be mistaken for a deadline.
+fn rough_secs(secs: f64) -> String {
+    let s = secs.max(0.0);
+    if s < 60.0 {
+        format!("{s:.0}s")
+    } else if s < 3600.0 {
+        format!("{}m {:02}s", (s / 60.0) as u64, (s as u64) % 60)
+    } else {
+        format!("{}h {:02}m", (s / 3600.0) as u64, ((s as u64) % 3600) / 60)
+    }
+}
+
 /// The shared ingest/export status block: title, progress (or spinner), label.
 fn centered_block(ui: &mut egui::Ui, title: &str, label: &str, progress: Option<f32>) {
     centered(ui, 56.0, |ui| {
@@ -1755,6 +2507,17 @@ fn file_label(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Open `path` in the OS default application (e.g. the video's player).
+fn open_file(path: &Path) -> Result<()> {
+    let mut cmd = std::process::Command::new(if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    });
+    cmd.arg(path).spawn()?;
+    Ok(())
 }
 
 /// Open the folder containing `path` in the file manager.
@@ -1788,5 +2551,68 @@ mod tests {
             ui.add(egui::Image::new(&banner).fit_to_exact_size(egui::vec2(w, h)));
         });
         out.textures_delta.clear();
+    }
+
+    /// A full-width control inside [`column`] fills the column, not the window —
+    /// the bug that made the export-complete screen three edge-to-edge slabs —
+    /// and the column itself is centred rather than hugging the left edge.
+    #[test]
+    fn a_full_width_control_is_bounded_and_centred_by_the_column() {
+        egui::__run_test_ui(|ui| {
+            let avail = ui.available_rect_before_wrap();
+            let mut button = egui::Rect::ZERO;
+            column(ui, 300.0, |ui| {
+                button = theme::primary_button(ui, true, "Open video").rect;
+            });
+            assert!(
+                (button.width() - COLUMN_W).abs() < 1.0,
+                "button should be {COLUMN_W} wide, got {}",
+                button.width()
+            );
+            assert!(
+                (button.center().x - avail.center().x).abs() < 1.0,
+                "column should be centred: {:?} vs {:?}",
+                button.center().x,
+                avail.center().x
+            );
+        });
+    }
+
+    /// The two secondary actions are centred as a group even though their labels
+    /// differ in length (which is what made them look off-centre before).
+    #[test]
+    fn the_action_pair_is_centred_as_a_group() {
+        let ctx = egui::Context::default();
+        let mut seen = None;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let avail = ui.available_rect_before_wrap();
+            column(ui, 200.0, |ui| {
+                let rs = centred_buttons(ui, &[reveal_label(), "New video"]);
+                seen = Some((rs[0].rect, rs[1].rect, avail.center().x));
+            });
+        });
+        out.textures_delta.clear();
+        let (a, b, cx) = seen.expect("buttons drawn");
+        assert!(a.width() != b.width(), "labels differ, so widths should too");
+        let group = (a.left() + b.right()) / 2.0;
+        assert!((group - cx).abs() < 1.0, "group centred at {group}, want {cx}");
+    }
+
+    /// Diagnostics entries render for both a resolved and a missing item
+    /// without panicking, and the reveal label matches the platform.
+    #[test]
+    fn diagnostics_entries_render() {
+        egui::__run_test_ui(|ui| {
+            let found = PathBuf::from("/usr/local/bin/ffmpeg");
+            let present: Option<(&Path, Option<&str>)> =
+                Some((found.as_path(), Some("system (PATH)")));
+            assert!(diagnostic_entry(ui, "ffmpeg", present).is_none());
+            let absent: Option<(&Path, Option<&str>)> = None;
+            assert!(diagnostic_entry(ui, "model", absent).is_none());
+        });
+        assert_eq!(
+            reveal_label().contains("Finder"),
+            cfg!(target_os = "macos")
+        );
     }
 }

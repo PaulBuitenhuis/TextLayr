@@ -411,12 +411,15 @@ fn run_cli(args: &Args) -> Result<()> {
         .unwrap_or_else(|| temp.as_ref().unwrap().path().to_path_buf());
 
     let t = Instant::now();
+    // The CLI has no cancel affordance: signal that can never be raised.
+    let no_cancel = AtomicBool::new(false);
     let states = render::render_states(
         &style,
         &chunks,
         info.display_width,
         info.display_height,
         &state_dir,
+        &no_cancel,
         |_| {},
     )?;
     eprintln!(
@@ -480,6 +483,7 @@ fn run_cli(args: &Args) -> Result<()> {
             &states,
             style.position_pct,
             args.encoder.unwrap_or_default(),
+            &no_cancel,
             &mut on_frac,
         )?;
     }

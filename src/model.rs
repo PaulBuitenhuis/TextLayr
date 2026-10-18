@@ -166,14 +166,16 @@ pub fn resolve(preferred: Model) -> Option<FoundModel> {
     fallbacks.into_iter().find_map(locate)
 }
 
-/// Delete a model that TextLayr downloaded.
+/// Delete a located model file.
 ///
-/// Only touches TextLayr's own copy in the app data directory — a bundled, env-var
-/// or dev-checkout model belongs to someone else and is never removed here.
-pub fn remove_downloaded(found: &FoundModel) -> Result<()> {
-    if found.source != Source::Downloaded {
+/// Only removes copies TextLayr is responsible for (see
+/// [`Source::removable`]) — a model bundled into the app or pointed at by an
+/// environment variable belongs to someone else and is never removed here.
+pub fn remove_located(found: &FoundModel) -> Result<()> {
+    if !found.source.removable() {
         bail!(
-            "not removing the {} model at {} (TextLayr only deletes models it downloaded)",
+            "not removing the {} model at {} (TextLayr only deletes models it \
+             downloaded, or a dev checkout's model files)",
             found.source.label(),
             found.path.display()
         );

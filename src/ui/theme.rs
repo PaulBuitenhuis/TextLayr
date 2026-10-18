@@ -11,21 +11,32 @@ pub const ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 const ACCENT_HOVER: Color32 = Color32::from_rgb(48, 156, 255);
 const ACCENT_ACTIVE: Color32 = Color32::from_rgb(0, 106, 224);
 
+/// Success/confirmation green (matches the landing page's "current release" dot).
+pub const SUCCESS: Color32 = Color32::from_rgb(53, 194, 106);
+/// Warm tint for the "Made with ❤" heart.
+pub const HEART: Color32 = Color32::from_rgb(255, 107, 107);
+/// Warm tint for the coffee / support affordance.
+pub const COFFEE: Color32 = Color32::from_rgb(216, 160, 106);
+
 /// Corner radius for buttons, inputs and small cards (≈ Big Sur controls).
 pub const ROUND: u8 = 6;
 /// Corner radius for larger surfaces (drop card, setup cards).
 pub const ROUND_LG: u8 = 12;
 /// Shared height of a control (button / single-line input), so rows align.
 pub const CONTROL_H: f32 = 26.0;
+/// Height of the top bar. Pinned rather than left to its content: egui stores a
+/// panel's size from the first frame it is shown, so a single badly-measured
+/// frame (before fonts are laid out) leaves the bar permanently lop-sided.
+pub const HEADER_H: f32 = 36.0;
 
 // ── palette ───────────────────────────────────────────────────────────────
-const SURFACE: Color32 = Color32::from_rgb(30, 30, 33);
+pub const SURFACE: Color32 = Color32::from_rgb(30, 30, 33);
 const SURFACE_PANEL: Color32 = Color32::from_rgb(26, 26, 29);
 const SUNKEN: Color32 = Color32::from_rgb(18, 18, 20);
 const CONTROL: Color32 = Color32::from_rgb(58, 58, 63);
 const CONTROL_HOVER: Color32 = Color32::from_rgb(72, 72, 78);
 const CONTROL_ACTIVE: Color32 = Color32::from_rgb(48, 48, 52);
-const BORDER: Color32 = Color32::from_rgb(72, 72, 78);
+pub const BORDER: Color32 = Color32::from_rgb(72, 72, 78);
 const TEXT: Color32 = Color32::from_rgb(236, 236, 241);
 const TEXT_WEAK: Color32 = Color32::from_rgb(152, 152, 160);
 const ROW_SELECTED: Color32 = Color32::from_rgb(44, 44, 50);
@@ -184,6 +195,20 @@ pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, width: f32, label: &str) -
     sized_button(ui, enabled, Vec2::new(width, CONTROL_H), RichText::new(label))
 }
 
+/// The width a secondary [`button`] with this label naturally has: its galley
+/// plus the style's button padding. Lets a caller size a row of content-sized
+/// buttons before laying them out (e.g. to centre the row).
+pub fn button_width(ui: &egui::Ui, label: &str) -> f32 {
+    let text = ui
+        .ctx()
+        .fonts_mut(|f| {
+            f.layout_no_wrap(label.to_owned(), egui::FontId::proportional(13.5), Color32::WHITE)
+                .rect
+                .width()
+        });
+    text + ui.spacing().button_padding.x * 2.0
+}
+
 /// A small-caps section label used to group panel controls.
 pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.label(
@@ -192,6 +217,132 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
             .color(TEXT_WEAK)
             .strong(),
     );
+}
+
+/// A macOS-style segmented control, as used for the About window's tabs.
+///
+/// Draws `labels` on a rounded track with the entry at `*selected` filled in
+/// the accent colour, and stretches to fill the row when there is room.
+/// Returns `true` when the user picked a different segment.
+pub fn segmented(ui: &mut egui::Ui, selected: &mut usize, labels: &[&str]) -> bool {
+    let n = labels.len();
+    if n == 0 {
+        return false;
+    }
+    let font = egui::FontId::proportional(13.0);
+    let pad_x = 10.0;
+    let inset = 2.0;
+    let seg_h = CONTROL_H;
+
+    // Measure each label so a short control hugs its content…
+    let mut widths: Vec<f32> = labels
+        .iter()
+        .map(|l| {
+            let w = ui
+                .ctx()
+                .fonts_mut(|f| f.layout_no_wrap((*l).to_owned(), font.clone(), Color32::WHITE))
+                .rect
+                .width();
+            w + pad_x * 2.0
+        })
+        .collect();
+    // …then stretch to fill the row when there is room, like a real control.
+    let avail = ui.available_width();
+    let natural: f32 = widths.iter().sum::<f32>() + inset * 2.0;
+    if natural < avail {
+        let per = (avail - inset * 2.0) / n as f32;
+        widths.fill(per);
+    }
+
+    let total_w: f32 = widths.iter().sum::<f32>() + inset * 2.0;
+    let (outer, _) =
+        ui.allocate_exact_size(egui::vec2(total_w, seg_h + inset * 2.0), egui::Sense::hover());
+    let visuals = ui.visuals().clone();
+    let painter = ui.painter().clone();
+    let radius = egui::CornerRadius::same(ROUND + 1);
+    painter.rect_filled(outer, radius, visuals.extreme_bg_color);
+    painter.rect_stroke(
+        outer,
+        radius,
+        egui::Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+
+    let mut changed = false;
+    let mut x = outer.left() + inset;
+    for (i, label) in labels.iter().enumerate() {
+        let seg = egui::Rect::from_min_size(
+            egui::pos2(x, outer.top() + inset),
+            egui::vec2(widths[i], seg_h),
+        );
+        x += widths[i];
+        let resp = ui.interact(seg, ui.id().with(("segmented", i)), egui::Sense::click());
+        let active = i == *selected;
+        if active {
+            painter.rect_filled(seg, egui::CornerRadius::same(ROUND), ACCENT);
+        } else if resp.hovered() {
+            painter.rect_filled(
+                seg,
+                egui::CornerRadius::same(ROUND),
+                visuals.widgets.hovered.bg_fill,
+            );
+        }
+        painter.text(
+            seg.center(),
+            egui::Align2::CENTER_CENTER,
+            *label,
+            font.clone(),
+            if active {
+                Color32::WHITE
+            } else {
+                visuals.weak_text_color()
+            },
+        );
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() && !active {
+            *selected = i;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// A secondary button with a tinted leading glyph, e.g. `☕  Buy me a coffee`.
+/// The glyph's own colour is preserved (the label text follows the button).
+pub fn icon_button(ui: &mut egui::Ui, glyph: &str, glyph_color: Color32, label: &str) -> Response {
+    let font = egui::FontId::proportional(13.5);
+    let text_color = ui.visuals().widgets.inactive.fg_stroke.color;
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        glyph,
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            color: glyph_color,
+            ..Default::default()
+        },
+    );
+    job.append(
+        "  ",
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            color: text_color,
+            ..Default::default()
+        },
+    );
+    job.append(
+        label,
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            color: text_color,
+            ..Default::default()
+        },
+    );
+    ui.add(egui::Button::new(job).min_size(Vec2::new(0.0, CONTROL_H)))
 }
 
 /// A subtle card surface (setup notes, centered progress/status blocks).
@@ -264,6 +415,9 @@ mod tests {
                     });
 
                 ui.checkbox(&mut rounded, "Rounded corners");
+                let mut tab = 0usize;
+                let _ = segmented(ui, &mut tab, &["About", "Models", "Updates", "Diagnostics"]);
+                let _ = icon_button(ui, "\u{2615}", COFFEE, "Buy me a coffee");
                 let _ = button_enabled(ui, false, "Previous");
                 let _ = button(ui, "Dismiss");
                 let _ = wide_button(ui, true, "Reset to defaults");

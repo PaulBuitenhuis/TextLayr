@@ -5,6 +5,7 @@
 //! whisper callback runs on the calling thread and requires a `'static` sink).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -137,13 +138,68 @@ pub fn ingest(
     })
 }
 
+/// Which pass of the export is running.
+///
+/// The export is two passes: rendering one PNG per caption state, then burning
+/// them in (video + audio) through ffmpeg. Each reports its own 0..=1, and the
+/// GUI shows them as separate rows so a pass change never looks like the bar
+/// jumping backwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportPhase {
+    /// Rendering caption state PNGs; one per (chunk, highlighted word).
+    Rendering,
+    /// ffmpeg encoding; 0..=1 over the output duration.
+    Encoding,
+}
+
+impl ExportPhase {
+    /// The passes in the order they run.
+    pub const ALL: [ExportPhase; 2] = [ExportPhase::Rendering, ExportPhase::Encoding];
+
+    /// Whether this pass runs before `other`.
+    pub fn before(self, other: ExportPhase) -> bool {
+        ExportPhase::ALL.iter().position(|p| *p == self)
+            < ExportPhase::ALL.iter().position(|p| *p == other)
+    }
+
+    /// Short user-facing name for the pass.
+    pub fn label(self) -> &'static str {
+        match self {
+            ExportPhase::Rendering => "Render captions",
+            ExportPhase::Encoding => "Encode video",
+        }
+    }
+}
+
+/// Share of the overall progress the render pass accounts for. Rendering
+/// hundreds of PNGs is quick next to a full-length encode.
+const RENDER_WEIGHT: f32 = 0.25;
+
 /// Progress of [`export_video`].
 #[derive(Debug, Clone, Copy)]
-pub enum ExportProgress {
-    /// Rendering caption state PNGs; 0..=1 over all states.
-    Rendering(f32),
-    /// ffmpeg encoding; 0..=1 over the output duration.
-    Encoding(f32),
+pub struct ExportProgress {
+    /// Which pass this update is about.
+    pub phase: ExportPhase,
+    /// How far through the current pass, 0..=1.
+    pub phase_frac: f32,
+    /// How far through the whole export, 0..=1. Monotonic, and the only number
+    /// a time estimate should be derived from.
+    pub overall: f32,
+}
+
+impl ExportProgress {
+    fn new(phase: ExportPhase, phase_frac: f32) -> Self {
+        let phase_frac = phase_frac.clamp(0.0, 1.0);
+        let overall = match phase {
+            ExportPhase::Rendering => phase_frac * RENDER_WEIGHT,
+            ExportPhase::Encoding => RENDER_WEIGHT + phase_frac * (1.0 - RENDER_WEIGHT),
+        };
+        ExportProgress {
+            phase,
+            phase_frac,
+            overall,
+        }
+    }
 }
 
 /// Progress sink for [`export_video`]. Invoked synchronously on the calling
@@ -155,6 +211,12 @@ pub type ExportSink = Box<dyn FnMut(ExportProgress) + Send>;
 /// State PNGs live in an internal temp dir that is removed when the export
 /// finishes. Encoding goes through the raw-pipe backend (see
 /// [`export::export_pipe`]) with `encoder` selecting VAAPI/x264/auto.
+///
+/// `cancel` is polled between states and between encoded frames; when it is set
+/// the ffmpeg children are killed, the half-written `output` is removed, and the
+/// error message contains "cancelled" so callers can tell a cancel from a
+/// failure.
+#[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn export_video(
     tools: &Fftools,
     input: &Path,
@@ -163,8 +225,12 @@ pub fn export_video(
     chunks: &[Chunk],
     style: &Style,
     encoder: export::Encoder,
+    cancel: &AtomicBool,
     mut progress: ExportSink,
 ) -> Result<()> {
+    if cancel.load(Ordering::Relaxed) {
+        bail!("export cancelled");
+    }
     let work = tempfile::tempdir().context("export temp dir")?;
     let states_dir = work.path().join("states");
 
@@ -174,10 +240,11 @@ pub fn export_video(
         info.display_width,
         info.display_height,
         &states_dir,
-        |frac| progress(ExportProgress::Rendering(frac)),
+        cancel,
+        |frac| progress(ExportProgress::new(ExportPhase::Rendering, frac)),
     )?;
 
-    export::export_pipe(
+    let encoded = export::export_pipe(
         tools,
         input,
         output,
@@ -185,8 +252,16 @@ pub fn export_video(
         &states,
         style.position_pct,
         encoder,
-        |frac| progress(ExportProgress::Encoding(frac as f32)),
-    )?;
+        cancel,
+        |frac| progress(ExportProgress::new(ExportPhase::Encoding, frac as f32)),
+    );
+
+    // Either way, don't leave a truncated mp4 behind: on cancel it is unwanted,
+    // and on failure it is unusable.
+    if let Err(e) = encoded {
+        let _ = std::fs::remove_file(output);
+        return Err(e);
+    }
 
     work.close().context("failed to clean up export temp dir")?;
     Ok(())
@@ -202,5 +277,40 @@ pub fn default_output(input: &Path) -> PathBuf {
     match input.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.join(name),
         _ => PathBuf::from(name),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The overall number is what the KTA (and the ETA) is derived from, so it
+    /// must climb across both passes and never dip when they hand over.
+    #[test]
+    fn overall_progress_is_monotonic_across_passes() {
+        let render: Vec<f32> = [0.0, 0.25, 0.5, 0.75, 1.0]
+            .iter()
+            .map(|f| ExportProgress::new(ExportPhase::Rendering, *f).overall)
+            .collect();
+        assert_eq!(render[0], 0.0);
+        assert!((render.last().copied().unwrap() - RENDER_WEIGHT).abs() < 1e-6);
+
+        let encode: Vec<f32> = [0.0, 0.5, 1.0]
+            .iter()
+            .map(|f| ExportProgress::new(ExportPhase::Encoding, *f).overall)
+            .collect();
+        assert!((encode[0] - RENDER_WEIGHT).abs() < 1e-6, "handover is seamless");
+        assert!((encode.last().copied().unwrap() - 1.0).abs() < 1e-6);
+
+        let all: Vec<f32> = render.iter().chain(encode.iter()).copied().collect();
+        assert!(all.windows(2).all(|w| w[1] >= w[0]), "{all:?}");
+    }
+
+    /// Out-of-range fractions (a stalled encoder reporting past the duration)
+    /// must be clamped rather than producing >100% overall.
+    #[test]
+    fn overall_progress_clamps() {
+        assert_eq!(ExportProgress::new(ExportPhase::Encoding, 1.5).overall, 1.0);
+        assert_eq!(ExportProgress::new(ExportPhase::Rendering, -1.0).overall, 0.0);
     }
 }

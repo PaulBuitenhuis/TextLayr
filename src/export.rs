@@ -25,6 +25,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{ChildStderr, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Encoder choice for [`export_pipe`].
@@ -428,7 +429,10 @@ pub fn export(
 /// the preview, and a second ffmpeg encodes the composited frames. Peak RAM is
 /// one frame + one state, independent of state count.
 ///
-/// `on_progress` receives 0.0..=1.0 as the encode advances.
+/// `on_progress` receives 0.0..=1.0 as the encode advances, and `cancel` is
+/// polled once per frame: when it is set the frame pump stops, both ffmpeg
+/// children are killed, and the error says "cancelled".
+#[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn export_pipe(
     tools: &Fftools,
     input: &Path,
@@ -437,6 +441,7 @@ pub fn export_pipe(
     states: &[CaptionState],
     position_pct: f32,
     encoder: Encoder,
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(f64),
 ) -> Result<()> {
     if states.is_empty() {
@@ -594,6 +599,9 @@ pub fn export_pipe(
     let pump = (|| -> Result<u64> {
         let mut reader = dec_out;
         loop {
+            if cancel.load(Ordering::Relaxed) {
+                break Err(anyhow::anyhow!("export cancelled"));
+            }
             if !read_frame(&mut reader, &mut buf)? {
                 break Ok(frame_no);
             }
@@ -668,7 +676,6 @@ pub fn export_pipe(
     let _ = dec_err_thread.join();
     let _ = prog_thread.join();
     let _ = enc_err_thread.join();
-    on_progress(1.0);
 
     let tail = |buf: &Arc<Mutex<Vec<u8>>>| {
         String::from_utf8_lossy(&buf.lock().unwrap())
@@ -676,6 +683,11 @@ pub fn export_pipe(
             .to_string()
     };
     if let Err(e) = pump {
+        // A cancel is a user action, not a failure: keep the message clean so
+        // the caller can tell the two apart (and skip the error banner).
+        if e.to_string().contains("cancelled") {
+            bail!("export cancelled");
+        }
         bail!(
             "pipe export failed: {e:#}\n  decoder: {}\n  encoder: {}",
             tail(&dec_err),
@@ -688,6 +700,7 @@ pub fn export_pipe(
     if !output.is_file() {
         bail!("ffmpeg reported success but {} is missing", output.display());
     }
+    on_progress(1.0);
     Ok(())
 }
 

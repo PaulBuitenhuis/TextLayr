@@ -63,31 +63,29 @@ pub fn window(ctx: &Context, open: &mut bool, selected: &mut usize) {
 
     egui::Window::new("Open source licenses")
         .open(open)
-        .default_size([820.0, 600.0])
-        .min_width(560.0)
-        .min_height(360.0)
+        .resizable(true)
+        .default_size([900.0, 640.0])
+        .min_size([620.0, 420.0])
         .collapsible(false)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                // Section list.
-                ui.allocate_ui_with_layout(
-                    egui::vec2(300.0, ui.available_height()),
-                    egui::Layout::top_down(egui::Align::LEFT),
-                    |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("license_index")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.set_min_width(280.0);
-                                for (i, (title, _)) in sections.iter().enumerate() {
-                                    let label = egui::RichText::new(title).small();
-                                    ui.selectable_value(selected, i, label);
-                                }
-                            });
-                    },
-                );
-                ui.separator();
-                // Selected section.
+            // Section list down the left, resizable.
+            egui::Panel::left("license_index")
+                .default_size(300.0)
+                .min_size(220.0)
+                .max_size(420.0)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("license_index_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for (i, (title, _)) in sections.iter().enumerate() {
+                                let label = egui::RichText::new(title).small();
+                                ui.selectable_value(selected, i, label);
+                            }
+                        });
+                });
+            // The selected section fills the rest.
+            egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("license_body")
                     .auto_shrink([false, false])

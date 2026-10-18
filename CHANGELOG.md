@@ -6,6 +6,63 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Support the project.** A `Buy me a coffee` action links to
+  [Ko-fi](https://ko-fi.com/U6R0290CU2) from the **Settings** window and from
+  the export-complete screen (opened in your browser — nothing is sent from the
+  app). The landing page gained a `Support` section (using Ko-fi's in-page
+  widget and floating button), a nav link and an FAQ entry; the README gained a
+  `Support` section with Ko-fi's badge. Entirely optional.
+
+### Changed
+
+- **The About window is now called Settings**, and its header button matches:
+  `Settings`, also reachable with **⌘,**. It is a small, tabbed panel (About /
+  Models / Updates / Diagnostics) instead of one long column, bounded to the
+  viewport so nothing is cut off on shorter displays; the whisper-model controls,
+  update settings and resolved runtime paths each get their own tab.
+- **The header bar is a fixed height** with its contents centred in it. It
+  previously sized itself from the first frame it drew, which left the wordmark
+  and the button hugging the top with dead space beneath.
+- **The export shows its passes.** Rendering captions and encoding video each get
+  their own row with their own bar (plus the caption-state count), so progress
+  never looks like it jumps backwards at the hand-off; an approximate time
+  remaining appears once there is enough signal, and a **Cancel** button stops
+  the export, removes the half-written file and returns to Review with every edit
+  intact — no error banner.
+- **The About tab shows the wordmark** used on the main screen instead of a
+  square icon, and the support ask now sits in its own card rather than under a
+  divider.
+- **Models download in place.** Choosing a model no longer closes the Settings
+  window and bounces you to the main screen — progress shows inline and can be
+  cancelled there. Each model is now its own block with its own buttons
+  (**Use** / **Remove** / **Download**) directly beneath it, so no action can be
+  mistaken for another model's; removing asks *“Remove small.en?”* first.
+  Removable copies are the ones TextLayr manages (its downloads and a dev
+  checkout's `models/*.bin`); app-bundled or env-var models instead offer
+  **Reveal in Finder**.
+- **Diagnostics are readable.** The resolved paths are shown in full (wrapped,
+  selectable) with copy/reveal actions instead of being truncated to a tooltip,
+  and a **Copy diagnostics report** button copies a plain-text summary for bug
+  reports.
+- **The Open source licenses window opens at a usable size** and can be resized
+  (its section list is a draggable sidebar).
+- **The export-complete screen now shows what you made.** The finished frame
+  (captions and all) is the hero, clickable to play, above a metadata line
+  (`1280×720 · 1:00 · 212 MB · exported in 18s`); there is one filled **Open
+  video** button with **Show in Finder** and **New video** as muted secondary
+  buttons beneath it. The block is a fixed-width column centred in the window, so
+  it no longer stretches across a wide one. The app also credits the developer as
+  *"Made with ❤ by Paul Buitenhuis"*.
+
+### Fixed
+
+- **Crash when opening a second video after an export.** **New video** (or
+  **Change video**) invalidated the in-flight preview-frame generation by parking
+  its counter at `u64::MAX`, and the next frame request added one to it — an
+  overflow panic in debug builds. The counter now wraps.
+
 ## [0.2.1] - 2026-10-17
 
 ### Added
