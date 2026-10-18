@@ -448,7 +448,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let payload = dir.path().join("stage");
         std::fs::create_dir_all(payload.join("bin")).unwrap();
-        std::fs::write(payload.join("bin/ffmpeg"), b"#!/bin/sh\n").unwrap();
+        // Extraction looks up the platform's executable name (`ffmpeg.exe` on
+        // Windows), so the fixture must be named the same way.
+        let ffmpeg = crate::platform::exe_name("ffmpeg");
+        std::fs::write(payload.join("bin").join(&ffmpeg), b"#!/bin/sh\n").unwrap();
 
         let tarball = dir.path().join("tools.tar.xz");
         {

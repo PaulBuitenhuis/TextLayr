@@ -1190,7 +1190,9 @@ mod tests {
         let manifest = dir.path().join("latest.json");
         let url = resolve_asset_url(manifest.to_str().unwrap(), "TextLayr-0.3.0.zip");
         assert!(url.starts_with("file://"), "{url}");
-        assert!(url.ends_with("/TextLayr-0.3.0.zip"), "{url}");
+        // The path separator is the platform's (Windows yields `file://C:\…`);
+        // assert the asset filename, not a literal `/`.
+        assert!(url.ends_with("TextLayr-0.3.0.zip"), "{url}");
         assert!(url.contains(dir.path().to_str().unwrap()), "{url}");
     }
 
