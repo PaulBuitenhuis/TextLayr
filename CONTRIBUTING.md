@@ -15,7 +15,10 @@ caption burner for short-form video. Issues and pull requests are welcome.
 
 ```
 src/
-  main.rs        arg parsing + headless CLI: probe → transcribe → chunk → render → export
+  main.rs        GUI binary entry (thin; defers to app::run)
+  app.rs         arg parsing + headless CLI: probe → transcribe → chunk → render → export
+  bin/textlayr-cli.rs  console binary entry (thin; the Windows-friendly twin)
+  platform.rs    single source of OS/arch facts (data dirs, exe names, `which`, bundle roots)
   pipeline.rs    shared orchestration (ingest + export) for CLI and GUI
   probe.rs       ffprobe wrapper (rotation-aware display dims, color tags) + ffmpeg discovery
   audio.rs       16 kHz mono f32le extraction + PCM read
@@ -24,20 +27,24 @@ src/
   chunk.rs       word grouping into caption chunks + highlight windows
   config.rs      Style struct, font discovery, preference persistence
   deps.rs        startup dependency check + installable-missing description
-  download.rs    checksum-verified downloads (curl transport)
-  install.rs     first-run installer (ffmpeg/model)
+  download.rs    checksum-verified downloads over a pure-Rust transport (ureq/rustls)
+  install.rs     first-run installer (ffmpeg/model); per-OS archive recipes
   paths.rs       platform data dirs for downloaded files
   source.rs      provenance of a located dependency (bundled/downloaded/system/…)
   render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
   export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
+  update.rs      release-manifest check + per-OS self-update install
   ui/            egui app: drop, ingest, review (preview/editor/style), export, done
     licenses.rs  in-app viewer for THIRD_PARTY_LICENSES.md
 assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
 assets/icon.png  app icon master (generated; see scripts/make_icon.py)
 assets/AppIcon.icns  macOS bundle icon (generated)
+assets/AppIcon.ico   Windows icon (generated)
+assets/icons/hicolor/  Linux icon-theme PNGs (generated)
 assets/dmg-background.png  install-window background (generated)
 models/          whisper models (downloaded, not committed; dev only)
-scripts/         fetch_model.sh + package_macos.sh + make_dmg.sh + make_icon.py
+scripts/         fetch_model.sh + package_macos.sh + package_linux.sh
+                 + package_windows.ps1 + make_dmg.sh + make_icon.py
                  + make_dmg_background.py + gen_third_party_licenses.py
 docs/screenshots/  README imagery
 vendor/          static ffmpeg (macOS dev) + whisper-rs-sys build patch
@@ -45,16 +52,33 @@ vendor/          static ffmpeg (macOS dev) + whisper-rs-sys build patch
 
 ## Development setup
 
-TextLayr targets **macOS on Apple Silicon**; it also builds and runs on Linux,
-which is a convenient dev environment. You need:
+TextLayr's primary platform is **macOS on Apple Silicon**; the same code builds
+and runs on **Linux (x86_64)** and **Windows (x86_64)**. You need:
 
 | Tool | Why | Notes |
 |---|---|---|
-| Rust (stable) | build | via [`rustup`](https://rustup.rs) |
-| `clang` | builds whisper.cpp | Xcode CLT on macOS |
+| Rust (stable, ≥ 1.95) | build | via [`rustup`](https://rustup.rs); egui 0.36 needs 1.95 |
+| `clang` / MSVC / `g++` | builds whisper.cpp | see the per-OS notes below |
 | `cmake` | whisper-rs builds whisper.cpp | must be on `PATH` |
-| `make`, `g++` | C/C++ build | |
+| `make` | C/C++ build (Unix) | |
 | `ffmpeg` + `ffprobe` | probe, audio extract, compositing, encode | system install is fine in dev |
+
+**Windows (x86_64).** Use the **MSVC** toolchain — it is the path CI builds and
+tests:
+
+```powershell
+rustup default stable-x86_64-pc-windows-msvc
+```
+
+Then install **Visual Studio Build Tools 2022 → "Desktop development with C++"**
+(for `cl.exe` + the Windows SDK) and a **CMake** on `PATH`. **No LLVM and no
+MSYS2 are required**: the vendored `whisper-rs-sys` patch skips `bindgen`
+entirely, so `libclang` is never invoked. (A MinGW/GNU toolchain also works —
+the patch scopes the MSVC-only `/utf-8` flag to MSVC targets — but MSVC is the
+tested path.)
+
+**Linux (x86_64).** Needs a C/C++ toolchain plus the usual GUI dev libraries for
+`winit`/egui (`libxkbcommon`, Wayland/X11, OpenGL).
 
 Then:
 
@@ -86,6 +110,15 @@ open dist/TextLayr.app
 ./target/release/textlayr path/to/video.mp4 --headless
 ```
 
+On Windows the build produces **two** binaries: `textlayr.exe` (the GUI — no
+console window in release) and `textlayr-cli.exe` (a console build for
+`--setup`, `--check-updates`, `--headless`, `--words`, …):
+
+```powershell
+target\release\textlayr.exe
+target\release\textlayr-cli.exe path\to\video.mp4 --headless
+```
+
 ## Tests
 
 ```sh
@@ -104,7 +137,9 @@ model.
   assertion that fails to compile, and an opaque `whisper_full_params`. We
   vendor a copy under `vendor/patch/whisper-rs-sys` (wired via
   `[patch.crates-io]`) using the crate's prebuilt bindings with the layout tests
-  stripped. Remove the patch once upstream ships a fix.
+  stripped. The patch also scopes the MSVC-only `/utf-8` flag to MSVC targets,
+  so a MinGW/GNU Windows build isn't broken by it. Remove the patch once upstream
+  ships a fix.
 - **DTW word timings.** Plain whisper token timestamps collapse several words
   onto one boundary. We enable DTW with the preset for the loaded model
   (`BaseEn`/`SmallEn`) for accurate per-word timings, plus a normalization pass
@@ -199,6 +234,21 @@ background is generated by `scripts/make_dmg_background.py` and committed.
 Releases are cut by pushing a `v*` tag; the `release` GitHub Actions workflow
 builds the artifacts and attaches them to a GitHub Release, along with a
 `SHA256SUMS` file and the `latest.json` update manifest the app reads.
+
+### Linux and Windows
+
+```sh
+scripts/package_linux.sh          # dist/TextLayr-<v>-linux-x86_64.{tar.xz,AppImage}
+```
+```powershell
+pwsh scripts/package_windows.ps1  # dist/TextLayr-<v>-windows-x64.zip
+```
+
+The Linux script builds a portable `.tar.xz` and, when `appimagetool` is on
+`PATH`, a single-file `.AppImage` (set `SKIP_APPIMAGE=1` to build only the
+tarball). The Windows script builds a portable `.zip` containing `textlayr.exe`,
+`textlayr-cli.exe` and the fonts under `resources\assets\fonts`. Neither bundles
+ffmpeg or the model — both are downloaded on first run.
 
 ### Testing the updater
 

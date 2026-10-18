@@ -97,9 +97,10 @@ impl Style {
 
 /// Locate the bundled `assets/fonts` directory, and where it came from.
 ///
-/// Order: `$TEXTLAYR_FONTS` → bundled `Contents/Resources/assets/fonts` →
-/// `assets/fonts` next to / above the executable (dev) → under the current
-/// directory (dev).
+/// Order: `$TEXTLAYR_FONTS` → the platform bundle (macOS
+/// `Contents/Resources/assets/fonts`, Linux `$APPDIR/usr/share/textlayr/…`,
+/// Windows `resources/…`) → `assets/fonts` next to / above the executable (dev)
+/// → under the current directory (dev).
 pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
     let mut candidates: Vec<(PathBuf, Source)> = Vec::new();
 
@@ -107,32 +108,12 @@ pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
         candidates.push((PathBuf::from(env), Source::Env));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        // .app bundle: the exe lives in Contents/MacOS, fonts are copied to
-        // Contents/Resources/assets/fonts by scripts/package_macos.sh.
-        if let Some(dir) = exe.parent() {
-            if let Some(res) = dir.parent() {
-                candidates.push((
-                    res.join("Resources").join("assets").join("fonts"),
-                    Source::Bundled,
-                ));
-            }
-        }
-        let mut cur = exe.parent().map(|p| p.to_path_buf());
-        for _ in 0..6 {
-            let Some(dir) = cur else { break };
-            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
-            cur = dir.parent().map(|p| p.to_path_buf());
-        }
+    let fonts = |root: PathBuf| root.join("assets").join("fonts");
+    for (root, source) in crate::platform::bundle_roots() {
+        candidates.push((fonts(root), source));
     }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut cur = Some(cwd);
-        for _ in 0..6 {
-            let Some(dir) = cur else { break };
-            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
-            cur = dir.parent().map(|p| p.to_path_buf());
-        }
+    for (root, source) in crate::platform::dev_roots() {
+        candidates.push((fonts(root), source));
     }
 
     for (c, source) in &candidates {
@@ -372,5 +353,17 @@ mod tests {
         assert_eq!(style.words_per_popup, 6);
         assert_eq!(style.font_size_pct, 20.0);
         assert_eq!(style.font_family, FONT_FAMILIES[0]);
+    }
+
+    #[test]
+    fn finds_the_bundled_fonts_in_a_checkout() {
+        // Guards the consolidated `platform`-based discovery: the crate ships
+        // assets/fonts, so a dev checkout (or bundle) must resolve it.
+        let (dir, _source) = find_fonts_dir().expect("fonts should resolve from the checkout");
+        assert!(
+            dir.join("LibreBaskerville-Regular.ttf").is_file(),
+            "resolved fonts dir {} is missing the sentinel font",
+            dir.display()
+        );
     }
 }

@@ -110,31 +110,12 @@ fn candidates(model: Model) -> Vec<(PathBuf, Source)> {
         out.push((dir.join(file), Source::Downloaded));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            // .app bundle: Contents/Resources/models
-            if let Some(res) = dir.parent().map(|d| d.join("Resources").join("models")) {
-                out.push((res.join(file), Source::Bundled));
-            }
-            // Dev: walk up to <crate>/models
-            let mut cur = dir.to_path_buf();
-            for _ in 0..5 {
-                out.push((cur.join("models").join(file), Source::Dev));
-                match cur.parent() {
-                    Some(p) => cur = p.to_path_buf(),
-                    None => break,
-                }
-            }
-        }
+    // Bundled with the app (per-OS layout), then a source checkout.
+    for (root, source) in crate::platform::bundle_roots() {
+        out.push((root.join("models").join(file), source));
     }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut cur = Some(cwd);
-        for _ in 0..6 {
-            let Some(dir) = cur else { break };
-            out.push((dir.join("models").join(file), Source::Dev));
-            cur = dir.parent().map(|p| p.to_path_buf());
-        }
+    for (root, source) in crate::platform::dev_roots() {
+        out.push((root.join("models").join(file), source));
     }
 
     out

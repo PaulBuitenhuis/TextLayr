@@ -1394,13 +1394,14 @@ impl App {
                         ui.label(egui::RichText::new("Restarting to finish the update…").weak());
                     }
                     UpdateUi::OpenedDmg => {
-                        ui.label(
-                            egui::RichText::new(
-                                "The installer is open — drag TextLayr into Applications, then \
-                                 quit and reopen it.",
-                            )
-                            .weak(),
-                        );
+                        let msg = if matches!(crate::platform::os(), crate::platform::Os::Macos) {
+                            "The installer is open — drag TextLayr into Applications, then quit \
+                             and reopen it."
+                        } else {
+                            "The download is ready in your Downloads folder — install it, then \
+                             quit and reopen TextLayr."
+                        };
+                        ui.label(egui::RichText::new(msg).weak());
                     }
                     UpdateUi::Failed(e) => {
                         ui.colored_label(ui.visuals().error_fg_color, e.as_str());
@@ -1759,17 +1760,7 @@ fn file_label(path: &Path) -> String {
 
 /// Open the folder containing `path` in the file manager.
 fn reveal(path: &Path) -> Result<()> {
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut cmd = std::process::Command::new(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    cmd.arg(dir).spawn()?;
-    Ok(())
+    crate::platform::reveal_in_file_manager(path)
 }
 
 #[cfg(test)]

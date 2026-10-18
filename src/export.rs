@@ -144,13 +144,31 @@ fn videotoolbox_works(tools: &Fftools) -> bool {
 
 /// Resolve the requested [`Encoder`] to one that actually works here.
 ///
-/// `Auto` prefers the platform's hardware encoder — VAAPI on Linux, else
-/// VideoToolbox on macOS — and falls back to x264. A requested hardware
-/// encoder that fails its probe silently falls back too, so an export never
-/// dies just because a hardware path is unavailable.
+/// `Auto` walks [`platform::encoder_candidates`] — the platform's hardware
+/// encoders in preference order, ending in x264 — and takes the first whose
+/// probe passes. A *requested* hardware encoder that fails its probe falls back
+/// to x264 too, so an export never dies just because a hardware path is
+/// unavailable.
 fn active_encoder(tools: &Fftools, encoder: Encoder) -> Active {
+    if encoder != Encoder::Auto {
+        return resolve(tools, encoder);
+    }
+    for cand in crate::platform::encoder_candidates() {
+        match resolve(tools, *cand) {
+            // Probe failed (fell back to x264): try the next candidate, unless
+            // this candidate *is* x264, which is the terminal fallback.
+            Active::X264 if *cand != Encoder::X264 => continue,
+            active => return active,
+        }
+    }
+    Active::X264
+}
+
+/// Resolve one concrete encoder, falling back to x264 when its probe fails.
+fn resolve(tools: &Fftools, encoder: Encoder) -> Active {
     match encoder {
-        Encoder::X264 => Active::X264,
+        // Expanded by [`active_encoder`] before it gets here.
+        Encoder::Auto | Encoder::X264 => Active::X264,
         Encoder::Vaapi => {
             if vaapi_works(tools) {
                 Active::Vaapi
@@ -160,15 +178,6 @@ fn active_encoder(tools: &Fftools, encoder: Encoder) -> Active {
         }
         Encoder::Videotoolbox => {
             if videotoolbox_works(tools) {
-                Active::VideoToolbox
-            } else {
-                Active::X264
-            }
-        }
-        Encoder::Auto => {
-            if vaapi_works(tools) {
-                Active::Vaapi
-            } else if videotoolbox_works(tools) {
                 Active::VideoToolbox
             } else {
                 Active::X264

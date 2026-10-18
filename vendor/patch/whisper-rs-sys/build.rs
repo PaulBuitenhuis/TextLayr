@@ -194,8 +194,13 @@ fn main() {
         .very_verbose(true)
         .pic(true);
 
-    if cfg!(target_os = "windows") {
+    // `/utf-8` is an MSVC-only flag: MinGW's `g++` treats it as a linker input
+    // file and the compiler probe fails ("/utf-8: linker input file not found").
+    // Only pass it to MSVC; link advapi32 on any Windows toolchain.
+    if target.contains("msvc") {
         config.cxxflag("/utf-8");
+    }
+    if target.contains("windows") {
         println!("cargo:rustc-link-lib=advapi32");
     }
 

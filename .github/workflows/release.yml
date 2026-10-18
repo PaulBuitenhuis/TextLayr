@@ -49,7 +49,13 @@ jobs:
             "version": "$VERSION",
             "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v$VERSION",
             "zip": { "name": "$zip_name", "sha256": "$zip_sha", "size": $zip_size },
-            "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size }
+            "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size },
+            "platforms": {
+              "macos-arm64": {
+                "zip": { "name": "$zip_name", "sha256": "$zip_sha", "size": $zip_size },
+                "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size }
+              }
+            }
           }
           EOF
 

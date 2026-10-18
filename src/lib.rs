@@ -5,6 +5,7 @@
 //! ([`ui`]). The binary in `main.rs` dispatches between the headless CLI and
 //! the GUI.
 
+pub mod app;
 pub mod audio;
 pub mod chunk;
 pub mod config;
@@ -15,6 +16,7 @@ pub mod install;
 pub mod model;
 pub mod paths;
 pub mod pipeline;
+pub mod platform;
 pub mod probe;
 pub mod render;
 pub mod source;

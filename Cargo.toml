@@ -2,6 +2,9 @@
 name = "textlayr"
 version = "0.2.1"
 edition = "2021"
+# egui/eframe 0.36 require 1.95; declaring it here turns an old toolchain into a
+# clear one-line error instead of a dependency-chain MSRV dump.
+rust-version = "1.95"
 description = "Offline karaoke caption burner for short-form video"
 license = "MIT"
 readme = "README.md"
@@ -14,6 +17,13 @@ categories = ["multimedia::video", "command-line-utilities"]
 [[bin]]
 name = "textlayr"
 path = "src/main.rs"
+
+# Console entry point. On Windows the GUI bin (`textlayr`) is a windows-subsystem
+# build with no console; this one keeps it, for scripting. On macOS/Linux it is
+# an identical convenience alias.
+[[bin]]
+name = "textlayr-cli"
+path = "src/bin/textlayr-cli.rs"
 
 [dependencies]
 anyhow = "1"
@@ -36,6 +46,16 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Native GUI (Milestone 3): pure-Rust egui, glow backend (Wayland/X11 via winit).
 eframe = "0.36"
 egui = "0.36"
+
+# First-run downloads + archive extraction, pure Rust so the same code runs on
+# macOS/Windows/Linux with no system tools (`curl`, `ditto`). `ureq` uses rustls
+# (no OpenSSL system dependency); the archive decoders cover the macOS/Windows
+# `.zip` and Linux `.tar.xz` ffmpeg builds.
+ureq = "3"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tar = { version = "0.4", default-features = false }
+xz2 = "0.1"
+flate2 = "1"
 
 [profile.release]
 opt-level = 3
