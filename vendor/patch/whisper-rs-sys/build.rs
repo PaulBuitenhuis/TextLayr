@@ -101,6 +101,9 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=wrapper.h");
+    // The prebuilt bindings are copied from src/bindings.rs into OUT_DIR; make
+    // edits to them (we adjust the Windows/MSVC enum signedness) trigger a rerun.
+    println!("cargo:rerun-if-changed=src/bindings.rs");
 
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let whisper_root = out.join("whisper.cpp");

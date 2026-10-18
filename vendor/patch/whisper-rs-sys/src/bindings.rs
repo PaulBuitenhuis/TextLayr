@@ -1318,6 +1318,14 @@ pub const ggml_log_level_GGML_LOG_LEVEL_INFO: ggml_log_level = 2;
 pub const ggml_log_level_GGML_LOG_LEVEL_WARN: ggml_log_level = 3;
 pub const ggml_log_level_GGML_LOG_LEVEL_ERROR: ggml_log_level = 4;
 pub const ggml_log_level_GGML_LOG_LEVEL_CONT: ggml_log_level = 5;
+// A C enum is signed `int` on Windows/MSVC, so bindgen would type this as
+// `c_int` there; whisper-rs's `GGMLLogLevel` is `repr(i32)` on Windows to match.
+// These prebuilt bindings were generated on Unix (`c_uint`), so mirror the
+// platform split here or whisper-rs fails to compile with E0308. Keep in sync
+// with the `repr(u32)`/`repr(i32)` cfg_attrs in whisper-rs's src/common_logging.rs.
+#[cfg(all(windows, not(target_env = "gnu")))]
+pub type ggml_log_level = ::std::os::raw::c_int;
+#[cfg(any(not(windows), target_env = "gnu"))]
 pub type ggml_log_level = ::std::os::raw::c_uint;
 pub const ggml_tensor_flag_GGML_TENSOR_FLAG_INPUT: ggml_tensor_flag = 1;
 pub const ggml_tensor_flag_GGML_TENSOR_FLAG_OUTPUT: ggml_tensor_flag = 2;
@@ -4620,6 +4628,11 @@ pub const whisper_gretype_WHISPER_GRETYPE_CHAR: whisper_gretype = 3;
 pub const whisper_gretype_WHISPER_GRETYPE_CHAR_NOT: whisper_gretype = 4;
 pub const whisper_gretype_WHISPER_GRETYPE_CHAR_RNG_UPPER: whisper_gretype = 5;
 pub const whisper_gretype_WHISPER_GRETYPE_CHAR_ALT: whisper_gretype = 6;
+// Same Windows/MSVC signedness split as `ggml_log_level` above; whisper-rs's
+// `WhisperGrammarElementType` is `repr(i32)` on Windows (src/whisper_grammar.rs).
+#[cfg(all(windows, not(target_env = "gnu")))]
+pub type whisper_gretype = ::std::os::raw::c_int;
+#[cfg(any(not(windows), target_env = "gnu"))]
 pub type whisper_gretype = ::std::os::raw::c_uint;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
