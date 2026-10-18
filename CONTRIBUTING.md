@@ -63,8 +63,8 @@ and runs on **Linux (x86_64)** and **Windows (x86_64)**. You need:
 | `make` | C/C++ build (Unix) | |
 | `ffmpeg` + `ffprobe` | probe, audio extract, compositing, encode | system install is fine in dev |
 
-**Windows (x86_64).** Use the **MSVC** toolchain — it is the path CI builds and
-tests:
+**Windows (x86_64).** Use the **MSVC** toolchain — it is the only supported
+Windows configuration, and the one CI builds and tests:
 
 ```powershell
 rustup default stable-x86_64-pc-windows-msvc
@@ -73,9 +73,8 @@ rustup default stable-x86_64-pc-windows-msvc
 Then install **Visual Studio Build Tools 2022 → "Desktop development with C++"**
 (for `cl.exe` + the Windows SDK) and a **CMake** on `PATH`. **No LLVM and no
 MSYS2 are required**: the vendored `whisper-rs-sys` patch skips `bindgen`
-entirely, so `libclang` is never invoked. (A MinGW/GNU toolchain also works —
-the patch scopes the MSVC-only `/utf-8` flag to MSVC targets — but MSVC is the
-tested path.)
+entirely, so `libclang` is never invoked. MinGW/GNU Windows toolchains are *not*
+supported — whisper.cpp's libraries don't link there out of the box.
 
 **Linux (x86_64).** Needs a C/C++ toolchain plus the usual GUI dev libraries for
 `winit`/egui (`libxkbcommon`, Wayland/X11, OpenGL).
@@ -137,9 +136,7 @@ model.
   assertion that fails to compile, and an opaque `whisper_full_params`. We
   vendor a copy under `vendor/patch/whisper-rs-sys` (wired via
   `[patch.crates-io]`) using the crate's prebuilt bindings with the layout tests
-  stripped. The patch also scopes the MSVC-only `/utf-8` flag to MSVC targets,
-  so a MinGW/GNU Windows build isn't broken by it. Remove the patch once upstream
-  ships a fix.
+  stripped. Remove the patch once upstream ships a fix.
 - **DTW word timings.** Plain whisper token timestamps collapse several words
   onto one boundary. We enable DTW with the preset for the loaded model
   (`BaseEn`/`SmallEn`) for accurate per-word timings, plus a normalization pass

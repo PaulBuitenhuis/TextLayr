@@ -2,20 +2,104 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
-    name: build + test (macOS)
-    runs-on: macos-14
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # `git describe` feeds the build stamp
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # whisper.cpp builds through cmake + clang, both present on the runner.
+
+      # winit/egui need these to *link* on Linux; the runners have the rest.
+      - name: Linux GUI dev libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
+            libxcursor-dev libxrandr-dev libxinerama-dev
+
+      # whisper.cpp builds through cmake + a C/C++ toolchain, all present on the
+      # runners (clang on macOS, gcc on Linux, MSVC on Windows).
       - name: cargo test
         run: cargo test --locked --all-targets
+
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows + Linux here; macOS continues to be cut by release.yml.
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux GUI dev libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
+            libxcursor-dev libxrandr-dev libxinerama-dev
+
+      # appimagetool builds the single-file AppImage; without it the Linux script
+      # still produces the .tar.xz.
+      - name: Install appimagetool
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$HOME/bin/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$HOME/bin/appimagetool"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          v="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        env:
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
+        run: scripts/package_linux.sh
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
+        run: scripts/package_windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: textlayr-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.xz
+            dist/*.AppImage
+          if-no-files-found: error
 
   audit:
     name: cargo audit (dependencies)
