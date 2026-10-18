@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overview.jpg" width="860" alt="TextLayr review screen: (1) live preview, (2) editable transcript, (3) caption styling, (4) fast local export">
+  <img src="docs/screenshots/overview.jpg" width="860" alt="TextLayr review screen: (A) live preview of the actual burned-in captions, (B) editable transcript, (C) caption styling, (D) export locally">
 </p>
 
 ## What it does

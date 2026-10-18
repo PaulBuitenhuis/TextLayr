@@ -1,6 +1,10 @@
 /* TextLayr landing page — progressive enhancement only.
-   With JavaScript off, the page still works: every download link falls back to
-   the Releases page and the static copy is used everywhere. */
+   With JavaScript off the page still works: the download buttons point at the
+   version-agnostic asset alias (releases/latest/download/TextLayr.dmg, published
+   by .github/workflows/release.yml) and the static copy is used everywhere.
+   With JS on we resolve the exact versioned asset instead and show its version
+   and size; RELEASES below is the last-resort fallback if a release somehow
+   carries no .dmg. */
 (function () {
   'use strict';
 

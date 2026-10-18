@@ -249,24 +249,6 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
   margin-bottom: 26px;
 }
 
-/* ── Solo hero (temporary) ───────────────────────────────────────────────
-   The hero media block is parked while the sample clip is produced, so the
-   copy is centred in a single column instead of sitting in the left of a
-   two-column grid with an empty right half.
-
-   This is a modifier, not a replacement: every .hero-media / .phone /
-   .play-toggle rule below is untouched, so dropping `hero--solo` from the
-   <section> restores the two-column design exactly. See docs/index.html. */
-.hero--solo .hero-grid { grid-template-columns: 1fr; }
-.hero--solo .hero-copy {
-  max-width: 44rem;
-  margin-inline: auto;
-  text-align: center;
-}
-.hero--solo .hero-mark { margin-inline: auto; }
-.hero--solo .lede { margin-inline: auto; }
-.hero--solo .cta-row { justify-content: center; }
-
 /* "This is the current release" dot, used in the line under the CTA buttons. */
 .dot {
   display: inline-block;
@@ -439,7 +421,9 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
 
 /* Screenshot */
 .shot { margin: 56px auto 0; max-width: 940px; }
-.shot img {
+/* Direct child only, so the rule doesn't outrank the .pair-item widths below
+   (`.shot img` at 0,1,1 would beat `.pair-item--wide` at 0,1,0). */
+.shot > img {
   width: 100%;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -450,6 +434,38 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
   color: var(--faint);
   font-size: 0.86rem;
   margin-top: 14px;
+}
+
+/* Two-up: the same tool on a vertical and a landscape clip. One row height
+   keeps both frames identical in height, and each width is derived from that
+   height via its own aspect ratio — an explicit `width: auto` on a flex item
+   resolves to the container width and squashes the image instead. */
+.shot--pair { max-width: 820px; margin-top: 46px; }
+.pair {
+  --pair-h: clamp(200px, 24vw, 320px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.pair-item {
+  flex: 0 0 auto;
+  height: var(--pair-h);
+  width: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+/* 640x1138 and 1600x900 — keep in step with the asset dimensions. */
+.pair-item:not(.pair-item--wide) { width: calc(var(--pair-h) * 640 / 1138); }
+.pair-item--wide { width: calc(var(--pair-h) * 1600 / 900); }
+
+/* Too narrow for a row: stack, and let each width drive its own height again. */
+@media (max-width: 620px) {
+  .pair { flex-direction: column; gap: 14px; }
+  .pair-item { height: auto; }
+  .pair-item:not(.pair-item--wide) { width: 52%; }
+  .pair-item--wide { width: 100%; }
 }
 
 /* ── Install ────────────────────────────────────────────────────────── */
@@ -646,7 +662,8 @@ details p {
 @media (max-width: 880px) {
   .hero { padding: 52px 0 48px; }
   .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-  .hero-media { order: -1; }
+  /* Copy leads on narrow screens. This is a download page, so the headline and
+     the CTA have to be reachable without scrolling past the demo clip. */
   .phone { max-width: 240px; }
   .lede { margin-inline: auto; }
   .hero-copy { text-align: center; }
