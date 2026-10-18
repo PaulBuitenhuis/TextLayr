@@ -6,6 +6,8 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-18
+
 ### Added
 
 - **Support the project.** A `Buy me a coffee` action links to
@@ -160,7 +162,8 @@ video, as a native macOS app plus a headless CLI.
 - **Packaging:** `scripts/package_macos.sh` builds an ad-hoc-signed `TextLayr.app`
   plus `.zip` and `.dmg` release artifacts.
 
-[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.2
 [0.2.1]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.1
 [0.2.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.0
 [0.1.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.1.0
