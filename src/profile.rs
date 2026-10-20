@@ -31,7 +31,7 @@ pub struct Profile {
     pub id: String,
     /// Display name (editable without changing `id`).
     pub name: String,
-    /// Short description shown in the profile browser.
+    /// Short description kept for profiles created by earlier versions.
     pub description: String,
     /// The look itself.
     pub style: Style,

@@ -7,6 +7,7 @@ mod licenses;
 mod preview;
 mod profile;
 mod review;
+mod style;
 mod theme;
 
 use std::path::{Path, PathBuf};
@@ -233,7 +234,7 @@ pub struct App {
     prefs_save_at: Option<Instant>,
     /// Built-in and saved style profiles.
     profiles: ProfileStore,
-    /// Profile picker/gallery state (active id, dirty flag, dialogs).
+    /// Profile dropdown/management state (active id, dirty flag).
     profile_ui: ProfileUi,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
@@ -2224,8 +2225,8 @@ impl App {
         if let Some(r) = self.review.as_mut() {
             egui::Panel::right("style_panel")
                 .resizable(true)
-                .default_size(320.0)
-                .min_size(280.0)
+                .default_size(340.0)
+                .min_size(300.0)
                 .show(ui, |ui| {
                     let a = review::style_panel(ui, r, &self.profiles, &mut self.profile_ui);
                     merge(a, &mut seek, &mut export, &mut rechunk_warn);

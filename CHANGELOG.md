@@ -6,15 +6,17 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-20
+
 ### Added
 
 - **Popup motion, in and out.** A caption can pop, slide or fade in and out,
   with independent entrance/exit effects and durations, easing (linear,
-  ease-out, ease-in-out or spring overshoot) and amount. The Motion tab plays
-  in → hold → out in the live preview. Motion is applied frame-by-frame by the
-  default pipe exporter; the legacy `--graph` encoder rejects it with a clear
-  message.
-- **Wrapping and fixed-size layouts.** The Layout tab now has a **Fit** mode:
+  ease-out, ease-in-out or spring overshoot) and amount. The Motion controls
+  play in → hold → out in the live preview. Motion is applied frame-by-frame by
+  the default pipe exporter; the legacy `--graph` encoder rejects it with a
+  clear message.
+- **Wrapping and fixed-size layouts.** The layout model supports a **Fit** mode:
   shrink to one line (the original behaviour), keep the chosen size and wrap, or
   keep the size and clip. Wrapped captions have a line cap, optional words-per-
   line cap, line height, and a **reserve lines** setting so one- and two-line
@@ -26,26 +28,32 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so the preview and both exporters place every anchor correctly.
 - **Caption effects.** Text can now have a solid outline, a soft offset shadow,
   or a coloured glow, all in resolution-independent units. The active word can
-  get a rounded pill behind it, an underline, and a static scale-up. Text also
-  supports uppercase, letter tracking and an opacity control.
-- **More box control.** Padding, corner radius, a border and the box shadow's
-  colour, opacity, offset and blur are all adjustable. All geometry stays
+  get a rounded pill behind it, an underline, and a static scale-up. The panel
+  exposes these as one Edge choice plus a strength; uppercase is a panel toggle,
+  while letter tracking and text opacity remain part of the style model for
+  profiles.
+- **More box control.** The style model supports padding, corner radius, a
+  border and the box shadow's colour, opacity, offset and blur. The panel derives
+  the common geometry from its Shape, Padding and Shadow controls; all units stay
   relative to the font size, so profiles scale across resolutions.
-- **A compact style inspector and Customize sheet.** The right-hand panel now
-  shows a visual profile strip and six essentials — font, size, highlight,
-  background, position and a motion preset. The full control set moved into a
-  **Customize** sheet with Look/Layout/Motion tabs. This replaces the five-tab
-  sidebar.
+- **A single-panel style inspector.** The right-hand panel now exposes about
+  twenty visual decisions — Look profile dropdown, font, size, uppercase, bold,
+  text/accent colours, edge and strength, background none/box/bar, opacity,
+  corners, padding, shadow, active-word style, position, width, alignment,
+  one-to-three lines, motion type/speed and words-per-popup. Outline width,
+  shadow geometry, pill padding, line height, reserved lines and easing are
+  derived from those choices, so the full control set no longer needs a sheet.
+  There are no floating editor windows or profile gallery; the live preview
+  stays visible while styling.
 - **Richer built-in profiles.** Bold Pop now demonstrates uppercase, a bold
   outline and a lime active word; Highlight Pill uses the new active-word
   plate; Minimal uses a thin outline; Word by Word uses the active-word scale.
-- **Style profiles.** The style panel now has a profile picker and a profile
-  browser with live thumbnails. Eight built-in looks ship with the app; the
-  current look and caption mode can be saved as a named profile and updated,
-  renamed, duplicated or deleted later. Built-ins are read-only. A profile can
-  also carry words-per-popup; applying a different caption mode asks before it
-  re-chunks the transcript, and **Look only** applies the visual style without
-  touching the chunks. Profiles are one JSON file each under
+- **Style profiles.** Profiles are a **Look** dropdown, not a gallery: picking
+  one applies it immediately. Save, save-as, revert, rename and delete happen
+  inline in the panel. Eight built-in looks ship with the app; built-ins are
+  read-only. A profile can carry words-per-popup; applying a different caption
+  mode offers **Apply both / Look only / Cancel** inline before it re-chunks the
+  transcript and discards edits. Profiles are one JSON file each under
   `~/Library/Application Support/textlayr/profiles/`.
 - **The CLI can start from a profile.** `--profile <id|path>` loads a built-in,
   saved or hand-written profile, and `--list-profiles` prints what is available.
@@ -261,7 +269,8 @@ video, as a native macOS app plus a headless CLI.
 - **Packaging:** `scripts/package_macos.sh` builds an ad-hoc-signed `TextLayr.app`
   plus `.zip` and `.dmg` release artifacts.
 
-[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.3
 [0.2.2]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.2
 [0.2.1]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.1
 [0.2.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.0

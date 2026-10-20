@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/overview.jpg" width="860" alt="TextLayr review screen: (A) live preview of the actual burned-in captions, (B) editable transcript, (C) caption styling, (D) export locally">
+  <img src="docs/screenshots/overview.jpg" width="860" alt="TextLayr review screen: live preview of the burned-in captions, editable transcript, single-panel style inspector and export button">
 </p>
 
 ## What it does
@@ -31,21 +31,22 @@
   timings for tight sync.
 - **Review before you burn.** Edit the transcript, tweak the style, and see a
   live preview before exporting.
-- **All the caption styling you'd expect.** Fonts, size, highlight/dim colours,
-  uppercase, tracking, text outline/shadow/glow, an active-word pill or
-  underline, box colour/opacity/radius/padding/border/shadow, vertical position
-  and words-per-popup. Preferences persist between runs.
-- **Layout that stays put.** Choose one-line shrink-to-fit, fixed-size wrapping,
-  or a fixed-width/height box. Reserve lines so popups keep the same height, set
-  the line cap and line height, align left/centre/right, and anchor the box to
-  its top, centre or bottom.
+- **All the caption styling that matters.** Font, size, uppercase, text and
+  accent colours, an outline/shadow/glow edge, an active-word colour, pill,
+  underline or scale, a box or bar background with colour, opacity, corners,
+  padding and shadow, position, width, one to three lines, motion and
+  words per popup.
+- **Layout that stays put.** One, two or three lines; the caption shrinks to fit
+  or wraps at the chosen width, and can be aligned left, centre or right. A bar
+  background gives lower-thirds a fixed width.
 - **Entrances and exits that move.** Pop, slide or fade a caption in and out,
-  with independent in/out effects and durations, easing (including a springy
-  overshoot) and amount. The Motion tab plays in → hold → out in the preview.
+  with a slow, normal or fast speed. The Motion controls play in → hold → out in
+  the live preview.
 - **Style profiles.** Save the current look and caption mode as a named profile,
-  start from eight built-in looks, and update, rename, duplicate or delete your
-  own. A profile can also change how many words share a popup, with a warning
-  before it replaces transcript edits.
+  start from eight built-in looks, and update, rename or delete your own. Pick
+  one from the Look dropdown; the preview updates immediately. A profile can
+  also change how many words share a popup, with an inline choice before it
+  replaces transcript edits.
 - **Also a CLI.** The same pipeline is available headlessly for scripting.
 
 ## Requirements
@@ -183,8 +184,8 @@ Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — s
 1. **Drop a video** (or pass a path on the command line).
 2. Wait while it extracts audio and transcribes. Progress is shown per phase.
 3. **Review** the transcript: click a chunk to jump the preview to it, edit any
-   text, and adjust the essentials on the right — or open **Customize…** for the
-   full style editor.
+   text, and adjust the style in the right-hand panel. Everything is inline —
+   there is no separate editor window covering the preview.
 4. **Export** (button or **⌘E**). The result is written next to the input as
    `<name>_textlayr.mp4`, with a **Reveal in Finder** shortcut when it's done.
 
@@ -193,28 +194,39 @@ restyling after the first pass is instant.
 
 ### Style controls
 
-The right-hand panel stays deliberately short: a **visual profile strip** plus
-six essentials — **Font · Size · Highlight · Background · Position · Motion**.
-**Customize…** opens the full editor in a sheet with **Look / Layout / Motion**
-tabs: text effects, box detail, wrapping, reserved lines, anchoring and exact
-motion timing.
+The right-hand panel exposes about twenty visual decisions, all in one scroll:
+
+- **Look** — pick a built-in or saved profile from the dropdown.
+- **Text** — font, size, uppercase, bold, text colour, edge and strength.
+- **Background** — none, box or bar, with colour, opacity, corners, padding and
+  shadow.
+- **Highlight** — the active word as colour, pill, underline or scale, plus the
+  accent colour.
+- **Placement** — vertical position, width, alignment and one to three lines.
+- **Motion** — none, pop, slide or fade, with a speed and preview.
+- **Caption** — words per popup.
+
+The panel derives the detailed fields — outline width, shadow geometry, pill
+padding, line height, reserved lines, easing and so on — from those choices, so
+the preview stays coherent. The underlying style model still stores them, so
+profiles and the CLI remain exact; the panel simply stops asking you to manage
+every parameter by hand.
 
 ### Style profiles
 
-The **thumbnail strip** at the top of the style panel is the working style. Pick
-a built-in or saved profile from the strip, or use **All profiles…** for the
-browser with the full list and management actions.
+The **Look** dropdown at the top of the style panel lists your profiles and the
+built-ins. Choosing one applies it and updates the preview immediately; there
+are no thumbnail previews to browse.
 
-- **Save as…** snapshots the current look and caption mode under a name. It
-  appears immediately in the profile list.
-- **Update** replaces a saved profile with the current settings after a
-  confirmation. It is only available for your own profiles.
-- **Revert** throws away changes made since the profile was applied.
-- **All profiles… → Rename / Duplicate / Delete** maintain the list. Built-ins
-  are read-only; duplicate one to customise it.
-- A profile can carry a caption mode (words per popup). Applying one that
-  differs is offered as **look only** or **look + caption mode**; the latter
-  re-chunks the transcript, so it asks first when you have edits.
+- **Save as…** snapshots the current look and caption mode under a name. The
+  name field appears inline in the panel.
+- **Save** updates one of your own profiles; **Revert** discards changes made
+  since it was applied.
+- **Manage** opens an inline list of your profiles with **Rename** and **Delete**.
+  Built-ins are read-only; save one under a new name to customise it.
+- A profile can carry a caption mode (words per popup). If applying one would
+  re-chunk an edited transcript, the panel offers **Apply both**, **Look only**
+  or **Cancel** inline — no dialog.
 - If a built-in changes in an app update, an active copy shows **modified**;
   **Revert** applies the new version.
 - Profiles live as one JSON file each in

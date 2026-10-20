@@ -223,7 +223,7 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.label(RichText::new(title).small().color(TEXT_WEAK).strong());
 }
 
-/// A macOS-style segmented control, as used for the About window's tabs.
+/// A macOS-style segmented control, for tabs and compact option rows.
 ///
 /// Draws `labels` on a rounded track with the entry at `*selected` filled in
 /// the accent colour, and stretches to fill the row when there is room.
@@ -259,7 +259,7 @@ pub fn segmented(ui: &mut egui::Ui, selected: &mut usize, labels: &[&str]) -> bo
     }
 
     let total_w: f32 = widths.iter().sum::<f32>() + inset * 2.0;
-    let (outer, _) = ui.allocate_exact_size(
+    let (outer, outer_response) = ui.allocate_exact_size(
         egui::vec2(total_w, seg_h + inset * 2.0),
         egui::Sense::hover(),
     );
@@ -282,7 +282,11 @@ pub fn segmented(ui: &mut egui::Ui, selected: &mut usize, labels: &[&str]) -> bo
             egui::vec2(widths[i], seg_h),
         );
         x += widths[i];
-        let resp = ui.interact(seg, ui.id().with(("segmented", i)), egui::Sense::click());
+        let resp = ui.interact(
+            seg,
+            outer_response.id.with(("segmented", i)),
+            egui::Sense::click(),
+        );
         let active = i == *selected;
         if active {
             painter.rect_filled(seg, egui::CornerRadius::same(ROUND), ACCENT);
