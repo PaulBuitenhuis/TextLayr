@@ -37,6 +37,9 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── 1. release build ────────────────────────────────────────────────────────
+# Keep the Mach-O deployment target in step with Info.plist (macOS 13), so the
+# binary cannot be launched directly on a system older than we support.
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
 say "building release binary"
 cargo build --release
 
@@ -100,6 +103,7 @@ say "done: $app ($size, version $version)"
 echo
 echo "Run it:            open \"$app\""
 echo "Drag a video onto the window (or, from a terminal, add a path as argv[1])."
+echo "Requires macOS 13+ on Apple Silicon."
 echo "First run downloads ffmpeg + a whisper model (~190 MB) into:"
 echo "  ~/Library/Application Support/textlayr/"
 echo "Prefer to do that headlessly?  \"$contents/MacOS/TextLayr\" --setup"

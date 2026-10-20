@@ -41,7 +41,7 @@ pub struct VideoInfo {
 /// Locate ffmpeg and ffprobe. Order: bundled Resources/bin -> downloaded
 /// (app data dir) -> vendor/<platform> (dev) -> PATH.
 pub fn find_ffmpeg() -> Result<Fftools> {
-    let exe = std::env::current_exe().context("cannot locate current executable")?;
+    let exe = paths::current_exe().context("cannot locate current executable")?;
     let exe_dir = exe.parent().unwrap_or(Path::new("."));
 
     // Candidate dirs, most specific first, each tagged with where it came from.

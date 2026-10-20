@@ -38,42 +38,28 @@
 
 ## Requirements
 
-- macOS on Apple Silicon (arm64). (The code also runs on Linux for development;
-  release builds target macOS.)
-- `ffmpeg` + `ffprobe` and a whisper model — TextLayr downloads these on first run,
-  or uses ones you already have.
+- **macOS 13 (Ventura) or later on Apple Silicon (arm64).** (The code also runs on
+  Linux for development; release builds target macOS.)
+- **No extra installs.** `ffmpeg` + `ffprobe` and a whisper model are fetched on
+  first run (~190 MB, or ~530 MB if you pick the larger `small.en` model). If you
+  already have ffmpeg on your `PATH` (e.g. from Homebrew), TextLayr uses it
+  instead of downloading one.
+- **About 250 MB of disk** after setup (~600 MB with `small.en`).
 
 ## Install
 
 TextLayr is free and open source, so it isn't signed with a paid Apple Developer
 ID and can't be notarized. macOS therefore refuses to open it the way it opens a
-paid app. There are two ways in — the first avoids that entirely.
-
-### Terminal — no warnings, no password (recommended)
-
-```sh
-curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
-```
-
-Files fetched with `curl` don't carry the `com.apple.quarantine` flag that
-browsers and AirDrop add to downloads, so Gatekeeper is never consulted: TextLayr
-installs and opens like any other app. The script reads the same release manifest
-the app's own updater trusts, checks the download's SHA-256, unpacks it with
-`ditto` (which preserves the code signature) and installs to `/Applications` — or
-`~/Applications` when `/Applications` isn't writable. It never asks for a
-password. Read it first if you prefer:
-
-```sh
-curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | less
-```
-
-Options go through `sh -s --`, e.g. `... | sh -s -- --dir ~/Applications
---no-open`. Uninstall with `rm -rf /Applications/TextLayr.app`.
+paid app. There are two ways in — the disk image is the normal one, and the
+terminal script avoids the warning entirely.
 
 ### Disk image — point and click
 
 Download the latest `TextLayr-<version>.dmg` from
-[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), then:
+[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), or use the
+stable link:
+[TextLayr.dmg](https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg).
+Then:
 
 1. **Drag TextLayr into Applications before opening it.** Launching it from the
    disk image makes macOS run it from a temporary read-only copy, which stops it
@@ -81,7 +67,7 @@ Download the latest `TextLayr-<version>.dmg` from
 2. **Open it from your Applications folder.** macOS blocks the first launch:
 
    1. Double-click it, then click **Done** in the warning — don't choose *Move
-      to Trash*.
+      to Trash* (some Macs say *Move to Bin*).
    2. Open   → **System Settings → Privacy & Security** and scroll to
       **Security**.
    3. Click **Open Anyway** next to the message about TextLayr, enter an admin
@@ -102,27 +88,82 @@ Download the latest `TextLayr-<version>.dmg` from
    **"is damaged and can't be opened"**, that's the same mechanism and the same
    command fixes it.
 
+   **Already installed and still getting the warning?** Run the terminal
+   installer below — it replaces the app and clears the flag.
+
 You only ever do this once. After the first launch TextLayr updates itself, and
 the app downloads those updates itself — so they never trip Gatekeeper.
 
+Step-by-step guide with pictures:
+<https://paulbuitenhuis.github.io/TextLayr/#install> — or the printable
+[PDF guide](https://paulbuitenhuis.github.io/TextLayr/assets/install/TextLayr-install-guide.pdf).
+
+### Terminal — no warnings, no password
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
+```
+
+Files fetched with `curl` don't carry the `com.apple.quarantine` flag that
+browsers and AirDrop add to downloads, so Gatekeeper is never consulted: TextLayr
+installs and opens like any other app. The script reads the same release manifest
+the app's own updater trusts, checks the download's SHA-256, unpacks it with
+`ditto` (which preserves the code signature) and installs to `/Applications` — or
+`~/Applications` when `/Applications` isn't writable. It never asks for a
+password. Read it first if you prefer:
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | less
+```
+
+Options go through `sh -s --`, e.g. `... | sh -s -- --dir ~/Applications
+--no-open`. `--cli` also puts a `textlayr` command on your `PATH`
+(`/usr/local/bin` when writable, otherwise `~/.local/bin`). `--version <x.y.z>`
+installs a specific release, and `--uninstall` removes the app and everything
+TextLayr downloaded (it also removes your preferences):
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
+```
+
+### Uninstall
+
+1. Quit TextLayr and drag **TextLayr.app** to the Trash — from `/Applications`,
+   or `~/Applications` if that's where it went.
+2. Remove what TextLayr downloaded (~250 MB, or ~600 MB with `small.en`). Either
+   **Settings → Diagnostics → Remove downloaded models and ffmpeg** (this keeps
+   your style preferences), or delete the folder itself: Finder → **Go → Go to
+   Folder** (⇧⌘G) → `~/Library/Application Support/textlayr` (this also resets
+   preferences). The transcript cache in `~/Library/Caches/textlayr` is optional
+   and safe to delete too.
+
+The terminal installer can do all of it for you (including preferences):
+`curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall`.
+Videos you exported (`<name>_textlayr.mp4`) are never touched.
+
 ### First run
 
-The first time you open TextLayr it shows a **Setup** screen. It downloads:
+The first time you open TextLayr it shows a **Setup** screen. It needs an internet
+connection once and downloads:
 
 - `ffmpeg` + `ffprobe` (unless it finds them on your `PATH`, e.g. via Homebrew)
 - a whisper model — **base.en** by default (~148 MB, fast); **small.en**
   (~488 MB, more accurate) is selectable on the same screen.
 
-These are stored in `~/Library/Application Support/textlayr/` — nothing else on
-your machine is touched. From then on TextLayr works fully offline, apart from a
-once-a-day look for a new TextLayr release (you can switch that off in
-**Settings → Updates**).
+That is ~190 MB for the default choice, or ~530 MB with `small.en`. These are
+stored in `~/Library/Application Support/textlayr/`; the only other thing
+TextLayr writes is a small transcript cache in `~/Library/Caches/textlayr/`.
+From then on it works fully offline, apart from a once-a-day look for a new
+TextLayr release (you can switch that off in **Settings → Updates**).
 
 You can manage models from the **Settings** window: switch between installed
 ones, download the other, or remove one TextLayr downloaded (a dev-checkout or
-`$TEXTLAYR_MODEL` model is never deleted).
+`$TEXTLAYR_MODEL` model is never deleted). **Settings → Diagnostics** can remove
+all downloaded dependencies at once.
 
-Prefer the terminal? `textlayr --setup` does the same thing.
+Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — see
+[Command line](#command-line) for the bundle path, or re-run the installer with
+`--cli`.
 
 ## Using the app
 
@@ -152,6 +193,17 @@ Automatic checking can be turned off with the **Check automatically** box; the
 check is the only time TextLayr talks to the network after setup.
 
 ## Command line
+
+The app bundle doesn't add itself to your `PATH`. If you installed the disk
+image, run the binary directly — or re-run the installer with `--cli` to install it
+(it prints the `PATH` hint if `~/.local/bin` isn't on it):
+
+```sh
+/Applications/TextLayr.app/Contents/MacOS/TextLayr --version
+```
+
+Built from source (`cargo build --release`), the binary is
+`target/release/textlayr`, so the examples below apply as written.
 
 ```sh
 textlayr # open the GUI

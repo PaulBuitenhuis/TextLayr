@@ -502,6 +502,119 @@ section[id] { scroll-margin-top: 78px; }
 .install-alt { font-size: 0.88rem !important; margin-top: 10px !important; }
 .install-alt a { color: var(--accent); }
 
+/* Two-path install layout: disk image (primary) + terminal. */
+#install, #terminal { scroll-margin-top: 88px; }
+
+.install-jump {
+  margin: 22px 0 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+.install-jump a { color: var(--accent); font-weight: 600; }
+
+.install-card {
+  position: relative;
+  margin-top: 26px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 30px 30px 26px;
+}
+.install-card--primary {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 10px 34px rgb(0 0 0 / 0.06);
+}
+.install-card > h3 { margin: 6px 0 8px; font-size: 1.28rem; }
+.install-lede { color: var(--muted); font-size: 0.96rem; }
+.install-meta { color: var(--muted); font-size: 0.82rem; margin-top: -4px; }
+
+.install-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.install-badge--alt {
+  background: color-mix(in srgb, var(--ok, #2ea043) 15%, transparent);
+  color: var(--ok, #2ea043);
+}
+
+.install-steps--media { margin-top: 30px; }
+.install-steps--media > li { padding-left: 52px; margin-bottom: 34px; }
+.install-steps--media h4 { margin: 0 0 6px; font-size: 1.02rem; }
+.install-steps--media p { margin-bottom: 10px; }
+
+.install-shot {
+  margin: 14px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 8px;
+  overflow: hidden;
+}
+.install-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: calc(var(--radius-sm) - 2px);
+}
+.install-shot--narrow { max-width: 620px; }
+.install-shot figcaption {
+  margin: 8px 4px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.install-tip { font-size: 0.9rem; color: var(--muted); margin-top: 14px !important; }
+.install-tip b { color: var(--text); }
+.install-fineprint { font-size: 0.8rem !important; color: var(--muted); }
+.install-fineprint code { font-size: 0.78rem; }
+.install-note { font-size: 0.9rem; color: var(--muted); }
+.install-note a { color: var(--accent); }
+
+.install-card .code { margin-top: 8px; }
+
+.install-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.install-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.93rem;
+}
+.install-details summary::marker { color: var(--muted); }
+.install-details > p { margin-top: 10px; font-size: 0.9rem; color: var(--muted); }
+.install-details > .code { margin-top: 10px; }
+
+.install-trouble { margin-top: 40px; }
+.install-trouble dl { margin: 16px 0 0; }
+.install-trouble dt {
+  margin-top: 14px;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.install-trouble dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.install-trouble code { font-size: 0.84rem; }
+
+@media (max-width: 640px) {
+  .install-card { padding: 22px 18px 20px; }
+  .install-steps--media > li { padding-left: 0; }
+  .install-steps--media > li::before { position: static; margin-bottom: 10px; }
+  .install-shot { padding: 5px; }
+}
+
 .callout {
   margin-top: 46px;
   background: var(--warn-soft);

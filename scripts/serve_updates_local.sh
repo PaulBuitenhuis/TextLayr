@@ -7,7 +7,7 @@
 # an "update"), writes the same `latest.json` the release workflow produces,
 # and serves the folder with `python3 -m http.server`. Point a **scratch copy**
 # of the app at it with $TEXTLAYR_UPDATE_URL and click "Download & install" in
-# About → Updates.
+# Settings → Updates.
 #
 # The served app is version `<version>`; the running binary reports the version
 # compiled from Cargo.toml (e.g. 0.2.0), so 9.9.9 (the default) looks newer and
@@ -73,7 +73,7 @@ cat <<EOF
   TEXTLAYR_UPDATE_URL="http://127.0.0.1:$port/latest.json" \\
     ~/Applications/TextLayr-test/TextLayr.app/Contents/MacOS/TextLayr
 
-Then: About -> Updates -> "Download & install".
+Then: Settings -> Updates -> "Download & install".
 
 EOF
 

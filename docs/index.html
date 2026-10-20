@@ -84,19 +84,17 @@
         </p>
 
         <div class="cta-row">
-          <a class="btn btn-primary" href="#install">
-            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M7.5 10.2l2.4 2.1-2.4 2.2M12.6 15h4"/></svg>
-            <span>Install for macOS</span>
+          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 4v11M7.5 10.8 12 15.3l4.5-4.5M5 19.5h14"/></svg>
+            <span>Download for macOS</span>
           </a>
-          <a class="btn btn-ghost" href="https://github.com/PaulBuitenhuis/TextLayr" rel="noopener">
-            View on GitHub
+          <a class="btn btn-ghost" href="#install">
+            Step-by-step install
           </a>
         </div>
         <p class="cta-alt">
-          Installing from the terminal is one command and skips the macOS security
-          step entirely. Prefer a disk image?
-          <a href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg"
-             data-download>Download the .dmg</a>.
+          Requires macOS 13+ on Apple Silicon. Prefer the terminal?
+          <a href="#terminal">One command, no security prompts</a>.
         </p>
 
         <p class="cta-note" data-release-meta hidden>
@@ -107,6 +105,7 @@
         </p>
         <p class="cta-note" data-release-fallback>
           Free &amp; open source (MIT) · macOS 13+ on Apple Silicon · about 8&nbsp;MB
+          · ~190&nbsp;MB first-run setup
         </p>
       </div>
 
@@ -226,80 +225,222 @@
   <!-- ── Install ──────────────────────────────────────────────────────── -->
   <section class="section" id="install">
     <div class="wrap narrow">
-      <h2 class="section-title">Install in about a minute</h2>
+      <h2 class="section-title">Install TextLayr</h2>
+      <p class="section-lede">
+        Requires <b>macOS 13 or later</b> on an Apple Silicon Mac. The download is
+        about 8&nbsp;MB; the first launch fetches ffmpeg and a Whisper model
+        (~190&nbsp;MB), which takes a couple of minutes on a normal connection.
+      </p>
 
-      <ol class="install-steps">
-        <li>
-          <h3>Install it from the terminal</h3>
-          <p>
-            One command, no password, no security prompts. It downloads the app
-            the same way the updater does, checks the SHA-256, and installs it to
-            your Applications folder.
-          </p>
-          <div class="code">
-            <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
-            <button class="copy" type="button" data-copy aria-label="Copy command">
-              <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
-              <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-              <span class="copy-label">Copy</span>
-            </button>
-          </div>
-          <p class="install-alt"><a href="https://paulbuitenhuis.github.io/TextLayr/install.sh" rel="noopener">Read the script first</a> — it's ~140 lines of POSIX shell.</p>
-        </li>
-        <li>
-          <h3>Or use the disk image</h3>
-          <p>
-            Grab <code>TextLayr-<span data-version-inline>latest</span>.dmg</code> — about 8&nbsp;MB,
-            or browse every build on the
-            <a href="https://github.com/PaulBuitenhuis/TextLayr/releases" rel="noopener">Releases page</a>.
-            Open it and drag the app onto the Applications shortcut —
-            <b>before</b> opening it, so macOS doesn't run it from the disk image
-            itself.
-          </p>
-          <p><a class="btn btn-primary btn-sm" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>Download for macOS</a></p>
-        </li>
-        <li>
-          <h3>Open it the first time</h3>
-          <p>The disk image route needs one extra step — see below.</p>
-        </li>
-      </ol>
+      <p class="install-jump">
+        Comfortable with Terminal?
+        <a href="#terminal">One command, no security prompts →</a>
+      </p>
 
-      <aside class="callout">
-        <div class="callout-head">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z"/><path d="M12 9.5v4.2M12 16.6v.1"/></svg>
-          <h3>Why macOS warns you (and why the terminal route doesn't)</h3>
-        </div>
-        <p>
-          TextLayr is free and open source, so it isn't signed with a paid Apple Developer ID
-          and can't be notarized. macOS refuses to open any such app that carries the
-          <code>com.apple.quarantine</code> flag — the mark browsers and AirDrop put on
-          downloads. Files fetched with <code>curl</code> never get that flag, which is why
-          installing from the terminal skips all of this.
+      <article class="install-card install-card--primary">
+        <span class="install-badge">Recommended</span>
+        <h3>Disk image</h3>
+        <p class="install-lede">
+          Download the disk image, drag the app into Applications, and allow it
+          once in System Settings. macOS will warn you — that is expected for a
+          free, un-notarized app, and it only happens the first time.
         </p>
         <p>
-          If you used the disk image instead, here's the way through it: open TextLayr once
-          and click <b>Done</b> in the warning (not <i>Move to Trash</i>), then go to
-          <b>System Settings → Privacy &amp; Security</b>, scroll to <b>Security</b>, and click
-          <b>Open Anyway</b> next to the message about TextLayr. You'll need an admin account,
-          and the button only appears for about an hour after the attempt.
+          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>Download for macOS</a>
         </p>
-        <p class="callout-sub">
-          No button, or you'd rather not? Clear the flag — this works for
-          <b>“damaged and can't be opened”</b> too:
+        <p class="install-meta">
+          <span data-release-meta hidden><b data-version>—</b> · <span data-size>—</span> · </span>
+          <span>free &amp; open source (MIT)</span>
+        </p>
+
+        <ol class="install-steps install-steps--media">
+          <li>
+            <h4>Open the disk image</h4>
+            <p>
+              Double-click the TextLayr disk image in your Downloads folder. A
+              Finder window opens with TextLayr on the left and an Applications
+              shortcut on the right.
+            </p>
+            <figure class="install-shot">
+              <img src="assets/install/1-dmg-window.png" width="1504" height="1264" loading="lazy"
+                   alt="The real TextLayr disk image window: the TextLayr app on the left, an arrow, and the Applications folder on the right, with an Install guide PDF below.">
+              <figcaption>The disk image window. The Install guide below the arrow has the same one-time fix, with pictures.</figcaption>
+            </figure>
+          </li>
+
+          <li>
+            <h4>Drag TextLayr onto Applications</h4>
+            <p>
+              Drop it on the <b>Applications</b> folder, then eject the disk
+              image. Do this <b>before</b> opening it: opening straight from the
+              image makes macOS run a temporary read-only copy, which stops
+              TextLayr updating itself later.
+            </p>
+            <figure class="install-shot">
+              <img src="assets/install/2-drag.png" width="1504" height="1264" loading="lazy"
+                   alt="The real TextLayr disk image window, with the Applications folder circled in red as the drop target.">
+              <figcaption>Drag left to right, then eject the image.</figcaption>
+            </figure>
+          </li>
+
+          <li>
+            <h4>Open it and click Done</h4>
+            <p>
+              Open <b>TextLayr</b> from your Applications folder. macOS refuses it
+              and offers to move it to the Trash — click <b>Done</b>, not
+              <i>Move to Trash</i> (some Macs label it <i>Move to Bin</i>). The app
+              is fine; macOS just can't verify an app that isn't notarized.
+            </p>
+            <figure class="install-shot install-shot--narrow">
+              <img src="assets/install/3-warning.png" width="565" height="560" loading="lazy"
+                   alt="The real macOS warning that “TextLayr.app” is not opened, with the Done button circled in red next to Move to Bin.">
+              <figcaption>The actual macOS alert (macOS 26 shown). The wording and the second button's label vary by macOS version.</figcaption>
+            </figure>
+          </li>
+
+          <li>
+            <h4>Allow it once</h4>
+            <p>
+              Open   → <b>System Settings → Privacy &amp; Security</b> and scroll
+              to <b>Security</b>. Click <b>Open Anyway</b> next to the message
+              about TextLayr and confirm with your admin password. Then open the
+              app again.
+            </p>
+            <figure class="install-shot install-shot--narrow">
+              <img src="assets/install/4-open-anyway.png" width="1408" height="668" loading="lazy"
+                   alt="System Settings, Privacy and Security, with the Open Anyway button next to the blocked TextLayr message circled in red.">
+              <figcaption>The Security section (illustration — the layout is the same across macOS 13–26). The button only appears for about an hour after the blocked attempt.</figcaption>
+            </figure>
+            <p class="install-tip">
+              <b>No button, or you'd rather not?</b> Clear the flag instead — this
+              also fixes <i>“TextLayr is damaged and can't be opened”</i>:
+            </p>
+            <div class="code">
+              <code>xattr -dr com.apple.quarantine /Applications/TextLayr.app</code>
+              <button class="copy" type="button" data-copy aria-label="Copy command">
+                <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+                <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+            <p class="install-fineprint">Swap in <code>~/Applications</code> if that's where you put it.</p>
+          </li>
+
+          <li>
+            <h4>Finish setup</h4>
+            <p>
+              On first launch TextLayr asks which transcription model to use.
+              <b>base.en</b> (~148&nbsp;MB) is fast and the default;
+              <b>small.en</b> (~488&nbsp;MB) is more accurate. Click
+              <b>Install</b> and let it download ffmpeg and the model — about
+              190&nbsp;MB in total, or about 530&nbsp;MB with small.en.
+            </p>
+            <p>
+              When it's done you're at the drop screen. No account, no sign-in,
+              and no uploads from here on.
+            </p>
+          </li>
+        </ol>
+
+        <p class="install-note">
+          You only do this once. After the first launch TextLayr updates itself,
+          and those updates never trip Gatekeeper.
+        </p>
+        <p class="install-note">
+          Prefer a printable guide?
+          <a href="assets/install/TextLayr-install-guide.pdf">Download the two-page PDF</a>
+          — the same steps with the pictures.
+        </p>
+      </article>
+
+      <article class="install-card" id="terminal">
+        <span class="install-badge install-badge--alt">No security prompt</span>
+        <h3>Terminal</h3>
+        <p class="install-lede">
+          One command installs the app and skips the warning entirely — files
+          fetched with <code>curl</code> never get the quarantine flag that
+          browsers add. No password, no System Settings detour. Open
+          <b>Terminal</b> (press ⌘Space, type <i>Terminal</i>, press Return),
+          paste this line, and press Return:
         </p>
         <div class="code">
-          <code>xattr -dr com.apple.quarantine /Applications/TextLayr.app</code>
+          <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
           <button class="copy" type="button" data-copy aria-label="Copy command">
             <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
             <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
             <span class="copy-label">Copy</span>
           </button>
         </div>
-        <p class="callout-sub">
-          Either way you only do this once — TextLayr updates itself from then on,
-          and those updates never trip Gatekeeper.
+        <p class="install-alt">
+          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/install.sh" rel="noopener">Read the script first</a>
+          — a self-contained POSIX shell script. It checks the release's SHA-256 and installs
+          to <code>/Applications</code>, or <code>~/Applications</code> when that
+          isn't writable.
+        </p>
+        <details class="install-details">
+          <summary>Options</summary>
+          <p>
+            Pass options through <code>sh -s --</code>. <code>--cli</code> installs a
+            <code>textlayr</code> command onto your <code>PATH</code> (and prints
+            the line to add if the folder isn't on it),
+            <code>--version &lt;x.y.z&gt;</code> installs a specific release, and
+            <code>--uninstall</code> removes the app plus everything it
+            downloaded.
+          </p>
+          <div class="code">
+            <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --no-open</code>
+            <button class="copy" type="button" data-copy aria-label="Copy command">
+              <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+              <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+              <span class="copy-label">Copy</span>
+            </button>
+          </div>
+        </details>
+      </article>
+
+      <aside class="callout">
+        <div class="callout-head">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z"/><path d="M12 9.5v4.2M12 16.6v.1"/></svg>
+          <h3>Why macOS warns you</h3>
+        </div>
+        <p>
+          TextLayr is free and open source, so it isn't signed with a paid Apple
+          Developer ID and can't be notarized. macOS refuses to open any such app
+          that carries the <code>com.apple.quarantine</code> flag — the mark
+          browsers and AirDrop put on downloads. The terminal install avoids the
+          flag completely; the disk image needs the one-time <b>Open Anyway</b>
+          step above. Either way, updates afterwards are handled by the app.
         </p>
       </aside>
+
+      <details class="install-details install-trouble">
+        <summary>If something goes wrong</summary>
+        <dl>
+          <dt>“TextLayr is damaged and can’t be opened”</dt>
+          <dd>That's the quarantine flag, not a bad download. Run the <code>xattr</code> command in step 4, or install with the terminal instead.</dd>
+
+          <dt>There's no <b>Open Anyway</b> button</dt>
+          <dd>It only shows for about an hour after the blocked attempt. Try opening TextLayr once more, then check <b>Privacy &amp; Security → Security</b> again. Or use the <code>xattr</code> command.</dd>
+
+          <dt>The terminal says <i>this installer is for macOS</i></dt>
+          <dd>You're not on macOS, or you're in a Linux container. TextLayr releases are macOS-only.</dd>
+
+          <dt>The terminal says <i>requires an Apple Silicon Mac</i></dt>
+          <dd>TextLayr has no Intel build. Check   → <b>About This Mac</b>; it needs an M-series chip.</dd>
+
+          <dt>The terminal says <i>requires macOS 13 or later</i></dt>
+          <dd>TextLayr supports macOS 13 (Ventura) and newer. The installer refuses older versions rather than installing an app macOS won't launch.</dd>
+
+          <dt>The terminal says <i>checksum mismatch</i></dt>
+          <dd>The download was corrupted in transit; nothing was installed. Run the command again.</dd>
+
+          <dt>The terminal says <i>TextLayr is running</i></dt>
+          <dd>Quit TextLayr (⌘Q) and run the command again.</dd>
+
+          <dt>I installed it before and still get the warning</dt>
+          <dd>Run the terminal install again. It replaces the app and clears the flag.</dd>
+        </dl>
+      </details>
     </div>
   </section>
 
@@ -323,16 +464,20 @@
       </div>
 
       <ul class="checklist">
-        <li>Everything is stored in <code>~/Library/Application Support/textlayr/</code> — nothing else on your Mac is touched.</li>
+        <li>Everything is stored in <code>~/Library/Application Support/textlayr/</code>, plus a small transcript cache in <code>~/Library/Caches/textlayr/</code>.</li>
         <li>After setup, video never leaves your machine. No uploads, no accounts.</li>
         <li>The one other network call is an optional once-a-day check for a new TextLayr release, switchable off in <b>Settings → Updates</b>.</li>
         <li>English speech is supported today (the models are the English-optimised ones).</li>
       </ul>
 
       <p class="run-note">
-        Comfortable in a terminal? <code>textlayr --setup</code> does exactly the same thing, and
-        <code>textlayr video.mp4 --headless</code> runs the whole pipeline without a window.
-        Full flag list in the <a href="https://github.com/PaulBuitenhuis/TextLayr#command-line" rel="noopener">README</a>.
+        Comfortable in a terminal? The app bundle doesn't add <code>textlayr</code>
+        to your <code>PATH</code> by default — re-run the installer with
+        <code>--cli</code>, or use
+        <code>/Applications/TextLayr.app/Contents/MacOS/TextLayr --setup</code>.
+        <code>… --headless video.mp4</code> runs the whole pipeline without a
+        window. Full flag list in the
+        <a href="https://github.com/PaulBuitenhuis/TextLayr#command-line" rel="noopener">README</a>.
       </p>
     </div>
   </section>
@@ -349,7 +494,7 @@
 
       <details>
         <summary>Which Macs does it run on?</summary>
-        <p>macOS on Apple Silicon (M-series). The source also builds and runs on Linux for development, but releases target macOS.</p>
+        <p><b>macOS 13 (Ventura) or later on an Apple Silicon Mac</b> (M-series). There is no Intel build. The source also builds and runs on Linux for development, but releases target macOS.</p>
       </details>
 
       <details>
@@ -358,16 +503,33 @@
       </details>
 
       <details>
+        <summary>Do I have to use Terminal?</summary>
+        <p>No — the disk image is the normal route. It needs a one-time macOS security step (click <b>Done</b>, then <b>Open Anyway</b> in <b>Privacy &amp; Security</b>). The terminal command skips that step entirely. Both are on the <a href="#install">install instructions</a>.</p>
+      </details>
+
+      <details>
         <summary>Why does macOS block it the first time?</summary>
         <p>
           Because it isn't notarized (that needs a paid Apple Developer account), and macOS
           blocks any unnotarized app that was downloaded by a browser or AirDrop.
           <b>Install from the terminal instead and it never comes up</b> — files fetched with
-          <code>curl</code> aren't quarantined. If you used the disk image, open it once and
-          click <b>Done</b>, then allow it in <b>System Settings → Privacy &amp; Security →
-          Open Anyway</b> — or run
-          <code>xattr -dr com.apple.quarantine /Applications/TextLayr.app</code>.
+          <code>curl</code> aren't quarantined. If you used the disk image, the
+          <a href="#install">install steps</a> have the one-time <b>Open Anyway</b> fix.
           Either way it's a one-time step; updates afterwards are handled by the app itself.
+        </p>
+      </details>
+
+      <details>
+        <summary>How do I uninstall it?</summary>
+        <p>
+          Quit TextLayr and drag it to the Trash. Then remove what it downloaded —
+          about 250&nbsp;MB, or ~600&nbsp;MB with <b>small.en</b> — from
+          <b>Settings → Diagnostics → Remove downloaded models and ffmpeg</b>
+          (this keeps your style preferences), or delete
+          <code>~/Library/Application Support/textlayr</code> in Finder (this also
+          resets preferences). Or run the terminal installer with
+          <code>--uninstall</code> (this also removes preferences). Videos you
+          exported are never touched.
         </p>
       </details>
 
@@ -422,7 +584,7 @@
       <img class="final-mark logo-light" src="assets/banner-light.png" width="713" height="160" alt="TextLayr" loading="lazy">
       <p class="final-lede">Captions in, videos out. Nothing uploaded.</p>
       <p><a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>Download for macOS</a></p>
-      <p class="cta-alt">or <a href="#install">install from the terminal</a> to skip the first-launch security prompt</p>
+      <p class="cta-alt">or <a href="#terminal">install from the terminal</a> to skip the first-launch security prompt</p>
     </div>
   </section>
 

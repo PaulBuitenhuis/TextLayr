@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 
 # Must match scripts/make_dmg.sh.
-# Two rows: the app/Applications pair up top, and the "Before you open this"
-# note below, because an app this size needs explaining before it's launched.
+# Two rows: the app/Applications pair up top, and the "Install guide.pdf"
+# guide below, because an app this size needs explaining before it's launched.
 W, H = 640, 520
 APP_X, APP_Y = 160, 170
 LINK_X, LINK_Y = 480, 170
@@ -50,7 +50,7 @@ def main() -> int:
     d.text((W // 2, 290), "Drag TextLayr to Applications", font=font, fill=TEXT, anchor="mm")
     d.text(
         (W // 2, 320),
-        "macOS blocks the first launch — the note below has the one-time fix",
+        "macOS blocks the first launch — the guide below has the one-time fix",
         font=small,
         fill=HINT,
         anchor="mm",

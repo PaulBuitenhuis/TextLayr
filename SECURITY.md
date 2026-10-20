@@ -12,7 +12,7 @@ new release rather than as backports to older versions.
 
 | Version | Supported |
 |---|---|
-| latest `0.1.x` | ✅ |
+| latest `0.2.x` | ✅ |
 | older | ❌ |
 
 ## Reporting a vulnerability
@@ -25,7 +25,7 @@ this opens a private advisory only you and the maintainer can see.
 
 Helpful to include:
 
-- affected version + build (`textlayr --version`, or the About window),
+- affected version + build (`textlayr --version`, or Settings → About),
 - your macOS version and chip,
 - a description of the impact and a minimal way to reproduce it,
 - a sample file, if the issue depends on a specific input.

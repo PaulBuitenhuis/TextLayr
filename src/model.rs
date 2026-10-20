@@ -110,7 +110,7 @@ fn candidates(model: Model) -> Vec<(PathBuf, Source)> {
         out.push((dir.join(file), Source::Downloaded));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = paths::current_exe() {
         if let Some(dir) = exe.parent() {
             // .app bundle: Contents/Resources/models
             if let Some(res) = dir.parent().map(|d| d.join("Resources").join("models")) {

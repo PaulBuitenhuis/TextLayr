@@ -10,6 +10,9 @@
 # Internal design/implementation notes — kept locally, not published
 /DESIGN.md
 
+# Private planning/backlog — kept locally, not published
+/BACKLOG.md
+
 # Vendored static ffmpeg binaries (macOS); keep the sys patch, ignore binaries
 /vendor/linux/ffmpeg
 /vendor/linux/ffprobe

@@ -55,27 +55,22 @@ impl Check {
         if self.fftools.is_none() {
             out.push(Problem {
                 what: "ffmpeg / ffprobe".to_string(),
-                how: "Click Install to download them, run `brew install ffmpeg`, or \
-                      put the binaries on your PATH."
-                    .to_string(),
+                how: "Click Install to download them.".to_string(),
                 installable: true,
             });
         }
         if self.model.is_none() {
             out.push(Problem {
                 what: "whisper model".to_string(),
-                how: "Click Install to download it, run scripts/fetch_model.sh, or set \
-                      $TEXTLAYR_MODEL to its path."
-                    .to_string(),
+                how: "Click Install to download it.".to_string(),
                 installable: true,
             });
         }
         if self.fonts.is_none() {
             out.push(Problem {
                 what: "caption fonts".to_string(),
-                how: "Expected assets/fonts/*.ttf next to the app; set $TEXTLAYR_FONTS to \
-                      the directory holding them. These ship with TextLayr, so a missing \
-                      copy means a broken install."
+                how: "The bundled caption fonts are missing, which means the app is \
+                      damaged. Reinstall TextLayr."
                     .to_string(),
                 installable: false,
             });
@@ -96,7 +91,13 @@ impl Check {
         }
         let mut s = String::from("cannot start — missing dependencies:");
         for p in problems {
-            s.push_str(&format!("\n  • {}: {}", p.what, p.how));
+            // The GUI offers an Install button; the CLI has `--setup`.
+            let hint = if p.installable {
+                "run `textlayr --setup` to download it"
+            } else {
+                p.how.as_str()
+            };
+            s.push_str(&format!("\n  • {}: {}", p.what, hint));
         }
         Some(s)
     }
@@ -129,7 +130,10 @@ mod tests {
         assert!(!check.ok());
         let problems = check.problems();
         assert_eq!(problems.len(), 3);
-        assert!(check.error_message().unwrap().contains("ffmpeg"));
+        let message = check.error_message().unwrap();
+        assert!(message.contains("ffmpeg"));
+        assert!(message.contains("--setup"));
+        assert!(!message.contains("Click Install"));
         // ffmpeg and the model can be installed; fonts cannot.
         assert!(check.has_installable());
     }

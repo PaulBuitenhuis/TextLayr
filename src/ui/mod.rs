@@ -207,6 +207,8 @@ pub struct App {
     install_target: Option<Model>,
     /// A model the user has asked to remove, awaiting confirmation.
     pending_remove: Option<Model>,
+    /// Whether the Diagnostics tab is confirming removal of downloaded data.
+    pending_remove_data: bool,
     /// App-update state (check / download / install).
     update: UpdateUi,
     /// Cancels the in-flight update check.
@@ -278,6 +280,7 @@ impl App {
             export_cancel: None,
             install_target: None,
             pending_remove: None,
+            pending_remove_data: false,
             update: UpdateUi::Unknown,
             update_check_cancel: None,
             update_install_cancel: None,
@@ -1216,7 +1219,8 @@ impl App {
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new(
-                    "TextLayr downloads ffmpeg and a whisper model the first time it runs.",
+                    "TextLayr needs an internet connection once: it downloads ffmpeg and a \
+                     whisper model (~190 MB for base.en, ~530 MB for small.en).",
                 )
                 .weak(),
             );
@@ -1524,6 +1528,7 @@ impl App {
         let mut open_licenses = false;
         let mut buy_coffee = false;
         let mut reveal_path: Option<PathBuf> = None;
+        let mut remove_data_now = false;
 
         // Actions are collected during the draw and applied after the window
         // closure, so the UI never re-enters `self` while it is borrowed.
@@ -2030,6 +2035,64 @@ impl App {
                                 if theme::button(ui, "Copy diagnostics report").clicked() {
                                     ui.ctx().copy_text(self.copy_diagnostics_report());
                                 }
+
+                                ui.add_space(16.0);
+                                ui.separator();
+                                ui.add_space(10.0);
+                                let data_size = crate::install::downloaded_size();
+                                let busy = self.ingest.is_some()
+                                    || self.export.is_some()
+                                    || self.install.is_some();
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("Downloaded dependencies").strong(),
+                                    );
+                                    ui.label(egui::RichText::new(human_bytes(data_size)).weak());
+                                });
+                                ui.label(
+                                    egui::RichText::new(
+                                        "ffmpeg, ffprobe and the whisper models. Safe to remove \
+                                         any time — TextLayr downloads what it needs again.",
+                                    )
+                                    .weak()
+                                    .small(),
+                                );
+                                ui.add_space(6.0);
+                                if data_size > 0 && busy {
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Finish the current video before removing these.",
+                                        )
+                                        .weak()
+                                        .small(),
+                                    );
+                                } else if data_size > 0 {
+                                    if self.pending_remove_data {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                "Remove them? You'll be asked to download again \
+                                                 before the next video.",
+                                            )
+                                            .small(),
+                                        );
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            if theme::primary_button(ui, true, "Remove").clicked() {
+                                                remove_data_now = true;
+                                            }
+                                            if theme::button(ui, "Cancel").clicked() {
+                                                self.pending_remove_data = false;
+                                            }
+                                        });
+                                    } else if theme::button(
+                                        ui,
+                                        "Remove downloaded models and ffmpeg…",
+                                    )
+                                    .clicked()
+                                    {
+                                        self.pending_remove_data = true;
+                                    }
+                                }
                             }
                         }
                     });
@@ -2044,6 +2107,18 @@ impl App {
         if let Some(p) = reveal_path {
             if let Err(e) = reveal(&p) {
                 self.error = Some(format!("could not open folder: {e}"));
+            }
+        }
+        if remove_data_now {
+            match crate::install::remove_downloaded() {
+                Ok(()) => {
+                    self.pending_remove_data = false;
+                    self.recheck_deps();
+                }
+                Err(e) => {
+                    self.pending_remove_data = false;
+                    self.error = Some(format!("{e:#}"));
+                }
             }
         }
         // Apply the update actions collected during the draw.

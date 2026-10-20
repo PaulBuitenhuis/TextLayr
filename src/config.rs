@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::model::Model;
+use crate::paths;
 use crate::source::Source;
 
 /// Straight (non-premultiplied) RGBA color.
@@ -107,7 +108,7 @@ pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
         candidates.push((PathBuf::from(env), Source::Env));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = paths::current_exe() {
         // .app bundle: the exe lives in Contents/MacOS, fonts are copied to
         // Contents/Resources/assets/fonts by scripts/package_macos.sh.
         if let Some(dir) = exe.parent() {

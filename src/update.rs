@@ -602,7 +602,7 @@ fn open_installer(
 
 /// The running `.app` bundle, if the executable lives inside one.
 fn current_bundle() -> Option<PathBuf> {
-    bundle_of(&std::env::current_exe().ok()?)
+    bundle_of(&paths::current_exe()?)
 }
 
 /// `.../TextLayr.app/Contents/MacOS/TextLayr` → `.../TextLayr.app`.

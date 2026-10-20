@@ -201,6 +201,44 @@ pub fn install(preferred: Model, mut sink: InstallSink, cancel: Arc<AtomicBool>)
     Ok(())
 }
 
+/// Total bytes of everything TextLayr downloaded (ffmpeg/ffprobe + models).
+pub fn downloaded_size() -> u64 {
+    [paths::bin_dir(), paths::models_dir()]
+        .into_iter()
+        .flatten()
+        .map(|dir| dir_size(&dir))
+        .sum()
+}
+
+fn dir_size(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
+/// Remove downloaded `ffmpeg`/`ffprobe` and models. Preferences, the install
+/// receipt and the transcript cache are left alone, and a dev-checkout or
+/// `$TEXTLAYR_MODEL` model is never in these directories.
+pub fn remove_downloaded() -> Result<()> {
+    for dir in [paths::bin_dir(), paths::models_dir()]
+        .into_iter()
+        .flatten()
+    {
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
