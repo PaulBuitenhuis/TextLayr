@@ -199,7 +199,8 @@ mod tests {
 
     #[test]
     fn each_model_has_a_distinct_file_and_hash() {
-        let files: std::collections::HashSet<_> = Model::ALL.iter().map(|m| m.file_name()).collect();
+        let files: std::collections::HashSet<_> =
+            Model::ALL.iter().map(|m| m.file_name()).collect();
         let hashes: std::collections::HashSet<_> = Model::ALL.iter().map(|m| m.sha256()).collect();
         assert_eq!(files.len(), Model::ALL.len());
         assert_eq!(hashes.len(), Model::ALL.len());
@@ -209,7 +210,11 @@ mod tests {
     fn download_urls_are_pinned_and_named() {
         for m in Model::ALL {
             let url = m.download_url();
-            assert!(url.contains(m.file_name()), "{url} should name {}", m.file_name());
+            assert!(
+                url.contains(m.file_name()),
+                "{url} should name {}",
+                m.file_name()
+            );
             assert!(url.contains("/resolve/"), "{url} should be revision-pinned");
         }
     }

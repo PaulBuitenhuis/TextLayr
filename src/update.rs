@@ -252,9 +252,17 @@ fn curl_get(url: &str, cancel: &AtomicBool, api: bool) -> Result<Vec<u8>> {
         bail!("cancelled");
     }
     let mut cmd = Command::new(CURL);
-    cmd.args(["-sSL", "--fail", "--location", "--retry", "3", "--max-time", "60"])
-        .arg("-A")
-        .arg(concat!("textlayr/", env!("CARGO_PKG_VERSION")));
+    cmd.args([
+        "-sSL",
+        "--fail",
+        "--location",
+        "--retry",
+        "3",
+        "--max-time",
+        "60",
+    ])
+    .arg("-A")
+    .arg(concat!("textlayr/", env!("CARGO_PKG_VERSION")));
     if api {
         // The REST API asks for an explicit media type and rejects some UAs.
         cmd.arg("-H").arg("Accept: application/vnd.github+json");
@@ -308,8 +316,8 @@ struct GhAsset {
 /// unavailable (e.g. the newest release predates it).
 fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
     let raw = curl_get(API_LATEST, cancel, true)?;
-    let gh: GhRelease = serde_json::from_slice(&raw)
-        .context("unexpected response from GitHub (not a release)")?;
+    let gh: GhRelease =
+        serde_json::from_slice(&raw).context("unexpected response from GitHub (not a release)")?;
     if gh.draft || gh.prerelease {
         bail!("the newest GitHub release is a draft or pre-release");
     }
@@ -555,10 +563,7 @@ fn open_installer(
     sink: &mut InstallSink,
 ) -> Result<InstallOutcome> {
     sink(InstallProgress::OpeningDmg);
-    let asset = release
-        .dmg
-        .clone()
-        .unwrap_or_else(|| release.zip.clone());
+    let asset = release.dmg.clone().unwrap_or_else(|| release.zip.clone());
     let is_dmg = release.dmg.is_some();
 
     let dest_dir = dirs::download_dir()
@@ -809,7 +814,10 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
         return first;
     }
     let path = Path::new(name);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("download");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("download");
     let ext = path.extension().and_then(|s| s.to_str());
     for i in 1..1000 {
         let candidate = match ext {
@@ -833,7 +841,9 @@ mod tests {
 
     fn manifest_json(version: &str, zip: &str, sha: &str, dmg: Option<(&str, &str)>) -> String {
         let dmg = match dmg {
-            Some((name, sha)) => format!(r#","dmg":{{"name":"{name}","sha256":"{sha}","size":10}}"#),
+            Some((name, sha)) => {
+                format!(r#","dmg":{{"name":"{name}","sha256":"{sha}","size":10}}"#)
+            }
             None => String::new(),
         };
         format!(
@@ -845,7 +855,12 @@ mod tests {
     #[test]
     fn manifest_parses_and_resolves_asset_siblings() {
         let sha = "d".repeat(64);
-        let json = manifest_json("v0.3.0", "TextLayr-0.3.0.zip", &sha, Some(("TextLayr-0.3.0.dmg", &sha)));
+        let json = manifest_json(
+            "v0.3.0",
+            "TextLayr-0.3.0.zip",
+            &sha,
+            Some(("TextLayr-0.3.0.dmg", &sha)),
+        );
         let manifest: Manifest = serde_json::from_str(&json).unwrap();
         let release = Release::from_manifest(
             manifest,
@@ -879,7 +894,9 @@ mod tests {
     #[test]
     fn manifest_without_notes_url_falls_back_to_the_releases_page() {
         let sha = "f".repeat(64);
-        let json = format!(r#"{{"version":"0.3.0","zip":{{"name":"TextLayr-0.3.0.zip","sha256":"{sha}"}}}}"#);
+        let json = format!(
+            r#"{{"version":"0.3.0","zip":{{"name":"TextLayr-0.3.0.zip","sha256":"{sha}"}}}}"#
+        );
         let manifest: Manifest = serde_json::from_str(&json).unwrap();
         let release = Release::from_manifest(manifest, "https://h/d/latest.json").unwrap();
         assert_eq!(release.notes_url, RELEASES_URL);
@@ -1005,11 +1022,16 @@ mod tests {
     #[test]
     fn bundle_is_recognised_from_the_executable_path() {
         assert_eq!(
-            bundle_of(Path::new("/Applications/TextLayr.app/Contents/MacOS/TextLayr")),
+            bundle_of(Path::new(
+                "/Applications/TextLayr.app/Contents/MacOS/TextLayr"
+            )),
             Some(PathBuf::from("/Applications/TextLayr.app"))
         );
         assert_eq!(bundle_of(Path::new("/tmp/target/debug/textlayr")), None);
-        assert_eq!(bundle_of(Path::new("/Applications/TextLayr.app/Contents/x")), None);
+        assert_eq!(
+            bundle_of(Path::new("/Applications/TextLayr.app/Contents/x")),
+            None
+        );
     }
 
     #[test]

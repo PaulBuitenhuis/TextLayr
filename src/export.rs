@@ -311,7 +311,7 @@ pub fn write_filter_script(
 /// once per process and cache the answer.
 fn filter_graph_file_option(tools: &Fftools) -> &'static str {
     static OPTION: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-    *OPTION.get_or_init(|| {
+    OPTION.get_or_init(|| {
         let legacy = Command::new(&tools.ffmpeg)
             .args(["-hide_banner", "-h", "full"])
             .output()
@@ -332,6 +332,7 @@ fn filter_graph_file_option(tools: &Fftools) -> &'static str {
 /// Encode `output` with the caption states composited over `input`.
 ///
 /// `on_progress` receives 0.0..=1.0 as the encode advances.
+#[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn export(
     tools: &Fftools,
     input: &Path,

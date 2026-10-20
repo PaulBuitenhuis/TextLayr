@@ -1,0 +1,15 @@
+{
+  "version": 99,
+  "style": {
+    "font": { "family": "Inter", "size_pct": 4.0 },
+    "layout": { "fit": "wrap", "max_lines": 2 }
+  },
+  "grouping": { "words_per_popup": 3 },
+  "active_profile": null,
+  "model": "base.en",
+  "auto_check_updates": true,
+  "last_update_check": null,
+  "future_top_level": {
+    "something": "new"
+  }
+}

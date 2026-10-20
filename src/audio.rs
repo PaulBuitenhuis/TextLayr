@@ -10,11 +10,15 @@ use crate::probe::Fftools;
 pub fn extract_pcm(tools: &Fftools, video: &Path, pcm: &Path) -> Result<()> {
     let out = Command::new(&tools.ffmpeg)
         .arg("-y")
-        .arg("-i").arg(video)
+        .arg("-i")
+        .arg(video)
         .arg("-vn")
-        .arg("-ac").arg("1")
-        .arg("-ar").arg("16000")
-        .arg("-f").arg("f32le")
+        .arg("-ac")
+        .arg("1")
+        .arg("-ar")
+        .arg("16000")
+        .arg("-f")
+        .arg("f32le")
         .arg(pcm)
         .output()
         .context("failed to run ffmpeg for audio extraction")?;
@@ -32,8 +36,10 @@ pub fn extract_pcm(tools: &Fftools, video: &Path, pcm: &Path) -> Result<()> {
 pub fn read_pcm(pcm: &Path) -> Result<Vec<f32>> {
     let bytes = std::fs::read(pcm).context("failed to read PCM file")?;
     let samples = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     Ok(samples)
 }

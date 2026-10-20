@@ -102,7 +102,8 @@ pub fn download_to(
         s
     });
 
-    let mut file = File::create(dest).with_context(|| format!("failed to create {}", dest.display()))?;
+    let mut file =
+        File::create(dest).with_context(|| format!("failed to create {}", dest.display()))?;
     let mut buf = [0u8; 128 * 1024];
     let mut got = 0u64;
 
@@ -177,8 +178,7 @@ pub fn fetch_verified(
         let _ = std::fs::remove_file(&tmp);
         bail!("checksum mismatch for {url}: expected {expected_sha256}, got {got}");
     }
-    std::fs::rename(&tmp, dest)
-        .with_context(|| format!("failed to place {}", dest.display()))?;
+    std::fs::rename(&tmp, dest).with_context(|| format!("failed to place {}", dest.display()))?;
     Ok(())
 }
 
@@ -214,7 +214,9 @@ pub fn fetch_zip_binary_verified(
         .with_context(|| format!("{binary_name} not found inside the archive from {url}"))?;
     let got = sha256_file(&found)?;
     if !got.eq_ignore_ascii_case(expected_sha256) {
-        bail!("checksum mismatch for {binary_name} from {url}: expected {expected_sha256}, got {got}");
+        bail!(
+            "checksum mismatch for {binary_name} from {url}: expected {expected_sha256}, got {got}"
+        );
     }
 
     if let Some(dir) = dest.parent() {

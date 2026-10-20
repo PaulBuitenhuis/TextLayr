@@ -61,7 +61,9 @@ pub fn transcribe(
     )
     .context("failed to load whisper model (is the file present and valid?)")?;
 
-    let mut state = ctx.create_state().context("failed to create whisper state")?;
+    let mut state = ctx
+        .create_state()
+        .context("failed to create whisper state")?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_token_timestamps(true);
@@ -158,9 +160,7 @@ fn normalize_timings(words: &mut [Word], audio_secs: f64) {
     let mut i = 0;
     while i < words.len() {
         let mut j = i;
-        while j + 1 < words.len()
-            && (words[j + 1].start_secs - words[i].start_secs).abs() < 1e-6
-        {
+        while j + 1 < words.len() && (words[j + 1].start_secs - words[i].start_secs).abs() < 1e-6 {
             j += 1;
         }
         if j > i {
@@ -255,7 +255,6 @@ pub fn save_cache(input: &Path, kind: Model, words: &[Word]) -> Result<()> {
             .with_context(|| format!("failed to create {}", dir.display()))?;
     }
     let json = serde_json::to_vec_pretty(words).context("serialize transcript")?;
-    std::fs::write(&path, json)
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    std::fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }

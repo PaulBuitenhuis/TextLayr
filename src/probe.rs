@@ -170,8 +170,8 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         );
     }
 
-    let json: serde_json::Value = serde_json::from_slice(&out.stdout)
-        .context("failed to parse ffprobe JSON output")?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).context("failed to parse ffprobe JSON output")?;
 
     // --- dimensions + rotation ---
     let stream = json
@@ -266,15 +266,21 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
 
     // --- audio presence (separate quick query) ---
     let aout = Command::new(&tools.ffprobe)
-        .arg("-v").arg("error")
-        .arg("-select_streams").arg("a:0")
-        .arg("-show_entries").arg("stream=codec_type")
-        .arg("-of").arg("csv=p=0")
+        .arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("a:0")
+        .arg("-show_entries")
+        .arg("stream=codec_type")
+        .arg("-of")
+        .arg("csv=p=0")
         .arg(input)
         .output()
         .context("failed to run ffprobe audio query")?;
     let has_audio = aout.status.success()
-        && String::from_utf8_lossy(&aout.stdout).trim().starts_with("audio");
+        && String::from_utf8_lossy(&aout.stdout)
+            .trim()
+            .starts_with("audio");
 
     Ok(VideoInfo {
         display_width,

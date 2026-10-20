@@ -107,7 +107,11 @@ mod tests {
     #[test]
     fn splits_into_named_sections() {
         let secs = sections(TEXT);
-        assert!(secs.len() > 3, "expected several sections, got {}", secs.len());
+        assert!(
+            secs.len() > 3,
+            "expected several sections, got {}",
+            secs.len()
+        );
         assert_eq!(secs[0].0, "Overview");
         // The bundled fonts section is present and includes the OFL preamble.
         assert!(secs.iter().any(|(t, _)| t.contains("Caption fonts")));

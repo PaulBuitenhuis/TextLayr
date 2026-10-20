@@ -168,7 +168,9 @@ fn sized_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: RichText) ->
 /// The macOS "default" action: accent-filled, full width of its container.
 pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
     let size = Vec2::new(ui.available_width(), CONTROL_H);
-    accent_scope(ui, |ui| sized_button(ui, enabled, size, RichText::new(label).strong()))
+    accent_scope(ui, |ui| {
+        sized_button(ui, enabled, size, RichText::new(label).strong())
+    })
 }
 
 /// A secondary (grey) button at the shared control height, sized to its label.
@@ -192,31 +194,33 @@ pub fn wide_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response {
 
 /// A secondary button of a fixed width (label centred), e.g. Retry / Close.
 pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, width: f32, label: &str) -> Response {
-    sized_button(ui, enabled, Vec2::new(width, CONTROL_H), RichText::new(label))
+    sized_button(
+        ui,
+        enabled,
+        Vec2::new(width, CONTROL_H),
+        RichText::new(label),
+    )
 }
 
 /// The width a secondary [`button`] with this label naturally has: its galley
 /// plus the style's button padding. Lets a caller size a row of content-sized
 /// buttons before laying them out (e.g. to centre the row).
 pub fn button_width(ui: &egui::Ui, label: &str) -> f32 {
-    let text = ui
-        .ctx()
-        .fonts_mut(|f| {
-            f.layout_no_wrap(label.to_owned(), egui::FontId::proportional(13.5), Color32::WHITE)
-                .rect
-                .width()
-        });
+    let text = ui.ctx().fonts_mut(|f| {
+        f.layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(13.5),
+            Color32::WHITE,
+        )
+        .rect
+        .width()
+    });
     text + ui.spacing().button_padding.x * 2.0
 }
 
 /// A small-caps section label used to group panel controls.
 pub fn section(ui: &mut egui::Ui, title: &str) {
-    ui.label(
-        RichText::new(title)
-            .small()
-            .color(TEXT_WEAK)
-            .strong(),
-    );
+    ui.label(RichText::new(title).small().color(TEXT_WEAK).strong());
 }
 
 /// A macOS-style segmented control, as used for the About window's tabs.
@@ -255,8 +259,10 @@ pub fn segmented(ui: &mut egui::Ui, selected: &mut usize, labels: &[&str]) -> bo
     }
 
     let total_w: f32 = widths.iter().sum::<f32>() + inset * 2.0;
-    let (outer, _) =
-        ui.allocate_exact_size(egui::vec2(total_w, seg_h + inset * 2.0), egui::Sense::hover());
+    let (outer, _) = ui.allocate_exact_size(
+        egui::vec2(total_w, seg_h + inset * 2.0),
+        egui::Sense::hover(),
+    );
     let visuals = ui.visuals().clone();
     let painter = ui.painter().clone();
     let radius = egui::CornerRadius::same(ROUND + 1);

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "style": {
+    "font_family": "Inter",
+    "font_size_pct": 4.2,
+    "highlight": { "r": 1, "g": 2, "b": 3, "a": 255 },
+    "dim": { "r": 4, "g": 5, "b": 6, "a": 255 },
+    "box_color": { "r": 7, "g": 8, "b": 9, "a": 255 },
+    "box_opacity": 0.4,
+    "rounded": false,
+    "corner_radius_frac": 0.3,
+    "words_per_popup": 5,
+    "position_pct": 44.0,
+    "shadow": false
+  },
+  "model": "small.en",
+  "auto_check_updates": false,
+  "last_update_check": 99
+}

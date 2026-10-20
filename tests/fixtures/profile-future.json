@@ -1,0 +1,13 @@
+{
+  "schema": 99,
+  "id": "user:future",
+  "name": "Future Profile",
+  "description": "Written by a newer TextLayr.",
+  "style": {
+    "font": { "family": "Inter", "size_pct": 4.5 },
+    "layout": { "fit": "wrap", "max_lines": 3, "reserve_lines": 3 }
+  },
+  "grouping": { "words_per_popup": 2 },
+  "created_with": "9.9.9",
+  "some_future_field": "preserve me if you can"
+}

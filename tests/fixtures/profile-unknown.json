@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "user:unknown",
+  "name": "Unknown Values",
+  "style": {
+    "font": { "family": "Comic Sans", "size_pct": 900.0 },
+    "layout": {
+      "anchor": "sideways",
+      "align": "diagonal",
+      "fit": "stretch",
+      "max_lines": 99
+    },
+    "motion": {
+      "popup": "warp",
+      "easing": "bouncy",
+      "duration_ms": 9000
+    },
+    "future_style_block": { "enabled": true }
+  },
+  "grouping": { "words_per_popup": 99 },
+  "future_field": true
+}

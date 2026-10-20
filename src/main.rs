@@ -507,7 +507,7 @@ fn run_cli(args: &Args) -> Result<()> {
     let mut last_pct = 0u32;
     let mut on_frac = |frac: f64| {
         let pct = (frac * 100.0) as u32;
-        if pct != last_pct && pct % 5 == 0 {
+        if pct != last_pct && pct.is_multiple_of(5) {
             last_pct = pct;
             eprint!("\r      encode {pct:3}%");
         }

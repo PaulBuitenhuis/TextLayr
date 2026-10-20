@@ -53,6 +53,7 @@ pub fn font_px(style: &Style, frame_h: u32) -> f32 {
 ///
 /// Shared by the GUI preview and the raw-pipe exporter so both composite
 /// exactly like the state PNGs on screen.
+#[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn blend_straight(
     dst: &mut [u8],
     dw: u32,
@@ -1411,7 +1412,8 @@ pub fn render_state_rgba(
 
     // --- unpremultiply + encode ---
     let mut straight = pixmap.take();
-    for p in straight.chunks_exact_mut(4) {
+    #[allow(clippy::manual_checked_ops)] // guarded by `a > 0`
+    for p in straight.as_chunks_mut::<4>().0 {
         let a = p[3] as u32;
         if a > 0 {
             p[0] = ((p[0] as u32 * 255 + a / 2) / a).min(255) as u8;
@@ -1779,6 +1781,45 @@ mod tests {
         m.easing = Easing::Spring;
         let t = popup_transform(&m, 0.7, 50.0);
         assert!(t.scale > 1.0, "spring scale was {}", t.scale);
+    }
+
+    #[test]
+    fn popup_motion_progresses_monotonically() {
+        let pop = MotionStyle {
+            popup: PopupEffect::Pop,
+            duration_ms: 300,
+            easing: Easing::EaseOut,
+            intensity: 0.25,
+        };
+        let scales: Vec<f32> = (0..=10)
+            .map(|i| popup_transform(&pop, i as f32 / 10.0, 50.0).scale)
+            .collect();
+        assert!(scales.windows(2).all(|w| w[1] >= w[0] - 1e-6));
+        assert!((scales[10] - 1.0).abs() < 1e-4);
+
+        let slide = MotionStyle {
+            popup: PopupEffect::SlideUp,
+            duration_ms: 300,
+            easing: Easing::EaseOut,
+            intensity: 0.6,
+        };
+        let offsets: Vec<f32> = (0..=10)
+            .map(|i| popup_transform(&slide, i as f32 / 10.0, 50.0).dy)
+            .collect();
+        assert!(offsets.windows(2).all(|w| w[1] <= w[0] + 1e-6));
+        assert!(offsets[10].abs() < 1e-4);
+
+        let fade = MotionStyle {
+            popup: PopupEffect::Fade,
+            duration_ms: 300,
+            easing: Easing::EaseOut,
+            intensity: 0.0,
+        };
+        let alphas: Vec<f32> = (0..=10)
+            .map(|i| popup_transform(&fade, i as f32 / 10.0, 50.0).alpha)
+            .collect();
+        assert!(alphas.windows(2).all(|w| w[1] >= w[0] - 1e-6));
+        assert!((alphas[10] - 1.0).abs() < 1e-4);
     }
 
     #[test]
