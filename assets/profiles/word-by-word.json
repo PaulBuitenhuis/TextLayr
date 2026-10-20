@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "id": "builtin:word-by-word",
+  "name": "Word by Word",
+  "description": "One large word at a time, with a slight pop on the active word.",
+  "style": {
+    "font": {
+      "family": "Inter",
+      "size_pct": 6.4
+    },
+    "text": {
+      "highlight": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "dim": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      }
+    },
+    "box": {
+      "color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "opacity": 0.58,
+      "rounded": true,
+      "radius_frac": 0.24,
+      "shadow": true
+    },
+    "layout": {
+      "position_pct": 70.0
+    },
+    "highlight": {
+      "scale": 1.06
+    },
+    "motion": {
+      "popup": "pop",
+      "duration_ms": 120,
+      "easing": "spring",
+      "intensity": 0.15
+    }
+  },
+  "grouping": {
+    "words_per_popup": 1
+  }
+}

@@ -12,11 +12,11 @@ use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
-use textlayr::config::Style;
+use textlayr::config::{Grouping, PopupEffect, Style};
 use textlayr::install::{self, InstallProgress};
 use textlayr::model::Model;
 use textlayr::pipeline::{self, IngestProgress, Progress};
-use textlayr::{chunk, deps, export, render, transcribe, ui, update};
+use textlayr::{chunk, deps, export, profile, render, transcribe, ui, update};
 
 /// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
@@ -44,6 +44,10 @@ struct Args {
     encoder: Option<export::Encoder>,
     /// Whisper model to use (base.en/small.en); defaults to the fastest.
     model: Option<Model>,
+    /// Built-in or user profile id/name to start from (headless).
+    profile: Option<String>,
+    /// Print available profiles and exit.
+    list_profiles: bool,
     style_overrides: StyleOverrides,
 }
 
@@ -75,19 +79,27 @@ fn usage() -> ! {
     eprintln!("options:");
     eprintln!("  --gui               Open the GUI (default when no other options)");
     eprintln!("  --headless          Run the pipeline without a GUI");
-    eprintln!("  --setup             Download missing ffmpeg/model into the app data dir, then exit");
+    eprintln!(
+        "  --setup             Download missing ffmpeg/model into the app data dir, then exit"
+    );
     eprintln!("  --check-updates     Check GitHub for a newer TextLayr release, then exit");
     eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_textlayr.mp4)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
-    eprintln!("  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder");
+    eprintln!(
+        "  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder"
+    );
     eprintln!("  --model <name>      base.en (default, fast) | small.en (more accurate)");
-    eprintln!("  --graph             Milestone 2 overlay-filter-graph encode (RAM grows)");
+    eprintln!(
+        "  --profile <id|path> Style profile: builtin:classic, user:my-look, or a .json file"
+    );
+    eprintln!("  --list-profiles     List built-in and saved style profiles, then exit");
+    eprintln!("  --graph             Legacy overlay-graph encode (RAM grows; no motion)");
     eprintln!("  --font <family>     Libre Baskerville | Inter | Nunito");
     eprintln!("  --font-size <pct>   Font size as % of frame height");
     eprintln!("  --position <pct>    Vertical center of the caption box (% of height)");
-    eprintln!("  --words-per <n>     Words per popup (2-6)");
+    eprintln!("  --words-per <n>     Words per popup (1-8; 1 = word by word)");
     eprintln!("  -V, --version       Print the version and build hash, then exit");
     std::process::exit(2);
 }
@@ -129,9 +141,7 @@ fn parse_args() -> Args {
             "--check-updates" => args.check_updates = true,
             "--words" => args.words_only = true,
             "--no-cache" => args.no_cache = true,
-            "-o" | "--output" => {
-                args.output = Some(PathBuf::from(need_value(&mut it, "--output")))
-            }
+            "-o" | "--output" => args.output = Some(PathBuf::from(need_value(&mut it, "--output"))),
             "--png-dir" => args.png_dir = Some(PathBuf::from(need_value(&mut it, "--png-dir"))),
             "--graph" => args.graph = true,
             "--model" => {
@@ -160,6 +170,10 @@ fn parse_args() -> Args {
                     }
                 });
             }
+            "--profile" | "--preset" => {
+                args.profile = Some(need_value(&mut it, "--profile"));
+            }
+            "--list-profiles" | "--list-presets" => args.list_profiles = true,
             "--font" => args.style_overrides.font = Some(need_value(&mut it, "--font")),
             "--font-size" => {
                 let v = need_value(&mut it, "--font-size");
@@ -201,11 +215,10 @@ fn parse_num<T: std::str::FromStr>(s: &str, flag: &str) -> T
 where
     T::Err: std::fmt::Display,
 {
-    s.parse()
-        .unwrap_or_else(|e| {
-            eprintln!("error: {flag} expects a number, got '{s}': {e}");
-            std::process::exit(2);
-        })
+    s.parse().unwrap_or_else(|e| {
+        eprintln!("error: {flag} expects a number, got '{s}': {e}");
+        std::process::exit(2);
+    })
 }
 
 fn main() {
@@ -229,6 +242,14 @@ fn main() {
         return;
     }
 
+    // Listing profiles needs neither a video nor any dependencies.
+    if args.list_profiles {
+        for line in profile::list_lines() {
+            println!("{line}");
+        }
+        return;
+    }
+
     // Any output/style option implies the headless pipeline; --gui wins over
     // that so `textlayr --gui --font Inter` can still open the GUI.
     let headless = !args.gui
@@ -239,6 +260,7 @@ fn main() {
             || args.graph
             || args.encoder.is_some()
             || args.model.is_some()
+            || args.profile.is_some()
             || args.style_overrides.any());
 
     let result = if headless {
@@ -288,7 +310,11 @@ fn run_setup(args: &Args) -> Result<()> {
     let mut last_pct = u32::MAX;
     let sink: install::InstallSink = Box::new(move |p| match p {
         InstallProgress::NothingToDo => eprintln!("everything is already installed"),
-        InstallProgress::Begin { index, total, label } => {
+        InstallProgress::Begin {
+            index,
+            total,
+            label,
+        } => {
             eprintln!("[{}/{}] downloading {label}…", index + 1, total);
         }
         InstallProgress::Bytes { got, expected, .. } => {
@@ -318,7 +344,9 @@ fn run_setup(args: &Args) -> Result<()> {
 
 /// The Milestone 1–2 pipeline, driven from the command line.
 fn run_cli(args: &Args) -> Result<()> {
-    let Some(input) = args.input.clone() else { usage() };
+    let Some(input) = args.input.clone() else {
+        usage()
+    };
 
     // Resolve the model first: whether it's present decides the dependency
     // check.
@@ -334,8 +362,24 @@ fn run_cli(args: &Args) -> Result<()> {
     let model_kind = found_model.model;
 
     let mut style = Style::default();
-    apply_overrides(&mut style, &args.style_overrides);
+    let mut grouping = Grouping::default();
+    if let Some(spec) = &args.profile {
+        let store = profile::ProfileStore::new();
+        let p = store
+            .find(spec)
+            .with_context(|| format!("profile not found: {spec}"))?;
+        eprintln!("      profile: {} ({})", p.name, p.id);
+        style = p.style;
+        if let Some(g) = p.grouping {
+            grouping = g;
+        }
+    }
+    apply_overrides(&mut style, &mut grouping, &args.style_overrides);
     style.sanitize();
+    grouping.sanitize();
+    if args.graph && style.motion.popup != PopupEffect::None {
+        bail!("motion effects require the default pipe encoder; remove --graph");
+    }
 
     // Phase logging on stderr, shaped like the Milestone 2 output.
     let log_input = input.clone();
@@ -363,7 +407,10 @@ fn run_cli(args: &Args) -> Result<()> {
                 .unwrap_or_default()
         ),
         IngestProgress::Extracting => {
-            eprintln!("[2/4] extracting audio + transcribing with whisper {}…", model_kind.id())
+            eprintln!(
+                "[2/4] extracting audio + transcribing with whisper {}…",
+                model_kind.id()
+            )
         }
         IngestProgress::Transcribing(_) => {}
         IngestProgress::Transcribed {
@@ -373,8 +420,8 @@ fn run_cli(args: &Args) -> Result<()> {
         } => eprintln!("      {words} words in {secs:.1}s  ({realtime_x:.1}x realtime)"),
     });
 
-    let ing = pipeline::ingest(&input, args.no_cache, &found_model, progress)
-        .context("ingest failed")?;
+    let ing =
+        pipeline::ingest(&input, args.no_cache, &found_model, progress).context("ingest failed")?;
     let tools = ing.tools;
     let info = ing.info;
     let words = ing.words;
@@ -390,7 +437,7 @@ fn run_cli(args: &Args) -> Result<()> {
 
     // ── 3. chunk + render caption states ───────────────────────────────────
     eprintln!("[3/4] rendering captions…");
-    let chunks = chunk::chunk_words(&words, style.words_per_popup);
+    let chunks = chunk::chunk_words(&words, grouping.words_per_popup);
     if chunks.is_empty() {
         bail!("transcript is empty; nothing to caption");
     }
@@ -398,7 +445,7 @@ fn run_cli(args: &Args) -> Result<()> {
         "      {} words -> {} chunks ({} words/popup)",
         words.len(),
         chunks.len(),
-        style.words_per_popup
+        grouping.words_per_popup
     );
 
     let temp = match &args.png_dir {
@@ -431,7 +478,7 @@ fn run_cli(args: &Args) -> Result<()> {
     if let Some(dir) = &args.png_dir {
         // Debug mode: emit the graph + windows, skip encoding.
         let script = dir.join("filter_complex.txt");
-        export::write_filter_script(&states, style.position_pct, &script)?;
+        export::write_filter_script(&states, style.layout.position_pct, &script)?;
         let mut windows = String::new();
         for (i, s) in states.iter().enumerate() {
             windows.push_str(&format!(
@@ -442,7 +489,11 @@ fn run_cli(args: &Args) -> Result<()> {
             ));
         }
         std::fs::write(dir.join("states.txt"), windows).context("write states.txt")?;
-        eprintln!("      wrote {} + states.txt to {}", script.display(), dir.display());
+        eprintln!(
+            "      wrote {} + states.txt to {}",
+            script.display(),
+            dir.display()
+        );
         return Ok(());
     }
 
@@ -470,7 +521,7 @@ fn run_cli(args: &Args) -> Result<()> {
             &output,
             &info,
             &states,
-            style.position_pct,
+            style.layout.position_pct,
             &script,
             &mut on_frac,
         )?;
@@ -481,7 +532,8 @@ fn run_cli(args: &Args) -> Result<()> {
             &output,
             &info,
             &states,
-            style.position_pct,
+            style.layout.position_pct,
+            &style.motion,
             args.encoder.unwrap_or_default(),
             &no_cancel,
             &mut on_frac,
@@ -500,17 +552,17 @@ fn run_cli(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn apply_overrides(style: &mut Style, o: &StyleOverrides) {
+fn apply_overrides(style: &mut Style, grouping: &mut Grouping, o: &StyleOverrides) {
     if let Some(f) = &o.font {
-        style.font_family = f.clone();
+        style.font.family = f.clone();
     }
     if let Some(v) = o.font_size_pct {
-        style.font_size_pct = v;
+        style.font.size_pct = v;
     }
     if let Some(v) = o.position_pct {
-        style.position_pct = v;
+        style.layout.position_pct = v;
     }
     if let Some(v) = o.words_per_popup {
-        style.words_per_popup = v;
+        grouping.words_per_popup = v;
     }
 }

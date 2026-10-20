@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use image::imageops::FilterType;
 
 use crate::config::Style;
-use crate::render::{self, blend_straight, Faces};
+use crate::render::{self, blend_straight, blend_transformed, Faces};
 use crate::{export, probe};
 
 /// Preview texture width in pixels; the height follows the video's aspect.
@@ -28,7 +28,9 @@ pub fn extract(tools: &probe::Fftools, input: &std::path::Path, at_secs: f64) ->
     let tmp = tempfile::tempdir().context("frame temp dir")?;
     let png = tmp.path().join("frame.png");
     export::extract_frame(tools, input, at_secs, &png)?;
-    let img = image::open(&png).context("failed to decode extracted frame")?.to_rgba8();
+    let img = image::open(&png)
+        .context("failed to decode extracted frame")?
+        .to_rgba8();
     let (width, height) = img.dimensions();
     Ok(Frame {
         width,
@@ -83,6 +85,8 @@ pub struct Preview {
     /// Last caption render failure, surfaced in the preview pane.
     pub caption_error: Option<String>,
     faces: Option<FaceCache>,
+    /// Motion phase the current composite was built for.
+    last_phase: f32,
 }
 
 impl Default for Preview {
@@ -94,6 +98,7 @@ impl Default for Preview {
             composite_built: false,
             caption_error: None,
             faces: None,
+            last_phase: 1.0,
         }
     }
 }
@@ -144,28 +149,40 @@ impl Preview {
 
     /// Rebuild the composite if it is stale. `words` is the selected chunk's
     /// caption text; `active` is the highlighted word index.
-    pub fn ensure(&mut self, ctx: &egui::Context, style: &Style, words: &[String], active: usize) {
-        if self.composite_built {
+    pub fn ensure(
+        &mut self,
+        ctx: &egui::Context,
+        style: &Style,
+        words: &[String],
+        active: usize,
+        phase: f32,
+    ) {
+        if self.composite_built && (self.last_phase - phase).abs() < 1e-4 {
             return;
         }
-        let Some(base) = self.base.clone() else { return };
-        let data = self.build_composite(style, words, active);
+        let Some(base) = self.base.clone() else {
+            return;
+        };
+        let data = self.build_composite(style, words, active, phase);
         let image = egui::ColorImage::from_rgba_unmultiplied(
             [base.width as usize, base.height as usize],
             &data,
         );
-        self.texture = Some(ctx.load_texture(
-            "preview_frame",
-            image,
-            egui::TextureOptions::LINEAR,
-        ));
+        self.texture = Some(ctx.load_texture("preview_frame", image, egui::TextureOptions::LINEAR));
         self.composite_built = true;
+        self.last_phase = phase;
     }
 
     /// Composite the caption onto the (already downscaled) preview frame and
     /// return the straight-alpha RGBA buffer. Split out from [`Self::ensure`]
     /// so the exact pixels the preview shows are testable without a GPU.
-    fn build_composite(&mut self, style: &Style, words: &[String], active: usize) -> Vec<u8> {
+    fn build_composite(
+        &mut self,
+        style: &Style,
+        words: &[String],
+        active: usize,
+        phase: f32,
+    ) -> Vec<u8> {
         let Some(base) = self.base.clone() else {
             return Vec::new();
         };
@@ -174,17 +191,53 @@ impl Preview {
 
         if !words.is_empty() {
             match self.render_caption(style, words, active, src_w, src_h) {
-                Ok((caption, cw, ch)) => {
+                Ok(cap) => {
                     // Scale the caption by the *same* factor the frame was
                     // scaled by (base.width / src_w) — not up to base.width,
                     // which would stretch every crop to the full frame width
                     // and make preview text far larger than the export's.
                     let factor = base.width as f32 / src_w.max(1) as f32;
-                    let (scaled, sw, sh) = scale_caption(caption, cw, ch, factor);
+                    let box_top = cap.box_top * factor;
+                    let box_h = cap.box_h * factor;
+                    let (scaled, sw, sh) = scale_caption(cap.rgba, cap.width, cap.height, factor);
                     let x = ((base.width as f32 - sw as f32) / 2.0).round() as i32;
-                    let y = (base.height as f32 * style.position_pct / 100.0 - sh as f32 / 2.0)
-                        .round() as i32;
-                    blend_straight(&mut data, base.width, base.height, &scaled, sw, sh, x, y);
+                    let y = crate::export::caption_y(
+                        base.height,
+                        style.layout.position_pct,
+                        style.layout.anchor,
+                        box_top,
+                        box_h,
+                    )
+                    .round() as i32;
+
+                    let transform = render::popup_transform(
+                        &style.motion,
+                        phase,
+                        render::font_px(style, src_h) * factor,
+                    );
+                    if transform.is_identity() {
+                        blend_straight(&mut data, base.width, base.height, &scaled, sw, sh, x, y);
+                    } else {
+                        let pivot_x = sw as f32 / 2.0;
+                        let pivot_y = match style.layout.anchor {
+                            crate::config::Anchor::Center => box_top + box_h / 2.0,
+                            crate::config::Anchor::Top => box_top,
+                            crate::config::Anchor::Bottom => box_top + box_h,
+                        };
+                        blend_transformed(
+                            &mut data,
+                            base.width,
+                            base.height,
+                            &scaled,
+                            sw,
+                            sh,
+                            x,
+                            y,
+                            pivot_x,
+                            pivot_y,
+                            transform,
+                        );
+                    }
                 }
                 Err(e) => self.caption_error = Some(format!("{e:#}")),
             }
@@ -201,23 +254,21 @@ impl Preview {
         active: usize,
         src_w: u32,
         src_h: u32,
-    ) -> Result<(Vec<u8>, u32, u32)> {
+    ) -> Result<render::RenderedCaption> {
         let font_px = render::font_px(style, src_h);
         let needs_reload = match &self.faces {
-            Some(c) => {
-                c.family != style.font_family || (c.font_px - font_px).abs() >= 1e-3
-            }
+            Some(c) => c.family != style.font.family || (c.font_px - font_px).abs() >= 1e-3,
             None => true,
         };
         if needs_reload {
             self.faces = Some(FaceCache {
-                family: style.font_family.clone(),
+                family: style.font.family.clone(),
                 font_px,
                 faces: Faces::load(style, font_px)?,
             });
         }
         let faces = &self.faces.as_ref().expect("faces loaded").faces;
-        render::render_state_rgba(faces, style, words, active, font_px, src_w)
+        render::render_state_rgba(faces, style, words, active, font_px, src_w, src_h)
             .context("caption render failed")
     }
 }
@@ -225,20 +276,31 @@ impl Preview {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Color;
+    use crate::config::{Color, Easing, MotionStyle, PopupEffect};
     use crate::render::{font_px, render_state_rgba};
 
     /// The reporter's saved style: a very small 1.1% font, 4 words per popup.
     fn reporter_style() -> Style {
         Style {
-            font_size_pct: 1.1,
-            words_per_popup: 4,
-            position_pct: 83.0,
-            highlight: Color::new(94, 232, 86, 255),
-            dim: Color::new(212, 175, 175, 255),
-            box_opacity: 0.68,
-            corner_radius_frac: 0.39,
-            ..Style::default()
+            font: crate::config::FontStyle {
+                size_pct: 1.1,
+                ..Default::default()
+            },
+            layout: crate::config::LayoutStyle {
+                position_pct: 83.0,
+                ..Default::default()
+            },
+            text: crate::config::TextStyle {
+                highlight: Color::new(94, 232, 86, 255),
+                dim: Color::new(212, 175, 175, 255),
+                ..Default::default()
+            },
+            box_style: crate::config::BoxStyle {
+                opacity: 0.68,
+                radius_frac: 0.39,
+                ..Default::default()
+            },
+            ..Default::default()
         }
     }
 
@@ -283,6 +345,26 @@ mod tests {
         )
     }
 
+    #[test]
+    fn preview_applies_popup_motion() {
+        let mut style = reporter_style();
+        style.motion = MotionStyle {
+            popup: PopupEffect::Pop,
+            duration_ms: 180,
+            easing: Easing::EaseOut,
+            intensity: 0.25,
+        };
+        let words: Vec<String> = ["Alright,", "I", "wanted", "to"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut preview = Preview::default();
+        preview.set_frame(flat_frame(1080, 1920));
+        let start = preview.build_composite(&style, &words, 0, 0.0);
+        let settled = preview.build_composite(&style, &words, 0, 1.0);
+        assert_ne!(start, settled);
+    }
+
     /// End-to-end guard for the reported bug: the preview must show the caption
     /// at the *same fraction of the frame* as the export. Before the fix the
     /// crop was stretched to the preview width, so at 1.1% the preview read as
@@ -299,18 +381,26 @@ mod tests {
         // Export reference: caption blended onto a full-res frame.
         let fpx = font_px(&style, src_h);
         let faces = Faces::load(&style, fpx).unwrap();
-        let (cap, cw, ch) = render_state_rgba(&faces, &style, &words, 0, fpx, src_w).unwrap();
+        let cap = render_state_rgba(&faces, &style, &words, 0, fpx, src_w, src_h).unwrap();
+        let (caption, cw, ch) = (cap.rgba, cap.width, cap.height);
         let mut full = flat_frame(src_w, src_h).rgba;
         let fx = ((src_w as f32 - cw as f32) / 2.0).round() as i32;
-        let fy = (src_h as f32 * style.position_pct / 100.0 - ch as f32 / 2.0).round() as i32;
-        blend_straight(&mut full, src_w, src_h, &cap, cw, ch, fx, fy);
+        let fy = crate::export::caption_y(
+            src_h,
+            style.layout.position_pct,
+            style.layout.anchor,
+            cap.box_top,
+            cap.box_h,
+        )
+        .round() as i32;
+        blend_straight(&mut full, src_w, src_h, &caption, cw, ch, fx, fy);
         let (export_w, export_h) = caption_frac(&full, src_w, src_h);
 
         // What the GUI preview actually composites.
         let mut preview = Preview::default();
         preview.set_frame(flat_frame(src_w, src_h));
         let (pw, ph) = preview.image_size().unwrap();
-        let data = preview.build_composite(&style, &words, 0);
+        let data = preview.build_composite(&style, &words, 0, 1.0);
         let (preview_w, preview_h) = caption_frac(&data, pw, ph);
 
         eprintln!("export : frac_w={export_w:.3} frac_h={export_h:.3} (frame {src_w}x{src_h})");
@@ -325,7 +415,10 @@ mod tests {
             "preview height {preview_h:.3} != export {export_h:.3}"
         );
         // The regression: the preview must not stretch the crop to full width.
-        assert!(preview_w < 0.5, "caption stretched to full width: {preview_w:.3}");
+        assert!(
+            preview_w < 0.5,
+            "caption stretched to full width: {preview_w:.3}"
+        );
 
         let dir = std::path::Path::new("/tmp/textlayr_diag");
         std::fs::create_dir_all(dir).unwrap();

@@ -31,9 +31,21 @@
   timings for tight sync.
 - **Review before you burn.** Edit the transcript, tweak the style, and see a
   live preview before exporting.
-- **All the caption styling you'd expect.** Font family, size, highlight/dim
-  colours, box colour/opacity, rounded corners, drop shadow, vertical position
+- **All the caption styling you'd expect.** Fonts, size, highlight/dim colours,
+  uppercase, tracking, text outline/shadow/glow, an active-word pill or
+  underline, box colour/opacity/radius/padding/border/shadow, vertical position
   and words-per-popup. Preferences persist between runs.
+- **Layout that stays put.** Choose one-line shrink-to-fit, fixed-size wrapping,
+  or a fixed-width/height box. Reserve lines so popups keep the same height, set
+  the line cap and line height, align left/centre/right, and anchor the box to
+  its top, centre or bottom.
+- **Entrances that move.** Pop, slide from any edge, or fade a caption in, with
+  adjustable duration, easing (including a springy overshoot) and amount. The
+  Motion tab loops the transition in the live preview.
+- **Style profiles.** Save the current look and caption mode as a named profile,
+  start from eight built-in looks, and update, rename, duplicate or delete your
+  own. A profile can also change how many words share a popup, with a warning
+  before it replaces transcript edits.
 - **Also a CLI.** The same pipeline is available headlessly for scripting.
 
 ## Requirements
@@ -151,10 +163,11 @@ connection once and downloads:
   (~488 MB, more accurate) is selectable on the same screen.
 
 That is ~190 MB for the default choice, or ~530 MB with `small.en`. These are
-stored in `~/Library/Application Support/textlayr/`; the only other thing
-TextLayr writes is a small transcript cache in `~/Library/Caches/textlayr/`.
-From then on it works fully offline, apart from a once-a-day look for a new
-TextLayr release (you can switch that off in **Settings → Updates**).
+stored in `~/Library/Application Support/textlayr/`, next to your preferences and
+saved style profiles (`profiles/`). The only other thing TextLayr writes is a
+small transcript cache in `~/Library/Caches/textlayr/`. From then on it works
+fully offline, apart from a once-a-day look for a new TextLayr release (you can
+switch that off in **Settings → Updates**).
 
 You can manage models from the **Settings** window: switch between installed
 ones, download the other, or remove one TextLayr downloaded (a dev-checkout or
@@ -176,6 +189,26 @@ Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — s
 
 A transcript is cached per input file (and per model), so re-rendering or
 restyling after the first pass is instant.
+
+### Style profiles
+
+The **Profile** row at the top of the style panel is the working style. Pick a
+built-in or saved profile from the menu, or use **Manage…** for the profile
+browser with live thumbnails.
+
+- **Save as…** snapshots the current look and caption mode under a name. It
+  appears immediately in the profile list.
+- **Update** replaces a saved profile with the current settings after a
+  confirmation. It is only available for your own profiles.
+- **Revert** throws away changes made since the profile was applied.
+- **Manage… → Rename / Duplicate / Delete** maintain the list. Built-ins are
+  read-only; duplicate one to customise it.
+- A profile can carry a caption mode (words per popup). Applying one that
+  differs is offered as **look only** or **look + caption mode**; the latter
+  re-chunks the transcript, so it asks first when you have edits.
+- Profiles live as one JSON file each in
+  `~/Library/Application Support/textlayr/profiles/`, so they can be backed up
+  or copied between machines.
 
 ### Updates
 
@@ -226,9 +259,11 @@ textlayr --version                          # version + build hash
 | `--font <family>` | `Libre Baskerville` (default) · `Inter` · `Nunito` |
 | `--font-size <pct>` | Glyph size as % of frame height (default 3.4) |
 | `--position <pct>` | Caption box centre as % of frame height (default 72) |
-| `--words-per <n>` | Words per popup, 2–6 (default 3) |
+| `--words-per <n>` | Words per popup, 1–8 (default 3; 1 is word-by-word) |
+| `--profile <id\|path>` | Start from a built-in/saved profile, or a profile JSON file |
+| `--list-profiles` | List built-in and saved profiles, then exit |
 | `--encoder <name>` | `auto` (default) · `vaapi` · `videotoolbox` · `x264` |
-| `--graph` | Legacy overlay-graph encoder (higher RAM) |
+| `--graph` | Legacy overlay-graph encoder (higher RAM; motion effects need the default pipe) |
 | `--setup` | Download missing dependencies and exit |
 | `--check-updates` | Check GitHub for a newer release and exit (0 up to date, 10 update available, 1 error) |
 | `-V, --version` | Print the version and build hash |

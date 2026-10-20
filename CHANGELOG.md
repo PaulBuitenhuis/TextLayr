@@ -6,6 +6,56 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Popup motion.** A caption can pop, slide in from any edge, or fade in, with
+  adjustable duration, easing (linear, ease-out, ease-in-out or spring
+  overshoot) and amount. The Motion tab can loop the transition in the live
+  preview. Motion is applied frame-by-frame by the default pipe exporter; the
+  legacy `--graph` encoder rejects it with a clear message.
+- **Wrapping and fixed-size layouts.** The Layout tab now has a **Fit** mode:
+  shrink to one line (the original behaviour), keep the chosen size and wrap, or
+  keep the size and clip. Wrapped captions have a line cap, optional words-per-
+  line cap, line height, and a **reserve lines** setting so one- and two-line
+  popups keep the same box height. Text can be left/centre/right aligned inside
+  the box.
+- **Fixed boxes and anchors.** A box can use a fixed width and/or height as a
+  percentage of the frame, and `position_pct` can refer to the box's top, centre
+  or bottom. Caption state PNGs now carry the box's placement inside the crop,
+  so the preview and both exporters place every anchor correctly.
+- **Caption effects.** Text can now have a solid outline, a soft offset shadow,
+  or a coloured glow, all in resolution-independent units. The active word can
+  get a rounded pill behind it, an underline, and a static scale-up. Text also
+  supports uppercase, letter tracking and an opacity control.
+- **More box control.** Padding, corner radius, a border and the box shadow's
+  colour, opacity, offset and blur are all adjustable. All geometry stays
+  relative to the font size, so profiles scale across resolutions.
+- **A tabbed style panel.** The right-hand panel is now split into **Text**,
+  **Box**, **Highlight** and **Layout** tabs, with the profile picker and tab
+  bar pinned. The Layout tab keeps the existing words-per-popup control and its
+  re-chunk warning.
+- **Richer built-in profiles.** Bold Pop now demonstrates uppercase, a bold
+  outline and a lime active word; Highlight Pill uses the new active-word
+  plate; Minimal uses a thin outline; Word by Word uses the active-word scale.
+- **Style profiles.** The style panel now has a profile picker and a profile
+  browser with live thumbnails. Eight built-in looks ship with the app; the
+  current look and caption mode can be saved as a named profile and updated,
+  renamed, duplicated or deleted later. Built-ins are read-only. A profile can
+  also carry words-per-popup; applying a different caption mode asks before it
+  re-chunks the transcript, and **Look only** applies the visual style without
+  touching the chunks. Profiles are one JSON file each under
+  `~/Library/Application Support/textlayr/profiles/`.
+- **The CLI can start from a profile.** `--profile <id|path>` loads a built-in,
+  saved or hand-written profile, and `--list-profiles` prints what is available.
+  `--words-per` now accepts 1–8; 1 is a word-by-word caption mode.
+- **The config is grouped and versioned (v3).** Caption style now lives in
+  `font`, `text`, `box` and `layout` objects, and words-per-popup moved to a
+  separate `grouping` block. Existing v2 configs are migrated on load and
+  rewritten once. Every group is defaulted, so later style fields can be added
+  without breaking saved configs or profiles.
+- **A pixel-regression test for the default look.** The renderer's default style
+  is hashed so the migration and future features cannot silently change it.
+
 ### Changed
 
 - **The install page is built around the disk image.** It now walks through

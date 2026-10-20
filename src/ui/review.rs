@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use egui::{Color32, RichText, Sense};
 
 use crate::chunk::{self, Chunk};
-use crate::config::{Color, Style, FONT_FAMILIES};
+use crate::config::{
+    Align, Anchor, Color, Easing, Fit, Grouping, PopupEffect, Style, FONT_FAMILIES,
+};
 use crate::pipeline::Ingest;
 use crate::probe::{Fftools, VideoInfo};
 use crate::transcribe::Word;
@@ -22,7 +24,9 @@ pub enum Action {
     /// User pressed Export.
     Export,
     /// words-per-popup changed and chunks were rebuilt.
-    Rechunked { discarded_edits: bool },
+    Rechunked {
+        discarded_edits: bool,
+    },
 }
 
 /// One caption popup as the user edits it.
@@ -74,6 +78,11 @@ pub struct ReviewState {
     pub selected: usize,
     pub active_word: usize,
     pub style: Style,
+    pub grouping: Grouping,
+    /// Selected style-panel tab (view state, not persisted).
+    pub style_tab: usize,
+    /// Loop the popup transition in the preview.
+    pub motion_playing: bool,
     pub edited_any: bool,
     pub preview: Preview,
     /// Which (chunk, word) the extracted frame belongs to.
@@ -81,9 +90,10 @@ pub struct ReviewState {
 }
 
 impl ReviewState {
-    pub fn new(input: PathBuf, ing: Ingest, mut style: Style) -> Self {
+    pub fn new(input: PathBuf, ing: Ingest, mut style: Style, mut grouping: Grouping) -> Self {
         style.sanitize();
-        let chunks = chunk::chunk_words(&ing.words, style.words_per_popup)
+        grouping.sanitize();
+        let chunks = chunk::chunk_words(&ing.words, grouping.words_per_popup)
             .iter()
             .map(EditChunk::from_chunk)
             .collect();
@@ -96,6 +106,9 @@ impl ReviewState {
             selected: 0,
             active_word: 0,
             style,
+            grouping,
+            style_tab: 0,
+            motion_playing: false,
             edited_any: false,
             preview: Preview::default(),
             frame_key: (usize::MAX, usize::MAX),
@@ -175,7 +188,22 @@ pub fn preview_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
     let mut action = Action::None;
     let words = r.preview_words();
     let active = r.active_word;
-    r.preview.ensure(&ui.ctx().clone(), &r.style, &words, active);
+    let animating = r.motion_playing
+        && r.style.motion.popup != PopupEffect::None
+        && r.style.motion.duration_ms > 0;
+    let phase = if animating {
+        let dur = r.style.motion.duration_ms as f64 / 1000.0;
+        let cycle = dur + 0.6;
+        let t = ui.input(|i| i.time);
+        ((t % cycle) / dur).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    };
+    r.preview
+        .ensure(&ui.ctx().clone(), &r.style, &words, active, phase);
+    if animating {
+        ui.ctx().request_repaint();
+    }
 
     ui.horizontal(|ui| {
         let n = r.chunks.len();
@@ -245,12 +273,19 @@ pub fn preview_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
             ui.label(RichText::new("highlight:").weak());
             for (i, w) in words.iter().enumerate() {
                 let on = i == r.active_word;
-                let base = if on { r.style.highlight } else { r.style.dim };
+                let base = if on {
+                    r.style.text.highlight
+                } else {
+                    r.style.text.dim
+                };
                 let mut text = RichText::new(w.as_str()).color(col(base));
                 if on {
                     text = text.strong();
                 }
-                if ui.add(egui::Label::new(text).sense(Sense::click())).clicked() {
+                if ui
+                    .add(egui::Label::new(text).sense(Sense::click()))
+                    .clicked()
+                {
                     r.active_word = i;
                     action = Action::Seek;
                 }
@@ -260,10 +295,30 @@ pub fn preview_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
     action
 }
 
-/// Right column: style controls. Returns the action the app must run.
-pub fn style_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
+/// Right column: profile picker plus style controls. Returns the action the
+/// app must run.
+pub fn style_panel(
+    ui: &mut egui::Ui,
+    r: &mut ReviewState,
+    profiles: &crate::profile::ProfileStore,
+    profile_ui: &mut super::profile::ProfileUi,
+) -> Action {
     let mut action = Action::None;
     let before = r.style.clone();
+    const TABS: [&str; 5] = ["Text", "Box", "Active", "Layout", "Motion"];
+
+    // The profile picker stays visible while the style controls scroll.
+    egui::Panel::top("style_profile").show(ui, |ui| {
+        action = join(action, profile_ui.section(ui, r, profiles));
+    });
+
+    egui::Panel::top("style_tabs").show(ui, |ui| {
+        let mut tab = r.style_tab.min(TABS.len() - 1);
+        if theme::segmented(ui, &mut tab, &TABS) {
+            r.style_tab = tab;
+        }
+        ui.add_space(4.0);
+    });
 
     // Export is pinned to the bottom of the panel (it sizes to its content);
     // the controls scroll above it.
@@ -289,128 +344,708 @@ pub fn style_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            ui.heading("Style");
-            ui.add_space(10.0);
-
-            egui::Grid::new("style_grid")
-                .num_columns(2)
-                .spacing([12.0, 10.0])
-                .min_col_width(86.0)
-                .show(ui, |ui| {
-                    ui.label("Font");
-                    egui::ComboBox::from_id_salt("font_family")
-                        .selected_text(r.style.font_family.clone())
-                        .width(150.0)
-                        .show_ui(ui, |ui| {
-                            for fam in FONT_FAMILIES {
-                                ui.selectable_value(&mut r.style.font_family, fam.to_string(), fam);
-                            }
-                        });
-                    ui.end_row();
-
-                    ui.label("Size");
-                    ui.add(
-                        egui::Slider::new(&mut r.style.font_size_pct, 1.0..=20.0)
-                            .fixed_decimals(1)
-                            .suffix("%"),
-                    );
-                    ui.end_row();
-
-                    ui.label("Position");
-                    ui.add(
-                        egui::Slider::new(&mut r.style.position_pct, 5.0..=95.0)
-                            .fixed_decimals(0)
-                            .suffix("%"),
-                    );
-                    ui.end_row();
-
-                    ui.label("Words");
-                    // Words-per-popup re-chunks from whisper's words, discarding
-                    // edits (confirmed M3 decision, with a warning banner).
-                    let mut wpp = r.style.words_per_popup as f32;
-                    let resp = ui.add(
-                        egui::Slider::new(&mut wpp, 2.0..=6.0)
-                            .step_by(1.0)
-                            .fixed_decimals(0),
-                    );
-                    let new_wpp = wpp as usize;
-                    if resp.changed() && new_wpp != r.style.words_per_popup {
-                        r.style.words_per_popup = new_wpp;
-                        let discarded = r.rechunk(new_wpp);
-                        action = Action::Rechunked {
-                            discarded_edits: discarded,
-                        };
-                    }
-                    ui.end_row();
-                });
-
-            ui.add_space(16.0);
-            theme::section(ui, "Colors");
             ui.add_space(8.0);
-            egui::Grid::new("colour_grid")
-                .num_columns(2)
-                .spacing([12.0, 8.0])
-                .min_col_width(86.0)
-                .show(ui, |ui| {
-                    ui.label("Highlight");
-                    color_swatch(ui, &mut r.style.highlight);
-                    ui.end_row();
-                    ui.label("Dim");
-                    color_swatch(ui, &mut r.style.dim);
-                    ui.end_row();
-                    ui.label("Box");
-                    color_swatch(ui, &mut r.style.box_color);
-                    ui.end_row();
-                    ui.label("Opacity");
-                    ui.add(egui::Slider::new(&mut r.style.box_opacity, 0.0..=1.0).fixed_decimals(2));
-                    ui.end_row();
-                });
+            match r.style_tab {
+                0 => text_tab(ui, &mut r.style),
+                1 => box_tab(ui, &mut r.style),
+                2 => highlight_tab(ui, &mut r.style),
+                3 => action = join(action, layout_tab(ui, r)),
+                _ => motion_tab(ui, r),
+            }
 
             ui.add_space(16.0);
-            theme::section(ui, "Box");
-            ui.add_space(8.0);
-            egui::Grid::new("box_grid")
-                .num_columns(2)
-                .spacing([12.0, 10.0])
-                .min_col_width(86.0)
-                .show(ui, |ui| {
-                    ui.label("Rounded");
-                    ui.checkbox(&mut r.style.rounded, "");
-                    ui.end_row();
-                    if r.style.rounded {
-                        ui.label("Radius");
-                        ui.add(
-                            egui::Slider::new(&mut r.style.corner_radius_frac, 0.0..=0.5)
-                                .fixed_decimals(2),
-                        );
-                        ui.end_row();
-                    }
-                    ui.label("Shadow");
-                    ui.checkbox(&mut r.style.shadow, "");
-                    ui.end_row();
-                });
-
-            ui.add_space(16.0);
-            if theme::wide_button(ui, r.style != Style::default(), "Reset to defaults").clicked() {
+            if theme::wide_button(ui, r.style != Style::default(), "Reset style to defaults")
+                .clicked()
+            {
                 r.style = Style::default();
                 r.preview.invalidate();
-                if r.style.words_per_popup != before.words_per_popup {
-                    let discarded = r.rechunk(r.style.words_per_popup);
-                    action = Action::Rechunked {
-                        discarded_edits: discarded,
-                    };
-                } else {
-                    action = Action::Seek;
-                }
+                action = Action::Seek;
             }
             ui.add_space(8.0);
         });
 
+    // Gallery and management dialogs are window-level; draw them last so they
+    // sit above the panel and the export controls.
+    action = join(action, profile_ui.windows(ui.ctx(), r, profiles));
+
     r.style.sanitize();
+    r.grouping.sanitize();
     if r.style != before {
         r.preview.invalidate();
     }
     action
+}
+
+/// Combine two panel actions without losing the more significant one.
+fn join(a: Action, b: Action) -> Action {
+    use Action::*;
+    match (a, b) {
+        (Export, _) | (_, Export) => Export,
+        (Rechunked { discarded_edits }, _) => Rechunked { discarded_edits },
+        (_, Rechunked { discarded_edits }) => Rechunked { discarded_edits },
+        (Seek, _) | (_, Seek) => Seek,
+        _ => None,
+    }
+}
+
+fn text_tab(ui: &mut egui::Ui, s: &mut Style) {
+    egui::Grid::new("text_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Font");
+            egui::ComboBox::from_id_salt("font_family")
+                .selected_text(s.font.family.clone())
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for fam in FONT_FAMILIES {
+                        ui.selectable_value(&mut s.font.family, fam.to_string(), fam);
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Size");
+            ui.add(
+                egui::Slider::new(&mut s.font.size_pct, 1.0..=20.0)
+                    .fixed_decimals(1)
+                    .suffix("%"),
+            );
+            ui.end_row();
+
+            ui.label("Dim");
+            color_swatch(ui, &mut s.text.dim);
+            ui.end_row();
+
+            ui.label("Bold rest");
+            ui.checkbox(&mut s.font.dim_bold, "");
+            ui.end_row();
+
+            ui.label("Caps");
+            ui.checkbox(&mut s.font.uppercase, "");
+            ui.end_row();
+
+            ui.label("Tracking");
+            ui.add(
+                egui::Slider::new(&mut s.font.letter_spacing, 0.0..=0.20)
+                    .fixed_decimals(2)
+                    .suffix("em"),
+            );
+            ui.end_row();
+
+            ui.label("Opacity");
+            ui.add(egui::Slider::new(&mut s.text.opacity, 0.0..=1.0).fixed_decimals(2));
+            ui.end_row();
+        });
+
+    ui.add_space(14.0);
+    theme::section(ui, "Outline");
+    ui.add_space(4.0);
+    ui.checkbox(&mut s.text.outline.enabled, "Enable outline");
+    if s.text.outline.enabled {
+        ui.add_space(4.0);
+        egui::Grid::new("outline_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.text.outline.color);
+                ui.end_row();
+                ui.label("Width");
+                ui.add(
+                    egui::Slider::new(&mut s.text.outline.width, 0.01..=0.25)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+            });
+    }
+
+    ui.add_space(12.0);
+    theme::section(ui, "Text shadow");
+    ui.add_space(4.0);
+    ui.checkbox(&mut s.text.shadow.enabled, "Enable text shadow");
+    if s.text.shadow.enabled {
+        ui.add_space(4.0);
+        egui::Grid::new("shadow_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.text.shadow.color);
+                ui.end_row();
+                ui.label("Offset X");
+                ui.add(
+                    egui::Slider::new(&mut s.text.shadow.offset_x, -0.30..=0.30)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Offset Y");
+                ui.add(
+                    egui::Slider::new(&mut s.text.shadow.offset_y, -0.30..=0.30)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Blur");
+                ui.add(
+                    egui::Slider::new(&mut s.text.shadow.blur, 0.0..=0.30)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+            });
+    }
+
+    ui.add_space(12.0);
+    theme::section(ui, "Glow");
+    ui.add_space(4.0);
+    ui.checkbox(&mut s.text.glow.enabled, "Enable glow");
+    if s.text.glow.enabled {
+        ui.add_space(4.0);
+        egui::Grid::new("glow_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.text.glow.color);
+                ui.end_row();
+                ui.label("Radius");
+                ui.add(
+                    egui::Slider::new(&mut s.text.glow.radius, 0.02..=0.40)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+            });
+    }
+}
+
+fn box_tab(ui: &mut egui::Ui, s: &mut Style) {
+    egui::Grid::new("box_fill_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Fill");
+            color_swatch(ui, &mut s.box_style.color);
+            ui.end_row();
+
+            ui.label("Opacity");
+            ui.add(egui::Slider::new(&mut s.box_style.opacity, 0.0..=1.0).fixed_decimals(2));
+            ui.end_row();
+
+            ui.label("Rounded");
+            ui.checkbox(&mut s.box_style.rounded, "");
+            ui.end_row();
+
+            if s.box_style.rounded {
+                ui.label("Radius");
+                ui.add(
+                    egui::Slider::new(&mut s.box_style.radius_frac, 0.0..=0.5).fixed_decimals(2),
+                );
+                ui.end_row();
+            }
+
+            ui.label("Padding X");
+            ui.add(
+                egui::Slider::new(&mut s.box_style.padding_x, 0.0..=1.50)
+                    .fixed_decimals(2)
+                    .suffix("em"),
+            );
+            ui.end_row();
+
+            ui.label("Padding Y");
+            ui.add(
+                egui::Slider::new(&mut s.box_style.padding_y, 0.0..=1.00)
+                    .fixed_decimals(2)
+                    .suffix("em"),
+            );
+            ui.end_row();
+        });
+
+    ui.add_space(14.0);
+    theme::section(ui, "Border");
+    ui.add_space(4.0);
+    egui::Grid::new("border_grid")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Width");
+            ui.add(
+                egui::Slider::new(&mut s.box_style.border_width, 0.0..=0.25)
+                    .fixed_decimals(2)
+                    .suffix("em"),
+            );
+            ui.end_row();
+            ui.label("Color");
+            color_swatch(ui, &mut s.box_style.border_color);
+            ui.end_row();
+        });
+
+    ui.add_space(12.0);
+    theme::section(ui, "Box shadow");
+    ui.add_space(4.0);
+    ui.checkbox(&mut s.box_style.shadow, "Enable box shadow");
+    if s.box_style.shadow {
+        ui.add_space(4.0);
+        egui::Grid::new("box_shadow_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.box_style.shadow_color);
+                ui.end_row();
+                ui.label("Opacity");
+                ui.add(
+                    egui::Slider::new(&mut s.box_style.shadow_opacity, 0.0..=1.0).fixed_decimals(2),
+                );
+                ui.end_row();
+                ui.label("Offset Y");
+                ui.add(
+                    egui::Slider::new(&mut s.box_style.shadow_offset_y, -0.30..=0.30)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Blur");
+                ui.add(
+                    egui::Slider::new(&mut s.box_style.shadow_blur, 0.0..=0.30)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+            });
+    }
+}
+
+fn highlight_tab(ui: &mut egui::Ui, s: &mut Style) {
+    egui::Grid::new("highlight_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Color");
+            color_swatch(ui, &mut s.text.highlight);
+            ui.end_row();
+
+            ui.label("Bold active");
+            ui.checkbox(&mut s.font.active_bold, "");
+            ui.end_row();
+
+            ui.label("Scale");
+            ui.add(
+                egui::Slider::new(&mut s.highlight.scale, 1.0..=1.4)
+                    .fixed_decimals(2)
+                    .suffix("×"),
+            );
+            ui.end_row();
+        });
+
+    ui.add_space(14.0);
+    theme::section(ui, "Pill");
+    ui.add_space(4.0);
+    ui.checkbox(
+        &mut s.highlight.pill.enabled,
+        "Plate behind the active word",
+    );
+    if s.highlight.pill.enabled {
+        ui.add_space(4.0);
+        egui::Grid::new("pill_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.highlight.pill.color);
+                ui.end_row();
+                ui.label("Padding X");
+                ui.add(
+                    egui::Slider::new(&mut s.highlight.pill.padding_x, 0.0..=0.60)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Padding Y");
+                ui.add(
+                    egui::Slider::new(&mut s.highlight.pill.padding_y, 0.0..=0.60)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Radius");
+                ui.add(
+                    egui::Slider::new(&mut s.highlight.pill.radius_frac, 0.0..=1.0)
+                        .fixed_decimals(2),
+                );
+                ui.end_row();
+            });
+    }
+
+    ui.add_space(12.0);
+    theme::section(ui, "Underline");
+    ui.add_space(4.0);
+    ui.checkbox(
+        &mut s.highlight.underline.enabled,
+        "Underline the active word",
+    );
+    if s.highlight.underline.enabled {
+        ui.add_space(4.0);
+        egui::Grid::new("underline_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Color");
+                color_swatch(ui, &mut s.highlight.underline.color);
+                ui.end_row();
+                ui.label("Width");
+                ui.add(
+                    egui::Slider::new(&mut s.highlight.underline.width, 0.01..=0.20)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+                ui.label("Offset");
+                ui.add(
+                    egui::Slider::new(&mut s.highlight.underline.offset, 0.0..=0.20)
+                        .fixed_decimals(2)
+                        .suffix("em"),
+                );
+                ui.end_row();
+            });
+    }
+}
+
+fn fit_label(fit: Fit) -> &'static str {
+    match fit {
+        Fit::Shrink => "Shrink to one line",
+        Fit::Wrap => "Fixed size, wrap",
+        Fit::Clip => "Fixed size, clip",
+    }
+}
+
+fn align_label(align: Align) -> &'static str {
+    match align {
+        Align::Center => "Center",
+        Align::Left => "Left",
+        Align::Right => "Right",
+    }
+}
+
+fn anchor_label(anchor: Anchor) -> &'static str {
+    match anchor {
+        Anchor::Center => "Box center",
+        Anchor::Top => "Box top",
+        Anchor::Bottom => "Box bottom",
+    }
+}
+
+fn layout_tab(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
+    let mut action = Action::None;
+    let s = &mut r.style;
+
+    egui::Grid::new("layout_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Fit");
+            let was_shrink = s.layout.fit == Fit::Shrink;
+            egui::ComboBox::from_id_salt("layout_fit")
+                .selected_text(fit_label(s.layout.fit))
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for fit in [Fit::Shrink, Fit::Wrap, Fit::Clip] {
+                        ui.selectable_value(&mut s.layout.fit, fit, fit_label(fit));
+                    }
+                });
+            if was_shrink && s.layout.fit == Fit::Wrap && s.layout.max_lines < 2 {
+                s.layout.max_lines = 2;
+            }
+            ui.end_row();
+
+            ui.label("Max lines");
+            ui.add_enabled(
+                s.layout.fit != Fit::Shrink,
+                egui::Slider::new(&mut s.layout.max_lines, 1..=4)
+                    .step_by(1.0)
+                    .fixed_decimals(0),
+            );
+            ui.end_row();
+
+            ui.label("Words/line");
+            ui.add_enabled(
+                s.layout.fit != Fit::Shrink,
+                egui::Slider::new(&mut s.layout.max_words_per_line, 0..=8)
+                    .step_by(1.0)
+                    .fixed_decimals(0),
+            );
+            ui.end_row();
+
+            ui.label("Line height");
+            ui.add(
+                egui::Slider::new(&mut s.layout.line_height, 1.0..=2.0)
+                    .step_by(0.05)
+                    .fixed_decimals(2)
+                    .suffix("×"),
+            );
+            ui.end_row();
+
+            ui.label("Reserve lines");
+            ui.add(
+                egui::Slider::new(&mut s.layout.reserve_lines, 0..=4)
+                    .step_by(1.0)
+                    .fixed_decimals(0),
+            );
+            ui.end_row();
+
+            ui.label("Align");
+            egui::ComboBox::from_id_salt("layout_align")
+                .selected_text(align_label(s.layout.align))
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for align in [Align::Center, Align::Left, Align::Right] {
+                        ui.selectable_value(&mut s.layout.align, align, align_label(align));
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Anchor");
+            egui::ComboBox::from_id_salt("layout_anchor")
+                .selected_text(anchor_label(s.layout.anchor))
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for anchor in [Anchor::Center, Anchor::Top, Anchor::Bottom] {
+                        ui.selectable_value(&mut s.layout.anchor, anchor, anchor_label(anchor));
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Position");
+            ui.add(
+                egui::Slider::new(&mut s.layout.position_pct, 5.0..=95.0)
+                    .fixed_decimals(0)
+                    .suffix("%"),
+            );
+            ui.end_row();
+
+            ui.label("Max width");
+            ui.add_enabled(
+                s.layout.box_width_pct.is_none(),
+                egui::Slider::new(&mut s.layout.max_width_pct, 40.0..=100.0)
+                    .fixed_decimals(0)
+                    .suffix("%"),
+            );
+            ui.end_row();
+        });
+
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(match s.layout.fit {
+            Fit::Shrink => "One line; the font shrinks until the text fits.",
+            Fit::Wrap => "Keeps the size and wraps; shrinks only if the words cannot fit.",
+            Fit::Clip => "Keeps the size and drops words or lines that do not fit.",
+        })
+        .small()
+        .weak(),
+    );
+    ui.label(
+        RichText::new(
+            "Words/line 0 means wrap by width only. Reserve 0 means natural height; set it to Max lines for a fixed-height box.",
+        )
+        .small()
+        .weak(),
+    );
+    ui.label(
+        RichText::new("Position places the selected box anchor at that % of frame height.")
+            .small()
+            .weak(),
+    );
+
+    ui.add_space(14.0);
+    theme::section(ui, "Fixed box");
+    ui.add_space(4.0);
+
+    let mut fixed_w = s.layout.box_width_pct.is_some();
+    if ui.checkbox(&mut fixed_w, "Fixed width").changed() {
+        s.layout.box_width_pct = fixed_w.then_some(80.0);
+    }
+    if let Some(w) = &mut s.layout.box_width_pct {
+        ui.add(
+            egui::Slider::new(w, 20.0..=100.0)
+                .fixed_decimals(0)
+                .suffix("%"),
+        );
+    }
+
+    let mut fixed_h = s.layout.box_height_pct.is_some();
+    if ui.checkbox(&mut fixed_h, "Fixed height").changed() {
+        s.layout.box_height_pct = fixed_h.then_some(12.0);
+    }
+    if let Some(h) = &mut s.layout.box_height_pct {
+        ui.add(
+            egui::Slider::new(h, 5.0..=60.0)
+                .fixed_decimals(0)
+                .suffix("%"),
+        );
+    }
+
+    ui.add_space(14.0);
+    theme::section(ui, "Grouping");
+    ui.add_space(4.0);
+    egui::Grid::new("layout_grouping_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Words");
+            // Words-per-popup re-chunks from whisper's words, discarding edits
+            // (confirmed M3 decision, with a warning banner).
+            let mut wpp = r.grouping.words_per_popup as f32;
+            let resp = ui.add(
+                egui::Slider::new(&mut wpp, 1.0..=8.0)
+                    .step_by(1.0)
+                    .fixed_decimals(0),
+            );
+            let new_wpp = wpp as usize;
+            if resp.changed() && new_wpp != r.grouping.words_per_popup {
+                r.grouping.words_per_popup = new_wpp;
+                let discarded = r.rechunk(new_wpp);
+                action = Action::Rechunked {
+                    discarded_edits: discarded,
+                };
+            }
+            ui.end_row();
+        });
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(
+            "Changing words per popup re-groups the caption and can discard transcript edits.",
+        )
+        .small()
+        .weak(),
+    );
+    action
+}
+
+fn popup_label(effect: PopupEffect) -> &'static str {
+    match effect {
+        PopupEffect::None => "None",
+        PopupEffect::Pop => "Pop",
+        PopupEffect::SlideUp => "Slide up",
+        PopupEffect::SlideDown => "Slide down",
+        PopupEffect::SlideLeft => "Slide left",
+        PopupEffect::SlideRight => "Slide right",
+        PopupEffect::Fade => "Fade",
+    }
+}
+
+fn easing_label(easing: Easing) -> &'static str {
+    match easing {
+        Easing::Linear => "Linear",
+        Easing::EaseOut => "Ease out",
+        Easing::EaseInOut => "Ease in-out",
+        Easing::Spring => "Spring (overshoot)",
+    }
+}
+
+fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
+    let enabled = r.style.motion.popup != PopupEffect::None;
+    let mut play = r.motion_playing && enabled;
+    {
+        let s = &mut r.style;
+        theme::section(ui, "Popup entrance");
+        ui.add_space(4.0);
+        egui::Grid::new("motion_grid")
+            .num_columns(2)
+            .spacing([12.0, 10.0])
+            .min_col_width(86.0)
+            .show(ui, |ui| {
+                ui.label("Effect");
+                egui::ComboBox::from_id_salt("motion_effect")
+                    .selected_text(popup_label(s.motion.popup))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for effect in [
+                            PopupEffect::None,
+                            PopupEffect::Pop,
+                            PopupEffect::SlideUp,
+                            PopupEffect::SlideDown,
+                            PopupEffect::SlideLeft,
+                            PopupEffect::SlideRight,
+                            PopupEffect::Fade,
+                        ] {
+                            ui.selectable_value(&mut s.motion.popup, effect, popup_label(effect));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Duration");
+                ui.add_enabled(
+                    enabled,
+                    egui::Slider::new(&mut s.motion.duration_ms, 0..=800)
+                        .step_by(10.0)
+                        .suffix(" ms"),
+                );
+                ui.end_row();
+
+                ui.label("Easing");
+                ui.add_enabled_ui(enabled, |ui| {
+                    egui::ComboBox::from_id_salt("motion_easing")
+                        .selected_text(easing_label(s.motion.easing))
+                        .width(150.0)
+                        .show_ui(ui, |ui| {
+                            for easing in [
+                                Easing::Linear,
+                                Easing::EaseOut,
+                                Easing::EaseInOut,
+                                Easing::Spring,
+                            ] {
+                                ui.selectable_value(
+                                    &mut s.motion.easing,
+                                    easing,
+                                    easing_label(easing),
+                                );
+                            }
+                        });
+                });
+                ui.end_row();
+
+                ui.label("Amount");
+                ui.add_enabled(
+                    enabled,
+                    egui::Slider::new(&mut s.motion.intensity, 0.0..=1.0).fixed_decimals(2),
+                );
+                ui.end_row();
+            });
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(
+                "Pop: how much it scales up. Slide: distance in font heights. Fade ignores the amount.",
+            )
+            .small()
+            .weak(),
+        );
+    }
+
+    ui.add_space(10.0);
+    ui.add_enabled(enabled, egui::Checkbox::new(&mut play, "Play preview"));
+    r.motion_playing = play && enabled;
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(
+            "The popup transition runs when a new caption appears. Word-level karaoke effects come in a later phase.",
+        )
+        .small()
+        .weak(),
+    );
 }
 
 /// A colour swatch button (grid cell) bound to a style [`Color`].
@@ -492,15 +1127,21 @@ pub fn chunk_list(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
 
                         if is_sel {
                             // Word chips: click to preview that highlight.
-                            let chips: Vec<String> =
-                                r.chunks[i].text.split_whitespace().map(String::from).collect();
+                            let chips: Vec<String> = r.chunks[i]
+                                .text
+                                .split_whitespace()
+                                .map(String::from)
+                                .collect();
                             if !chips.is_empty() {
                                 ui.add_space(2.0);
                                 ui.horizontal_wrapped(|ui| {
                                     for (wi, w) in chips.iter().enumerate() {
                                         let on = wi == r.active_word;
-                                        let base =
-                                            if on { r.style.highlight } else { r.style.dim };
+                                        let base = if on {
+                                            r.style.text.highlight
+                                        } else {
+                                            r.style.text.dim
+                                        };
                                         let mut text = RichText::new(w.as_str()).color(col(base));
                                         if on {
                                             text = text.strong();

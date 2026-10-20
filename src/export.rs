@@ -19,14 +19,28 @@
 //! but hundreds of decoder + filter contexts in flight (RAM grows with state
 //! count), so the pipe is the default.
 
+use crate::config::{Anchor, MotionStyle, PopupEffect};
 use crate::probe::{parse_rate, Fftools, VideoInfo};
-use crate::render::{blend_straight, CaptionState};
+use crate::render::{
+    blend_straight, blend_transformed, popup_transform, CaptionState, PopupTransform,
+};
 use anyhow::{bail, Context, Result};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+
+/// Top-left y coordinate (in frame pixels) for a caption state whose box
+/// anchor should land at `position_pct` of the frame height.
+pub fn caption_y(frame_h: u32, position_pct: f32, anchor: Anchor, box_top: f32, box_h: f32) -> f32 {
+    let target = frame_h as f32 * position_pct / 100.0;
+    match anchor {
+        Anchor::Center => target - (box_top + box_h / 2.0),
+        Anchor::Top => target - box_top,
+        Anchor::Bottom => target - (box_top + box_h),
+    }
+}
 
 /// Encoder choice for [`export_pipe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -199,9 +213,7 @@ fn scale_matrix(color_space: &str) -> &'static str {
 
 /// Drain a child's stderr on a thread, keeping only the tail so a full pipe
 /// can never block the child. Returns the shared tail buffer + join handle.
-fn drain_stderr(
-    stream: ChildStderr,
-) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>) {
+fn drain_stderr(stream: ChildStderr) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>) {
     let err_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&err_buf);
     let handle = std::thread::spawn(move || {
@@ -268,11 +280,20 @@ pub fn write_filter_script(
             st.start_secs, st.end_secs
         );
         let last = i + 1 == states.len();
-        let out = if last { "[vout]".to_string() } else { label.clone() };
+        let out = if last {
+            "[vout]".to_string()
+        } else {
+            label.clone()
+        };
         let sep = if last { "" } else { ";" };
         let idx = i + 1;
+        let anchor_offset = match st.anchor {
+            Anchor::Center => st.box_top as f64 + st.box_h as f64 / 2.0,
+            Anchor::Top => st.box_top as f64,
+            Anchor::Bottom => st.box_top as f64 + st.box_h as f64,
+        };
         s.push_str(&format!(
-            "{prev_label}[{idx}:v]overlay=x=(main_w-overlay_w)/2:y=main_h*{pos:.6}-overlay_h/2:{enable}:eof_action=repeat{out}{sep}\n"
+            "{prev_label}[{idx}:v]overlay=x=(main_w-overlay_w)/2:y=main_h*{pos:.6}-{anchor_offset:.3}:{enable}:eof_action=repeat{out}{sep}\n"
         ));
         prev_label = label;
     }
@@ -410,14 +431,13 @@ pub fn export(
 
     if !status.success() {
         let tail = String::from_utf8_lossy(&err_buf.lock().unwrap()).to_string();
-        bail!(
-            "ffmpeg failed ({}): {}",
-            status,
-            tail.trim()
-        );
+        bail!("ffmpeg failed ({}): {}", status, tail.trim());
     }
     if !output.is_file() {
-        bail!("ffmpeg reported success but {} is missing", output.display());
+        bail!(
+            "ffmpeg reported success but {} is missing",
+            output.display()
+        );
     }
     Ok(())
 }
@@ -440,6 +460,7 @@ pub fn export_pipe(
     info: &VideoInfo,
     states: &[CaptionState],
     position_pct: f32,
+    motion: &MotionStyle,
     encoder: Encoder,
     cancel: &AtomicBool,
     mut on_progress: impl FnMut(f64),
@@ -467,13 +488,16 @@ pub fn export_pipe(
     let active = active_encoder(tools, encoder);
     let use_vaapi = active == Active::Vaapi;
     let use_vt = active == Active::VideoToolbox;
-    let full_range = info.color_range == "pc"
-        || info.color_range == "jpeg"
-        || info.pix_fmt.starts_with("yuvj");
+    let full_range =
+        info.color_range == "pc" || info.color_range == "jpeg" || info.pix_fmt.starts_with("yuvj");
     // VideoToolbox cannot pair yuv420p with full range ("Could not get pixel
     // format for color format 'yuv420p' range 'pc'"), so its path always
     // encodes limited range and is tagged tv (see the color-tag loop below).
-    let out_range = if full_range && !use_vt { "full" } else { "limited" };
+    let out_range = if full_range && !use_vt {
+        "full"
+    } else {
+        "limited"
+    };
     let matrix = scale_matrix(&info.color_space);
     eprintln!(
         "      pipe export: {} states, {} frames total, encoder={} ({out_range} range, {matrix})",
@@ -492,8 +516,16 @@ pub fn export_pipe(
         .args(["-hide_banner", "-loglevel", "error", "-i"])
         .arg(input)
         .args([
-            "-map", "0:v:0", "-fps_mode", "passthrough", "-an", "-f", "rawvideo",
-            "-pix_fmt", "rgba", "-",
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-an",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-",
         ]);
     let mut dec = dec_cmd
         .stdin(Stdio::null())
@@ -539,11 +571,17 @@ pub fn export_pipe(
             .args(["-pix_fmt", "yuv420p"]);
     } else {
         let pix = if full_range { "yuvj420p" } else { "yuv420p" };
-        enc_cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pix]);
+        enc_cmd.args([
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pix,
+        ]);
     }
     // Forward color tags so players read the same signal as the source.
     // VideoToolbox can only do limited-range yuv420p, so it is tagged tv.
-    let fwd_range = if use_vt { "tv" } else { info.color_range.as_str() };
+    let fwd_range = if use_vt {
+        "tv"
+    } else {
+        info.color_range.as_str()
+    };
     for (opt, val) in [
         ("-color_range", fwd_range),
         ("-colorspace", info.color_space.as_str()),
@@ -555,7 +593,15 @@ pub fn export_pipe(
         }
     }
     enc_cmd
-        .args(["-c:a", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats"])
+        .args([
+            "-c:a",
+            "copy",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+        ])
         .arg(output);
     let mut enc = enc_cmd
         .stdin(Stdio::piped())
@@ -623,10 +669,31 @@ pub fn export_pipe(
                 }
                 let (src, sw, sh) = cached.as_ref().expect("state cached");
                 // Same placement math as the preview and the graph's overlay
-                // expressions: centered, box center at position_pct.
+                // expressions: centered, with the box anchor at position_pct.
                 let x = ((w as f32 - *sw as f32) / 2.0).round() as i32;
-                let y = (h as f32 * position_pct / 100.0 - *sh as f32 / 2.0).round() as i32;
-                blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
+                let y = caption_y(h, position_pct, st.anchor, st.box_top, st.box_h).round() as i32;
+
+                // Popup motion runs from the chunk's first appearance, so it
+                // continues across the per-word states of the same popup.
+                let mut transform = PopupTransform::IDENTITY;
+                if motion.popup != PopupEffect::None && motion.duration_ms > 0 {
+                    let dur = motion.duration_ms as f64 / 1000.0;
+                    let phase = ((t - st.popup_start_secs) / dur).clamp(0.0, 1.0) as f32;
+                    transform = popup_transform(motion, phase, st.font_px);
+                }
+                if transform.is_identity() {
+                    blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
+                } else {
+                    let pivot_x = *sw as f32 / 2.0;
+                    let pivot_y = match st.anchor {
+                        Anchor::Center => st.box_top + st.box_h / 2.0,
+                        Anchor::Top => st.box_top,
+                        Anchor::Bottom => st.box_top + st.box_h,
+                    };
+                    blend_transformed(
+                        &mut buf, w, h, src, *sw, *sh, x, y, pivot_x, pivot_y, transform,
+                    );
+                }
             }
 
             // Progress reported by the encoder as it consumes our frames.
@@ -698,7 +765,10 @@ pub fn export_pipe(
         bail!("ffmpeg encode failed ({enc_status}): {}", tail(&enc_err));
     }
     if !output.is_file() {
-        bail!("ffmpeg reported success but {} is missing", output.display());
+        bail!(
+            "ffmpeg reported success but {} is missing",
+            output.display()
+        );
     }
     on_progress(1.0);
     Ok(())
@@ -725,4 +795,18 @@ pub fn extract_frame(tools: &Fftools, input: &Path, at_secs: f64, out: &Path) ->
         bail!("frame extraction failed at {at_secs:.3}s");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placement_uses_the_box_anchor() {
+        // box_top = 10, box_h = 20, frame = 1000, position = 50%.
+        let (h, pos, top, bh) = (1000, 50.0, 10.0, 20.0);
+        assert_eq!(caption_y(h, pos, Anchor::Center, top, bh), 480.0);
+        assert_eq!(caption_y(h, pos, Anchor::Top, top, bh), 490.0);
+        assert_eq!(caption_y(h, pos, Anchor::Bottom, top, bh), 470.0);
+    }
 }

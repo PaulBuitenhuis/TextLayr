@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "id": "builtin:clean-subtitle",
+  "name": "Clean Subtitle",
+  "description": "Smaller neutral text in a subtle bar, lower in the frame.",
+  "style": {
+    "font": {
+      "family": "Inter",
+      "size_pct": 3.0
+    },
+    "text": {
+      "highlight": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "dim": {
+        "r": 188,
+        "g": 192,
+        "b": 198,
+        "a": 255
+      }
+    },
+    "box": {
+      "color": {
+        "r": 10,
+        "g": 12,
+        "b": 16,
+        "a": 255
+      },
+      "opacity": 0.55,
+      "rounded": true,
+      "radius_frac": 0.22,
+      "padding_x": 0.55,
+      "padding_y": 0.28,
+      "shadow": false
+    },
+    "layout": {
+      "position_pct": 86.0,
+      "anchor": "center",
+      "align": "center",
+      "fit": "wrap",
+      "max_lines": 2,
+      "max_words_per_line": 0,
+      "line_height": 1.15,
+      "reserve_lines": 2,
+      "max_width_pct": 92.0,
+      "box_width_pct": 84.0,
+      "box_height_pct": null
+    },
+    "motion": {
+      "popup": "fade",
+      "duration_ms": 160,
+      "easing": "ease_out",
+      "intensity": 0.0
+    }
+  },
+  "grouping": {
+    "words_per_popup": 5
+  }
+}

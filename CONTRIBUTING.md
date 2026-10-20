@@ -22,17 +22,20 @@ src/
   transcribe.rs  whisper transcription, word merge, timing normalization, cache
   model.rs       whisper model identity, discovery, download metadata
   chunk.rs       word grouping into caption chunks + highlight windows
-  config.rs      Style struct, font discovery, preference persistence
+  config.rs      grouped Style/Grouping model, font discovery, versioned preference persistence
+  profile.rs     built-in + saved style profiles (CRUD, stable ids, atomic JSON files)
   deps.rs        startup dependency check + installable-missing description
   download.rs    checksum-verified downloads (curl transport)
   install.rs     first-run installer (ffmpeg/model)
   paths.rs       platform data dirs for downloaded files
   source.rs      provenance of a located dependency (bundled/downloaded/system/…)
-  render.rs      fontdue + tiny-skia -> per-state PNGs + blend_straight (shared with preview)
+  render.rs      fontdue + tiny-skia -> per-state PNGs with outline/shadow/glow/pill effects
   export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
   ui/            egui app: drop, ingest, review (preview/editor/style), export, done
     licenses.rs  in-app viewer for THIRD_PARTY_LICENSES.md
+    profile.rs   profile picker, thumbnail gallery and management dialogs
 assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
+assets/profiles/ built-in style profiles (embedded into the binary with include_str!)
 assets/icon.png  app icon master (generated; see scripts/make_icon.py)
 assets/AppIcon.icns  macOS bundle icon (generated)
 assets/dmg-background.png  install-window background (generated)

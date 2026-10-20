@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "id": "builtin:lower-third",
+  "name": "Lower Third",
+  "description": "Smaller documentary-style text low in the frame, six words at a time.",
+  "style": {
+    "font": {
+      "family": "Inter",
+      "size_pct": 2.9
+    },
+    "text": {
+      "highlight": {
+        "r": 255,
+        "g": 209,
+        "b": 102,
+        "a": 255
+      },
+      "dim": {
+        "r": 235,
+        "g": 235,
+        "b": 235,
+        "a": 255
+      }
+    },
+    "box": {
+      "color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "opacity": 0.65,
+      "rounded": false,
+      "radius_frac": 0.0,
+      "padding_x": 0.6,
+      "padding_y": 0.2,
+      "shadow": false
+    },
+    "layout": {
+      "position_pct": 92.0,
+      "anchor": "bottom",
+      "align": "center",
+      "fit": "shrink",
+      "max_lines": 1,
+      "max_words_per_line": 0,
+      "line_height": 1.2,
+      "reserve_lines": 1,
+      "max_width_pct": 92.0,
+      "box_width_pct": 90.0,
+      "box_height_pct": 8.0
+    },
+    "motion": {
+      "popup": "slide_up",
+      "duration_ms": 200,
+      "easing": "ease_out",
+      "intensity": 0.35
+    }
+  },
+  "grouping": {
+    "words_per_popup": 6
+  }
+}

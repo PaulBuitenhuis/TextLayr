@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "builtin:classic",
+  "name": "Classic Serif",
+  "description": "The original TextLayr look: serif text in a soft rounded box.",
+  "style": {
+    "font": { "family": "Libre Baskerville", "size_pct": 3.4 },
+    "text": {
+      "highlight": { "r": 255, "g": 255, "b": 255, "a": 255 },
+      "dim": { "r": 154, "g": 154, "b": 154, "a": 255 }
+    },
+    "box": {
+      "color": { "r": 0, "g": 0, "b": 0, "a": 255 },
+      "opacity": 0.72,
+      "rounded": true,
+      "radius_frac": 0.18,
+      "shadow": true
+    },
+    "layout": { "position_pct": 72.0 }
+  },
+  "grouping": { "words_per_popup": 3 }
+}

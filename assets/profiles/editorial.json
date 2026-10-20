@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "builtin:editorial",
+  "name": "Editorial",
+  "description": "Cream paper card, dark serif text and a rust highlight.",
+  "style": {
+    "font": { "family": "Libre Baskerville", "size_pct": 3.6 },
+    "text": {
+      "highlight": { "r": 156, "g": 55, "b": 35, "a": 255 },
+      "dim": { "r": 58, "g": 50, "b": 42, "a": 255 }
+    },
+    "box": {
+      "color": { "r": 244, "g": 233, "b": 216, "a": 255 },
+      "opacity": 0.94,
+      "rounded": true,
+      "radius_frac": 0.14,
+      "padding_x": 0.65,
+      "padding_y": 0.30,
+      "shadow": false
+    },
+    "layout": { "position_pct": 76.0 }
+  },
+  "grouping": { "words_per_popup": 3 }
+}

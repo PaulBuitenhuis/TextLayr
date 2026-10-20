@@ -53,10 +53,7 @@ impl Chunk {
         }
         bounds.push(end);
 
-        bounds
-            .windows(2)
-            .map(|w| (w[0], w[1]))
-            .collect()
+        bounds.windows(2).map(|w| (w[0], w[1])).collect()
     }
 
     /// Text of the chunk as a single string (used for preview/debug output).
@@ -106,16 +103,17 @@ fn is_break(word: &str) -> bool {
         || word.ends_with(['.', '!', '?', ';', ':', '…', '"', '\''])
 }
 
-/// Group words into chunks of `words_per` (clamped to 2..=6), preferring to
+/// Group words into chunks of `words_per` (clamped to 1..=8), preferring to
 /// break at sentence/clause punctuation rather than cutting mid-phrase.
 ///
-/// A short trailing group is merged back into the previous chunk so the last
-/// popup is not a lonely one- or two-word stub.
+/// `words_per = 1` is the word-by-word caption mode: every word gets its own
+/// popup. A short trailing group is otherwise merged back into the previous
+/// chunk so the last popup is not a lonely one- or two-word stub.
 pub fn chunk_words(words: &[Word], words_per: usize) -> Vec<Chunk> {
     if words.is_empty() {
         return Vec::new();
     }
-    let target = words_per.clamp(2, 6);
+    let target = words_per.clamp(1, 8);
     let min_words = target.min(3);
 
     let mut groups: Vec<Vec<usize>> = Vec::new();
@@ -135,9 +133,7 @@ pub fn chunk_words(words: &[Word], words_per: usize) -> Vec<Chunk> {
         // popup isn't a lonely one- or two-word group), but never inflate a
         // chunk by more than one word: uniform popups matter more.
         match groups.last_mut() {
-            Some(last)
-                if current.len() < min_words && last.len() + current.len() <= target + 1 =>
-            {
+            Some(last) if current.len() < min_words && last.len() + current.len() <= target + 1 => {
                 last.append(&mut current);
             }
             _ => groups.push(std::mem::take(&mut current)),
@@ -185,6 +181,28 @@ mod tests {
         let chunks = chunk_words(&words, 3);
         assert_eq!(chunks.len(), 3);
         assert!(chunks.iter().all(|c| c.words.len() == 3));
+    }
+
+    #[test]
+    fn one_word_per_popup_is_supported() {
+        let words: Vec<Word> = (0..4).map(|i| w("x", i as f64, i as f64 + 0.5)).collect();
+        let chunks = chunk_words(&words, 1);
+        assert_eq!(chunks.len(), 4);
+        assert!(chunks.iter().all(|c| c.words.len() == 1));
+        // Each popup still gets exactly one highlight window.
+        for c in &chunks {
+            assert_eq!(c.state_windows().len(), 1);
+        }
+    }
+
+    #[test]
+    fn grouping_is_clamped_to_the_supported_range() {
+        let words: Vec<Word> = (0..20).map(|i| w("x", i as f64, i as f64 + 0.5)).collect();
+        // 0 behaves like 1, 99 behaves like 8.
+        assert!(chunk_words(&words, 0).iter().all(|c| c.words.len() == 1));
+        let chunks = chunk_words(&words, 99);
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks.iter().all(|c| c.words.len() <= 8));
     }
 
     #[test]
@@ -248,7 +266,11 @@ mod tests {
         // Whisper jitter: the last two words start 20 ms apart. The window for
         // word 1 must not collapse to a flash.
         let chunk = Chunk {
-            words: vec![w("one", 0.0, 0.2), w("two", 0.6, 0.7), w("three", 0.62, 1.0)],
+            words: vec![
+                w("one", 0.0, 0.2),
+                w("two", 0.6, 0.7),
+                w("three", 0.62, 1.0),
+            ],
             start_secs: 0.0,
             end_secs: 1.0,
         };

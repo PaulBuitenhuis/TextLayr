@@ -15,8 +15,8 @@ use crate::chunk::Chunk;
 use crate::config::Style;
 use crate::model::{FoundModel, Model};
 use crate::probe::{Fftools, VideoInfo};
-use crate::render::CaptionState;
 use crate::render;
+use crate::render::CaptionState;
 use crate::{audio, export, probe, transcribe};
 
 /// Progress of [`ingest`], reported in order.
@@ -123,7 +123,11 @@ pub fn ingest(
     report(IngestProgress::Transcribed {
         words: words.len(),
         secs: elapsed,
-        realtime_x: if elapsed > 0.0 { audio_secs / elapsed } else { 0.0 },
+        realtime_x: if elapsed > 0.0 {
+            audio_secs / elapsed
+        } else {
+            0.0
+        },
     });
     if let Err(e) = transcribe::save_cache(input, kind, &words) {
         eprintln!("(transcript cache write skipped: {e:#})");
@@ -250,7 +254,8 @@ pub fn export_video(
         output,
         info,
         &states,
-        style.position_pct,
+        style.layout.position_pct,
+        &style.motion,
         encoder,
         cancel,
         |frac| progress(ExportProgress::new(ExportPhase::Encoding, frac as f32)),
@@ -299,7 +304,10 @@ mod tests {
             .iter()
             .map(|f| ExportProgress::new(ExportPhase::Encoding, *f).overall)
             .collect();
-        assert!((encode[0] - RENDER_WEIGHT).abs() < 1e-6, "handover is seamless");
+        assert!(
+            (encode[0] - RENDER_WEIGHT).abs() < 1e-6,
+            "handover is seamless"
+        );
         assert!((encode.last().copied().unwrap() - 1.0).abs() < 1e-6);
 
         let all: Vec<f32> = render.iter().chain(encode.iter()).copied().collect();
@@ -311,6 +319,9 @@ mod tests {
     #[test]
     fn overall_progress_clamps() {
         assert_eq!(ExportProgress::new(ExportPhase::Encoding, 1.5).overall, 1.0);
-        assert_eq!(ExportProgress::new(ExportPhase::Rendering, -1.0).overall, 0.0);
+        assert_eq!(
+            ExportProgress::new(ExportPhase::Rendering, -1.0).overall,
+            0.0
+        );
     }
 }

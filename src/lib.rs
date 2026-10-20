@@ -16,6 +16,7 @@ pub mod model;
 pub mod paths;
 pub mod pipeline;
 pub mod probe;
+pub mod profile;
 pub mod render;
 pub mod source;
 pub mod transcribe;

@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "id": "builtin:minimal",
+  "name": "Minimal",
+  "description": "No box, soft rounded type, a thin outline and a restrained highlight color.",
+  "style": {
+    "font": {
+      "family": "Nunito",
+      "size_pct": 4.1,
+      "active_bold": true,
+      "dim_bold": false,
+      "uppercase": false,
+      "letter_spacing": 0.0
+    },
+    "text": {
+      "highlight": {
+        "r": 255,
+        "g": 214,
+        "b": 102,
+        "a": 255
+      },
+      "dim": {
+        "r": 236,
+        "g": 236,
+        "b": 236,
+        "a": 255
+      },
+      "opacity": 1.0,
+      "outline": {
+        "enabled": true,
+        "color": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 210
+        },
+        "width": 0.05
+      },
+      "shadow": {
+        "enabled": false,
+        "color": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 160
+        },
+        "offset_x": 0.03,
+        "offset_y": 0.04,
+        "blur": 0.04
+      },
+      "glow": {
+        "enabled": false,
+        "color": {
+          "r": 255,
+          "g": 214,
+          "b": 102,
+          "a": 180
+        },
+        "radius": 0.1
+      }
+    },
+    "box": {
+      "color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "opacity": 0.0,
+      "rounded": true,
+      "radius_frac": 0.18,
+      "padding_x": 0.5,
+      "padding_y": 0.24,
+      "border_width": 0.0,
+      "border_color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "shadow": false,
+      "shadow_color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "shadow_opacity": 1.0,
+      "shadow_offset_y": 0.1,
+      "shadow_blur": 0.14
+    },
+    "layout": {
+      "position_pct": 74.0,
+      "anchor": "center",
+      "align": "center",
+      "fit": "wrap",
+      "max_lines": 2,
+      "max_words_per_line": 0,
+      "line_height": 1.2,
+      "reserve_lines": 0,
+      "max_width_pct": 92.0,
+      "box_width_pct": null,
+      "box_height_pct": null
+    },
+    "highlight": {
+      "scale": 1.0,
+      "pill": {
+        "enabled": false,
+        "color": {
+          "r": 255,
+          "g": 209,
+          "b": 102,
+          "a": 255
+        },
+        "padding_x": 0.12,
+        "padding_y": 0.04,
+        "radius_frac": 0.3
+      },
+      "underline": {
+        "enabled": false,
+        "color": {
+          "r": 255,
+          "g": 255,
+          "b": 255,
+          "a": 255
+        },
+        "width": 0.05,
+        "offset": 0.02
+      }
+    },
+    "motion": {
+      "popup": "pop",
+      "duration_ms": 140,
+      "easing": "ease_out",
+      "intensity": 0.08
+    }
+  },
+  "grouping": {
+    "words_per_popup": 4
+  }
+}

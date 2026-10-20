@@ -5,6 +5,7 @@
 
 mod licenses;
 mod preview;
+mod profile;
 mod review;
 mod theme;
 
@@ -16,16 +17,16 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
-use crate::config::{self, Style};
+use crate::config::{self, Grouping, Style};
 use crate::deps;
 use crate::install::{self, InstallProgress};
 use crate::model::{FoundModel, Model};
-use crate::pipeline::{
-    self, ExportPhase, ExportProgress, ExportSink, IngestProgress, Progress,
-};
+use crate::pipeline::{self, ExportPhase, ExportProgress, ExportSink, IngestProgress, Progress};
+use crate::profile::ProfileStore;
 use crate::source::Source;
 use crate::update;
 use preview::Frame;
+use profile::ProfileUi;
 use review::{Action, ReviewState};
 
 /// The project and developer, credited in the About window.
@@ -110,7 +111,9 @@ impl ExportStatus {
         }
         let left = (elapsed / done) - elapsed;
         // Round to 5s: the raw number jitters every frame and reads as noise.
-        Some(Duration::from_secs_f64(((left / 5.0).round() * 5.0).max(5.0)))
+        Some(Duration::from_secs_f64(
+            ((left / 5.0).round() * 5.0).max(5.0),
+        ))
     }
 }
 
@@ -228,6 +231,10 @@ pub struct App {
     saved_prefs: config::Prefs,
     /// When the pending preference autosave may fire (debounce).
     prefs_save_at: Option<Instant>,
+    /// Built-in and saved style profiles.
+    profiles: ProfileStore,
+    /// Profile picker/gallery state (active id, dirty flag, dialogs).
+    profile_ui: ProfileUi,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     /// Outstanding worker messages (drives the idle repoll).
@@ -253,6 +260,8 @@ impl App {
         theme::apply(&cc.egui_ctx);
         let (tx, rx) = mpsc::channel();
         let saved_prefs = config::load_prefs();
+        let profiles = ProfileStore::new();
+        let profile_ui = ProfileUi::new(saved_prefs.active_profile.clone(), &profiles);
         let deps = deps::Check::run(saved_prefs.model);
         // Adopt the model we actually resolved, so the choice shown to the user
         // is always the model in use (a stored preference that isn't installed
@@ -290,6 +299,8 @@ impl App {
             licenses_sel: 0,
             saved_prefs,
             prefs_save_at: None,
+            profiles,
+            profile_ui,
             tx,
             rx,
             pending: 0,
@@ -388,11 +399,22 @@ impl App {
             .unwrap_or_else(|| self.saved_prefs.style.clone())
     }
 
-    /// The complete preferences to persist: live style/model plus the update
-    /// settings (which are changed directly on `saved_prefs`).
+    /// The grouping currently in effect: the review state, or the last saved
+    /// one before a video is loaded.
+    fn current_grouping(&self) -> Grouping {
+        self.review
+            .as_ref()
+            .map(|r| r.grouping.clone())
+            .unwrap_or_else(|| self.saved_prefs.grouping.clone())
+    }
+
+    /// The complete preferences to persist: live style/grouping/model plus the
+    /// update settings (which are changed directly on `saved_prefs`).
     fn prefs_now(&self) -> config::Prefs {
         config::Prefs {
             style: self.current_style(),
+            grouping: self.current_grouping(),
+            active_profile: self.profile_ui.active_id.clone(),
             model: self.model_pref,
             auto_check_updates: self.saved_prefs.auto_check_updates,
             last_update_check: self.saved_prefs.last_update_check,
@@ -415,12 +437,16 @@ impl App {
     /// a beat, so dragging a slider doesn't hammer the disk.
     fn autosave_prefs(&mut self, ctx: &egui::Context) {
         const DEBOUNCE: Duration = Duration::from_millis(400);
-        let style_changed = match &self.review {
-            Some(r) => r.style != self.saved_prefs.style,
-            None => false,
+        let (style_changed, grouping_changed) = match &self.review {
+            Some(r) => (
+                r.style != self.saved_prefs.style,
+                r.grouping != self.saved_prefs.grouping,
+            ),
+            None => (false, false),
         };
         let model_changed = self.model_pref != self.saved_prefs.model;
-        if !style_changed && !model_changed {
+        let profile_changed = self.profile_ui.active_id != self.saved_prefs.active_profile;
+        if !style_changed && !grouping_changed && !model_changed && !profile_changed {
             self.prefs_save_at = None;
             return;
         }
@@ -598,7 +624,9 @@ impl App {
     }
 
     fn seek_preview(&mut self) {
-        let Some(r) = self.review.as_mut() else { return };
+        let Some(r) = self.review.as_mut() else {
+            return;
+        };
         r.preview.invalidate();
         let key = (r.selected, r.active_word);
         if r.frame_key == key {
@@ -720,7 +748,7 @@ impl App {
         self.done = None;
         self.error = None;
         self.warn = None;
-// Invalidate any in-flight frame extraction: its token no longer
+        // Invalidate any in-flight frame extraction: its token no longer
         // matches, so the result is dropped when it arrives.
         self.frame_token = self.frame_token.wrapping_add(1);
     }
@@ -791,8 +819,9 @@ impl App {
             Msg::IngestOk(ing) => {
                 self.pending = self.pending.saturating_sub(1);
                 let input = self.input.clone().unwrap_or_default();
-                let style = self.saved_prefs.style.clone();
-                self.review = Some(ReviewState::new(input, *ing, style));
+                let style = self.current_style();
+                let grouping = self.current_grouping();
+                self.review = Some(ReviewState::new(input, *ing, style, grouping));
                 self.ingest = None;
                 self.stage = Stage::Review;
                 self.seek_preview();
@@ -866,7 +895,11 @@ impl App {
                             st.label = "nothing to install".into();
                             st.progress = Some(1.0);
                         }
-                        InstallProgress::Begin { index, total, label } => {
+                        InstallProgress::Begin {
+                            index,
+                            total,
+                            label,
+                        } => {
                             st.label = format!("downloading {label} ({}/{total})", index + 1);
                             st.progress = Some(0.0);
                         }
@@ -886,7 +919,11 @@ impl App {
                                 .filter(|t| *t > 0)
                                 .map(|t| (got as f32 / t as f32).clamp(0.0, 1.0));
                         }
-                        InstallProgress::Installed { index, total, label } => {
+                        InstallProgress::Installed {
+                            index,
+                            total,
+                            label,
+                        } => {
                             st.label = format!("installed {label} ({}/{total})", index + 1);
                             st.progress = Some(1.0);
                         }
@@ -957,8 +994,9 @@ impl App {
                                 ),
                                 _ => format!("downloading TextLayr — {}", human_bytes(got)),
                             };
-                            *progress =
-                                total.filter(|t| *t > 0).map(|t| (got as f32 / t as f32).clamp(0.0, 1.0));
+                            *progress = total
+                                .filter(|t| *t > 0)
+                                .map(|t| (got as f32 / t as f32).clamp(0.0, 1.0));
                         }
                         update::InstallProgress::Extracting => {
                             *label = "extracting…".into();
@@ -1006,7 +1044,12 @@ impl App {
         // egui 0.36: dropped files are backend handles behind the `DroppedFile`
         // trait on `raw`; paths are absolute on native platforms.
         let (dropped, hovered) = ctx.input(|i| {
-            let paths: Vec<PathBuf> = i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect();
+            let paths: Vec<PathBuf> = i
+                .raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect();
             (paths, !i.raw.hovered_files.is_empty())
         });
         self.hovering = hovered && self.stage == Stage::Drop;
@@ -1239,9 +1282,7 @@ impl App {
                     ui.radio_value(&mut chosen, m, m.label());
                 }
                 ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new("You can change this later from Settings.").weak(),
-                );
+                ui.label(egui::RichText::new("You can change this later from Settings.").weak());
             });
         });
         if chosen != self.model_pref {
@@ -1603,9 +1644,7 @@ impl App {
                                         }
                                         None => {
                                             ui.label(
-                                                egui::RichText::new("TextLayr")
-                                                    .size(22.0)
-                                                    .strong(),
+                                                egui::RichText::new("TextLayr").size(22.0).strong(),
                                             );
                                         }
                                     }
@@ -1647,9 +1686,7 @@ impl App {
 
                                     // Links, centred by hand (no centered horizontal).
                                     ui.horizontal(|ui| {
-                                        ui.add_space(
-                                            (ui.available_width() - 188.0).max(0.0) * 0.5,
-                                        );
+                                        ui.add_space((ui.available_width() - 188.0).max(0.0) * 0.5);
                                         ui.hyperlink_to("GitHub", DEVELOPER_URL);
                                         ui.label("·");
                                         ui.hyperlink_to("Source", REPO_URL);
@@ -1668,9 +1705,7 @@ impl App {
                                 // deliberate section, not a footnote.
                                 theme::card(ui, |ui| {
                                     ui.vertical_centered(|ui| {
-                                        ui.label(
-                                            egui::RichText::new("Support TextLayr").strong(),
-                                        );
+                                        ui.label(egui::RichText::new("Support TextLayr").strong());
                                         ui.add_space(6.0);
 
                                         // A LayoutJob so both wrapped lines centre,
@@ -1815,8 +1850,7 @@ impl App {
                                                         set_pending = Some(None);
                                                     }
                                                 } else {
-                                                    if !active
-                                                        && theme::button(ui, "Use").clicked()
+                                                    if !active && theme::button(ui, "Use").clicked()
                                                     {
                                                         chosen = *m;
                                                     }
@@ -1839,9 +1873,7 @@ impl App {
                                         }
                                         None => {
                                             ui.label(
-                                                egui::RichText::new("Not installed")
-                                                    .weak()
-                                                    .small(),
+                                                egui::RichText::new("Not installed").weak().small(),
                                             );
                                             ui.add_space(6.0);
                                             ui.horizontal(|ui| {
@@ -1853,9 +1885,7 @@ impl App {
                                                             .color(theme::ACCENT)
                                                             .small(),
                                                     );
-                                                } else if theme::button(ui, "Download")
-                                                    .clicked()
-                                                {
+                                                } else if theme::button(ui, "Download").clicked() {
                                                     download = Some(*m);
                                                 }
                                             });
@@ -1907,8 +1937,7 @@ impl App {
                                         ui.horizontal(|ui| {
                                             ui.add(egui::Spinner::new().size(14.0));
                                             ui.label(
-                                                egui::RichText::new("Checking for updates…")
-                                                    .weak(),
+                                                egui::RichText::new("Checking for updates…").weak(),
                                             );
                                         });
                                     }
@@ -1955,10 +1984,8 @@ impl App {
                                     }
                                     UpdateUi::Ready => {
                                         ui.label(
-                                            egui::RichText::new(
-                                                "Restarting to finish the update…",
-                                            )
-                                            .weak(),
+                                            egui::RichText::new("Restarting to finish the update…")
+                                                .weak(),
                                         );
                                     }
                                     UpdateUi::OpenedDmg => {
@@ -1978,7 +2005,9 @@ impl App {
                                 ui.add_space(8.0);
                                 let busy = matches!(
                                     &update_state,
-                                    UpdateUi::Checking | UpdateUi::Installing { .. } | UpdateUi::Ready
+                                    UpdateUi::Checking
+                                        | UpdateUi::Installing { .. }
+                                        | UpdateUi::Ready
                                 );
                                 ui.horizontal(|ui| {
                                     if theme::button_enabled(ui, !busy, "Check for updates")
@@ -2019,10 +2048,26 @@ impl App {
                                 let config = config::config_path();
 
                                 let entries = [
-                                    ("ffmpeg", ffmpeg.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
-                                    ("ffprobe", ffprobe.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
-                                    ("model", model.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
-                                    ("fonts", fonts.as_ref().map(|(p, s)| (p.as_path(), Some(s.label())))),
+                                    (
+                                        "ffmpeg",
+                                        ffmpeg
+                                            .as_ref()
+                                            .map(|(p, s)| (p.as_path(), Some(s.label()))),
+                                    ),
+                                    (
+                                        "ffprobe",
+                                        ffprobe
+                                            .as_ref()
+                                            .map(|(p, s)| (p.as_path(), Some(s.label()))),
+                                    ),
+                                    (
+                                        "model",
+                                        model.as_ref().map(|(p, s)| (p.as_path(), Some(s.label()))),
+                                    ),
+                                    (
+                                        "fonts",
+                                        fonts.as_ref().map(|(p, s)| (p.as_path(), Some(s.label()))),
+                                    ),
                                     ("config", config.as_deref().map(|p| (p, None))),
                                 ];
                                 for (label, value) in entries {
@@ -2147,15 +2192,13 @@ impl App {
         let mut export = false;
         let mut rechunk_warn = false;
 
-        let merge = |a: Action, seek: &mut bool, export: &mut bool, rechunk: &mut bool| {
-            match a {
-                Action::None => {}
-                Action::Seek => *seek = true,
-                Action::Export => *export = true,
-                Action::Rechunked { discarded_edits } => {
-                    *seek = true;
-                    *rechunk = *rechunk || discarded_edits;
-                }
+        let merge = |a: Action, seek: &mut bool, export: &mut bool, rechunk: &mut bool| match a {
+            Action::None => {}
+            Action::Seek => *seek = true,
+            Action::Export => *export = true,
+            Action::Rechunked { discarded_edits } => {
+                *seek = true;
+                *rechunk = *rechunk || discarded_edits;
             }
         };
 
@@ -2184,7 +2227,7 @@ impl App {
                 .default_size(320.0)
                 .min_size(280.0)
                 .show(ui, |ui| {
-                    let a = review::style_panel(ui, r);
+                    let a = review::style_panel(ui, r, &self.profiles, &mut self.profile_ui);
                     merge(a, &mut seek, &mut export, &mut rechunk_warn);
                 });
         }
@@ -2196,9 +2239,7 @@ impl App {
         }
 
         if rechunk_warn {
-            self.warn = Some(
-                "words-per-popup changed — transcript edits were discarded".into(),
-            );
+            self.warn = Some("words-per-popup changed — transcript edits were discarded".into());
         }
         if export {
             self.start_export();
@@ -2352,8 +2393,7 @@ fn reveal_label() -> &'static str {
 /// the bundled UI fonts have no suitable circle character).
 fn status_dot(ui: &mut egui::Ui, ok: bool) {
     let diameter = 9.0;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(diameter, diameter), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(diameter, diameter), egui::Sense::hover());
     let color = if ok {
         theme::SUCCESS
     } else {
@@ -2668,9 +2708,15 @@ mod tests {
         });
         out.textures_delta.clear();
         let (a, b, cx) = seen.expect("buttons drawn");
-        assert!(a.width() != b.width(), "labels differ, so widths should too");
+        assert!(
+            a.width() != b.width(),
+            "labels differ, so widths should too"
+        );
         let group = (a.left() + b.right()) / 2.0;
-        assert!((group - cx).abs() < 1.0, "group centred at {group}, want {cx}");
+        assert!(
+            (group - cx).abs() < 1.0,
+            "group centred at {group}, want {cx}"
+        );
     }
 
     /// Diagnostics entries render for both a resolved and a missing item
@@ -2685,9 +2731,6 @@ mod tests {
             let absent: Option<(&Path, Option<&str>)> = None;
             assert!(diagnostic_entry(ui, "model", absent).is_none());
         });
-        assert_eq!(
-            reveal_label().contains("Finder"),
-            cfg!(target_os = "macos")
-        );
+        assert_eq!(reveal_label().contains("Finder"), cfg!(target_os = "macos"));
     }
 }
