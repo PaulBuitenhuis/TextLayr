@@ -134,7 +134,15 @@ detach_retry "$mountpoint"
 
 echo "==> compressing"
 rm -f "$out"
-hdiutil convert "$rw" -quiet -format UDZO -imagekey zlib-level=9 -o "$out"
+# `hdiutil convert` occasionally fails transiently on CI right after the image
+# is detached. Retry once, and drop -quiet on the retry so a real failure leaves
+# a usable error in the release log.
+if ! hdiutil convert "$rw" -quiet -format UDZO -imagekey zlib-level=9 -o "$out"; then
+    echo "    warning: image compression failed; retrying" >&2
+    sleep 2
+    rm -f "$out"
+    hdiutil convert "$rw" -format UDZO -imagekey zlib-level=9 -o "$out"
+fi
 
 # Verify the compressed image actually carries the layout.
 verify_mp="$(hdiutil attach "$out" -nobrowse -readonly | grep -o '/Volumes/.*' | head -1)"
