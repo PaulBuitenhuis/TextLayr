@@ -943,6 +943,13 @@ pub fn save_prefs_to(path: &Path, prefs: &Prefs) -> Result<()> {
     let json = serde_json::to_vec_pretty(&cfg).context("serialize config")?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, &json).with_context(|| format!("write {}", tmp.display()))?;
+    // Keep the last good v3 document beside the live file. An older build
+    // (which only understands v2) can otherwise overwrite config.json with its
+    // flat default shape; the backup survives that and is recoverable.
+    if path.is_file() {
+        let backup = path.with_file_name("config-v3.bak");
+        let _ = std::fs::copy(path, backup);
+    }
     std::fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
     Ok(())
 }
@@ -1042,6 +1049,23 @@ mod tests {
         assert_eq!(loaded.model, Model::SmallEn);
         assert!(!loaded.auto_check_updates);
         assert_eq!(loaded.last_update_check, Some(42));
+    }
+
+    #[test]
+    fn saving_keeps_the_previous_document_as_a_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let mut prefs = Prefs::default();
+        prefs.style.font.family = "Inter".to_string();
+        save_prefs_to(&path, &prefs).unwrap();
+
+        prefs.style.font.family = "Nunito".to_string();
+        save_prefs_to(&path, &prefs).unwrap();
+
+        let current = load_prefs_from(&path);
+        assert_eq!(current.style.font.family, "Nunito");
+        let backup = load_prefs_from(&dir.path().join("config-v3.bak"));
+        assert_eq!(backup.style.font.family, "Inter");
     }
 
     #[test]

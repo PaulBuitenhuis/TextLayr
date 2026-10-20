@@ -31,6 +31,9 @@ pub struct ProfileUi {
     status: Option<(String, Instant)>,
     thumbs: HashMap<String, egui::TextureHandle>,
     faces: HashMap<(String, u32), Faces>,
+    /// Cached user+built-in list for the compact strip.
+    profiles: Vec<Profile>,
+    profiles_loaded: bool,
 }
 
 #[derive(Clone)]
@@ -80,6 +83,8 @@ impl ProfileUi {
             status: None,
             thumbs: HashMap::new(),
             faces: HashMap::new(),
+            profiles: Vec::new(),
+            profiles_loaded: false,
         };
         if let Some(id) = active_id {
             if let Some(p) = store.find(&id) {
@@ -92,6 +97,17 @@ impl ProfileUi {
             }
         }
         ui
+    }
+
+    fn ensure_profiles(&mut self, store: &ProfileStore) {
+        if !self.profiles_loaded {
+            self.profiles = store.list();
+            self.profiles_loaded = true;
+        }
+    }
+
+    fn invalidate_profiles(&mut self) {
+        self.profiles_loaded = false;
     }
 
     /// Recompute the dirty state and drop a stale active pointer.
@@ -131,48 +147,66 @@ impl ProfileUi {
         store: &ProfileStore,
     ) -> Action {
         self.sync(r, store);
+        self.ensure_profiles(store);
         let mut action = Action::None;
 
         theme::section(ui, "Profile");
-        ui.add_space(6.0);
+        ui.add_space(4.0);
 
         let active_id = self.active_id.clone();
-        let selected_name = self
-            .snapshot
-            .as_ref()
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| "Custom".to_string());
-
-        ui.horizontal(|ui| {
-            let mut picked: Option<Profile> = None;
-            egui::ComboBox::from_id_salt("profile_pick")
-                .selected_text(selected_name)
-                .width(ui.available_width())
-                .show_ui(ui, |ui| {
-                    let profiles = store.list();
-                    let first_builtin = profiles
-                        .iter()
-                        .position(|p| p.is_builtin())
-                        .unwrap_or(usize::MAX);
-                    for (i, p) in profiles.into_iter().enumerate() {
-                        if i == first_builtin && i > 0 {
-                            ui.separator();
+        // Show the recent profiles, but never hide the active one.
+        let mut strip: Vec<Profile> = Vec::new();
+        if let Some(active) = &self.snapshot {
+            strip.push(active.clone());
+        }
+        for p in self.profiles.iter() {
+            if strip.iter().all(|a| a.id != p.id) {
+                strip.push(p.clone());
+            }
+            if strip.len() >= 12 {
+                break;
+            }
+        }
+        let mut picked: Option<Profile> = None;
+        egui::ScrollArea::horizontal()
+            .id_salt("profile_strip")
+            .max_height(62.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for p in &strip {
+                        let selected = active_id.as_deref() == Some(p.id.as_str());
+                        let card = ui.allocate_ui(egui::vec2(104.0, 54.0), |ui| {
+                            ui.vertical_centered(|ui| {
+                                if let Some(tex) = self.thumbnail(ui.ctx(), p) {
+                                    ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                                        tex.id(),
+                                        egui::vec2(96.0, 30.0),
+                                    )));
+                                } else {
+                                    ui.allocate_space(egui::vec2(96.0, 30.0));
+                                }
+                                ui.add(egui::Label::new(RichText::new(&p.name).small()).truncate());
+                            });
+                        });
+                        let resp = card.response.interact(egui::Sense::click());
+                        if selected {
+                            ui.painter().rect_stroke(
+                                card.response.rect.expand(2.0),
+                                egui::CornerRadius::same(theme::ROUND),
+                                egui::Stroke::new(1.5, theme::ACCENT),
+                                egui::StrokeKind::Inside,
+                            );
                         }
-                        let active = active_id.as_deref() == Some(p.id.as_str());
-                        let label = if p.is_builtin() {
-                            format!("{}  ·  built-in", p.name)
-                        } else {
-                            p.name.clone()
-                        };
-                        if ui.selectable_label(active, label).clicked() {
-                            picked = Some(p);
+                        if resp.clicked() {
+                            picked = Some(p.clone());
                         }
                     }
                 });
-            if let Some(p) = picked {
-                action = self.request_apply(p, r);
-            }
-        });
+            });
+        if let Some(p) = picked {
+            action = self.request_apply(p, r);
+        }
 
         let (state, accent) = match &self.snapshot {
             Some(p) if self.dirty => (format!("{} · modified", p.name), true),
@@ -190,7 +224,7 @@ impl ProfileUi {
 
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            if theme::button(ui, "Manage…").clicked() {
+            if theme::button(ui, "All profiles…").clicked() {
                 self.gallery_open = true;
             }
             if theme::button(ui, "Save as…").clicked() {
@@ -493,6 +527,7 @@ impl ProfileUi {
                 // Add the copy without hijacking the active profile; the user
                 // can Apply it when they are ready.
                 self.thumbs.clear();
+                self.invalidate_profiles();
                 self.status = Some((format!("Created “{}”", copy.name), Instant::now()));
                 action
             }
@@ -573,6 +608,7 @@ impl ProfileUi {
                 self.thumbs.clear();
                 self.status = Some((format!("Saved “{}”", p.name), Instant::now()));
                 self.dialog = None;
+                self.invalidate_profiles();
             }
             Err(e) => {
                 self.dialog = Some(Dialog::SaveAs {
@@ -597,6 +633,7 @@ impl ProfileUi {
                 self.thumbs.clear();
                 self.status = Some((format!("Updated “{}”", p.name), Instant::now()));
                 self.dialog = None;
+                self.invalidate_profiles();
             }
             Err(e) => {
                 self.status = Some((format!("Could not update: {e:#}"), Instant::now()));
@@ -614,6 +651,7 @@ impl ProfileUi {
                 self.thumbs.clear();
                 self.status = Some((format!("Renamed to “{}”", p.name), Instant::now()));
                 self.dialog = None;
+                self.invalidate_profiles();
             }
             Err(e) => {
                 self.dialog = Some(Dialog::Rename {
@@ -637,6 +675,7 @@ impl ProfileUi {
                 }
                 self.thumbs.retain(|k, _| !k.starts_with(&format!("{id}:")));
                 self.status = Some(("Profile removed".to_string(), Instant::now()));
+                self.invalidate_profiles();
             }
             Err(e) => {
                 self.status = Some((format!("Could not remove: {e:#}"), Instant::now()));

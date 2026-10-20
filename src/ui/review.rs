@@ -80,8 +80,10 @@ pub struct ReviewState {
     pub active_word: usize,
     pub style: Style,
     pub grouping: Grouping,
-    /// Selected style-panel tab (view state, not persisted).
-    pub style_tab: usize,
+    /// Whether the full style editor sheet is open.
+    pub customize_open: bool,
+    /// Selected tab in the customize sheet.
+    pub customize_tab: usize,
     /// Loop the popup transition in the preview.
     pub motion_playing: bool,
     pub edited_any: bool,
@@ -108,7 +110,8 @@ impl ReviewState {
             active_word: 0,
             style,
             grouping,
-            style_tab: 0,
+            customize_open: false,
+            customize_tab: 0,
             motion_playing: false,
             edited_any: false,
             preview: Preview::default(),
@@ -317,23 +320,14 @@ pub fn style_panel(
 ) -> Action {
     let mut action = Action::None;
     let before = r.style.clone();
-    const TABS: [&str; 5] = ["Text", "Box", "Active", "Layout", "Motion"];
 
-    // The profile picker stays visible while the style controls scroll.
+    // The profile strip stays visible while the essentials scroll.
     egui::Panel::top("style_profile").show(ui, |ui| {
         action = join(action, profile_ui.section(ui, r, profiles));
     });
 
-    egui::Panel::top("style_tabs").show(ui, |ui| {
-        let mut tab = r.style_tab.min(TABS.len() - 1);
-        if theme::segmented(ui, &mut tab, &TABS) {
-            r.style_tab = tab;
-        }
-        ui.add_space(4.0);
-    });
-
     // Export is pinned to the bottom of the panel (it sizes to its content);
-    // the controls scroll above it.
+    // the essentials sit above it.
     egui::Panel::bottom("style_export").show(ui, |ui| {
         ui.add_space(6.0);
         let exportable = r.chunks.iter().any(|c| !c.text.trim().is_empty());
@@ -357,27 +351,23 @@ pub fn style_panel(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.add_space(8.0);
-            match r.style_tab {
-                0 => text_tab(ui, &mut r.style),
-                1 => box_tab(ui, &mut r.style),
-                2 => highlight_tab(ui, &mut r.style),
-                3 => action = join(action, layout_tab(ui, r)),
-                _ => motion_tab(ui, r),
+            essentials(ui, r);
+            ui.add_space(14.0);
+            if theme::wide_button(ui, true, "Customize…").clicked() {
+                r.customize_open = true;
             }
-
-            ui.add_space(16.0);
-            if theme::wide_button(ui, r.style != Style::default(), "Reset style to defaults")
-                .clicked()
-            {
-                r.style = Style::default();
-                r.preview.invalidate();
-                action = Action::Seek;
-            }
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(
+                    "Outlines, box detail, wrapping and motion timing live in Customize.",
+                )
+                .small()
+                .weak(),
+            );
             ui.add_space(8.0);
         });
 
-    // Gallery and management dialogs are window-level; draw them last so they
-    // sit above the panel and the export controls.
+    action = join(action, customize_window(ui.ctx(), r));
     action = join(action, profile_ui.windows(ui.ctx(), r, profiles));
 
     r.style.sanitize();
@@ -385,6 +375,281 @@ pub fn style_panel(
     if r.style != before {
         r.preview.invalidate();
     }
+    action
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BackgroundChoice {
+    None,
+    Box,
+    Pill,
+}
+
+impl BackgroundChoice {
+    fn label(self) -> &'static str {
+        match self {
+            BackgroundChoice::None => "None",
+            BackgroundChoice::Box => "Box",
+            BackgroundChoice::Pill => "Pill",
+        }
+    }
+}
+
+fn background_choice(s: &Style) -> BackgroundChoice {
+    if s.highlight.pill.enabled {
+        BackgroundChoice::Pill
+    } else if s.box_style.opacity > 0.01 && s.box_style.color.a > 0 {
+        BackgroundChoice::Box
+    } else {
+        BackgroundChoice::None
+    }
+}
+
+fn set_background(s: &mut Style, choice: BackgroundChoice) {
+    match choice {
+        BackgroundChoice::None => {
+            s.box_style.opacity = 0.0;
+            s.box_style.shadow = false;
+            s.highlight.pill.enabled = false;
+        }
+        BackgroundChoice::Box => {
+            s.highlight.pill.enabled = false;
+            if s.box_style.opacity <= 0.01 {
+                s.box_style.opacity = 0.72;
+            }
+            if s.box_style.color.a == 0 {
+                s.box_style.color.a = 255;
+            }
+            s.box_style.shadow = true;
+        }
+        BackgroundChoice::Pill => {
+            s.box_style.opacity = 0.0;
+            s.box_style.shadow = false;
+            s.highlight.pill.enabled = true;
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MotionPreset {
+    None,
+    Pop,
+    SlideUp,
+    Fade,
+    Custom,
+}
+
+impl MotionPreset {
+    fn label(self) -> &'static str {
+        match self {
+            MotionPreset::None => "None",
+            MotionPreset::Pop => "Pop",
+            MotionPreset::SlideUp => "Slide up",
+            MotionPreset::Fade => "Fade",
+            MotionPreset::Custom => "Custom",
+        }
+    }
+}
+
+fn motion_preset(s: &Style) -> MotionPreset {
+    let m = &s.motion;
+    if m.popup == PopupEffect::None && m.exit == PopupEffect::None {
+        MotionPreset::None
+    } else if m.popup == PopupEffect::Pop && m.exit == PopupEffect::Pop {
+        MotionPreset::Pop
+    } else if m.popup == PopupEffect::SlideUp && m.exit == PopupEffect::SlideDown {
+        MotionPreset::SlideUp
+    } else if m.popup == PopupEffect::Fade && m.exit == PopupEffect::Fade {
+        MotionPreset::Fade
+    } else {
+        MotionPreset::Custom
+    }
+}
+
+fn apply_motion_preset(s: &mut Style, preset: MotionPreset) {
+    let m = &mut s.motion;
+    match preset {
+        MotionPreset::None => {
+            m.popup = PopupEffect::None;
+            m.exit = PopupEffect::None;
+        }
+        MotionPreset::Pop => {
+            m.popup = PopupEffect::Pop;
+            m.exit = PopupEffect::Pop;
+            m.duration_ms = 260;
+            m.exit_duration_ms = 180;
+            m.easing = Easing::EaseOut;
+            m.intensity = 0.20;
+        }
+        MotionPreset::SlideUp => {
+            m.popup = PopupEffect::SlideUp;
+            m.exit = PopupEffect::SlideDown;
+            m.duration_ms = 280;
+            m.exit_duration_ms = 200;
+            m.easing = Easing::EaseOut;
+            m.intensity = 0.60;
+        }
+        MotionPreset::Fade => {
+            m.popup = PopupEffect::Fade;
+            m.exit = PopupEffect::Fade;
+            m.duration_ms = 220;
+            m.exit_duration_ms = 160;
+            m.easing = Easing::EaseOut;
+            m.intensity = 0.0;
+        }
+        MotionPreset::Custom => {}
+    }
+}
+
+fn essentials(ui: &mut egui::Ui, r: &mut ReviewState) {
+    let s = &mut r.style;
+    theme::section(ui, "Essentials");
+    ui.add_space(4.0);
+    egui::Grid::new("essentials_grid")
+        .num_columns(2)
+        .spacing([12.0, 10.0])
+        .min_col_width(86.0)
+        .show(ui, |ui| {
+            ui.label("Font");
+            egui::ComboBox::from_id_salt("essentials_font")
+                .selected_text(s.font.family.clone())
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for fam in FONT_FAMILIES {
+                        ui.selectable_value(&mut s.font.family, fam.to_string(), fam);
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Size");
+            ui.add(
+                egui::Slider::new(&mut s.font.size_pct, 1.0..=20.0)
+                    .fixed_decimals(1)
+                    .suffix("%"),
+            );
+            ui.end_row();
+
+            ui.label("Highlight");
+            color_swatch(ui, &mut s.text.highlight);
+            ui.end_row();
+
+            ui.label("Background");
+            let mut bg = background_choice(s);
+            egui::ComboBox::from_id_salt("essentials_background")
+                .selected_text(bg.label())
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for choice in [
+                        BackgroundChoice::None,
+                        BackgroundChoice::Box,
+                        BackgroundChoice::Pill,
+                    ] {
+                        if ui.selectable_label(bg == choice, choice.label()).clicked() {
+                            bg = choice;
+                            set_background(s, choice);
+                        }
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Position");
+            ui.add(
+                egui::Slider::new(&mut s.layout.position_pct, 5.0..=95.0)
+                    .fixed_decimals(0)
+                    .suffix("%"),
+            );
+            ui.end_row();
+
+            ui.label("Motion");
+            let current = motion_preset(s);
+            egui::ComboBox::from_id_salt("essentials_motion")
+                .selected_text(current.label())
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for preset in [
+                        MotionPreset::None,
+                        MotionPreset::Pop,
+                        MotionPreset::SlideUp,
+                        MotionPreset::Fade,
+                    ] {
+                        if ui
+                            .selectable_label(current == preset, preset.label())
+                            .clicked()
+                        {
+                            apply_motion_preset(s, preset);
+                        }
+                    }
+                });
+            ui.end_row();
+        });
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new("Start from a profile, then tune these. Everything else is under Customize.")
+            .small()
+            .weak(),
+    );
+}
+
+/// The full editor sheet. It is a window rather than a panel so the review
+/// screen keeps its short essentials list.
+fn customize_window(ctx: &egui::Context, r: &mut ReviewState) -> Action {
+    if !r.customize_open {
+        return Action::None;
+    }
+    let mut open = r.customize_open;
+    let mut action = Action::None;
+    egui::Window::new("Customize style")
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 16.0))
+        .default_width(720.0)
+        .default_height(680.0)
+        .min_width(600.0)
+        .resizable(true)
+        .show(ctx, |ui| {
+            let mut tab = r.customize_tab.min(2);
+            if theme::segmented(ui, &mut tab, &["Look", "Layout", "Motion"]) {
+                r.customize_tab = tab;
+            }
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    match r.customize_tab {
+                        0 => {
+                            let style = &mut r.style;
+                            ui.columns(2, |cols| {
+                                theme::section(&mut cols[0], "Text");
+                                text_basics(&mut cols[0], style);
+                                cols[0].add_space(16.0);
+                                theme::section(&mut cols[0], "Active word");
+                                highlight_tab(&mut cols[0], style);
+
+                                theme::section(&mut cols[1], "Box");
+                                box_tab(&mut cols[1], style);
+                                cols[1].add_space(16.0);
+                                theme::section(&mut cols[1], "Effects");
+                                effects_tab(&mut cols[1], style);
+                            });
+                        }
+                        1 => action = join(action, layout_tab(ui, r)),
+                        _ => motion_tab(ui, r),
+                    }
+                    ui.add_space(16.0);
+                    if theme::wide_button(
+                        ui,
+                        r.style != Style::default(),
+                        "Reset style to defaults",
+                    )
+                    .clicked()
+                    {
+                        r.style = Style::default();
+                        r.preview.invalidate();
+                        action = Action::Seek;
+                    }
+                    ui.add_space(8.0);
+                });
+        });
+    r.customize_open = open;
     action
 }
 
@@ -400,7 +665,7 @@ fn join(a: Action, b: Action) -> Action {
     }
 }
 
-fn text_tab(ui: &mut egui::Ui, s: &mut Style) {
+fn text_basics(ui: &mut egui::Ui, s: &mut Style) {
     egui::Grid::new("text_grid")
         .num_columns(2)
         .spacing([12.0, 10.0])
@@ -449,8 +714,9 @@ fn text_tab(ui: &mut egui::Ui, s: &mut Style) {
             ui.add(egui::Slider::new(&mut s.text.opacity, 0.0..=1.0).fixed_decimals(2));
             ui.end_row();
         });
+}
 
-    ui.add_space(14.0);
+fn effects_tab(ui: &mut egui::Ui, s: &mut Style) {
     theme::section(ui, "Outline");
     ui.add_space(4.0);
     ui.checkbox(&mut s.text.outline.enabled, "Enable outline");

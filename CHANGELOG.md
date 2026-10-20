@@ -31,10 +31,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **More box control.** Padding, corner radius, a border and the box shadow's
   colour, opacity, offset and blur are all adjustable. All geometry stays
   relative to the font size, so profiles scale across resolutions.
-- **A tabbed style panel.** The right-hand panel is now split into **Text**,
-  **Box**, **Highlight** and **Layout** tabs, with the profile picker and tab
-  bar pinned. The Layout tab keeps the existing words-per-popup control and its
-  re-chunk warning.
+- **A compact style inspector and Customize sheet.** The right-hand panel now
+  shows a visual profile strip and six essentials — font, size, highlight,
+  background, position and a motion preset. The full control set moved into a
+  **Customize** sheet with Look/Layout/Motion tabs. This replaces the five-tab
+  sidebar.
 - **Richer built-in profiles.** Bold Pop now demonstrates uppercase, a bold
   outline and a lime active word; Highlight Pill uses the new active-word
   plate; Minimal uses a thin outline; Word by Word uses the active-word scale.
@@ -83,6 +84,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The CLI works through a symlink.** `current_exe()` is canonicalized before
   resource lookup, so `textlayr` on `PATH` still finds the fonts, bundled model
   and bundled ffmpeg. Previously a symlink produced "bundled fonts not found".
+- **Preferences are backed up.** Every config save keeps the previous v3
+  document as `config-v3.bak` beside `config.json`, so an older build that only
+  understands v2 cannot silently erase the working style.
 - **Settings → Diagnostics can reclaim the download space.** It shows how much
   ffmpeg/models use and can remove them (with confirmation) without touching
   preferences or exported videos.

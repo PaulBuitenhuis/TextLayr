@@ -183,32 +183,44 @@ Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — s
 1. **Drop a video** (or pass a path on the command line).
 2. Wait while it extracts audio and transcribes. Progress is shown per phase.
 3. **Review** the transcript: click a chunk to jump the preview to it, edit any
-   text, and adjust the style panel on the right.
+   text, and adjust the essentials on the right — or open **Customize…** for the
+   full style editor.
 4. **Export** (button or **⌘E**). The result is written next to the input as
    `<name>_textlayr.mp4`, with a **Reveal in Finder** shortcut when it's done.
 
 A transcript is cached per input file (and per model), so re-rendering or
 restyling after the first pass is instant.
 
+### Style controls
+
+The right-hand panel stays deliberately short: a **visual profile strip** plus
+six essentials — **Font · Size · Highlight · Background · Position · Motion**.
+**Customize…** opens the full editor in a sheet with **Look / Layout / Motion**
+tabs: text effects, box detail, wrapping, reserved lines, anchoring and exact
+motion timing.
+
 ### Style profiles
 
-The **Profile** row at the top of the style panel is the working style. Pick a
-built-in or saved profile from the menu, or use **Manage…** for the profile
-browser with live thumbnails.
+The **thumbnail strip** at the top of the style panel is the working style. Pick
+a built-in or saved profile from the strip, or use **All profiles…** for the
+browser with the full list and management actions.
 
 - **Save as…** snapshots the current look and caption mode under a name. It
   appears immediately in the profile list.
 - **Update** replaces a saved profile with the current settings after a
   confirmation. It is only available for your own profiles.
 - **Revert** throws away changes made since the profile was applied.
-- **Manage… → Rename / Duplicate / Delete** maintain the list. Built-ins are
-  read-only; duplicate one to customise it.
+- **All profiles… → Rename / Duplicate / Delete** maintain the list. Built-ins
+  are read-only; duplicate one to customise it.
 - A profile can carry a caption mode (words per popup). Applying one that
   differs is offered as **look only** or **look + caption mode**; the latter
   re-chunks the transcript, so it asks first when you have edits.
+- If a built-in changes in an app update, an active copy shows **modified**;
+  **Revert** applies the new version.
 - Profiles live as one JSON file each in
   `~/Library/Application Support/textlayr/profiles/`, so they can be backed up
-  or copied between machines.
+  or copied between machines. Every config save also keeps the previous document
+  as `config-v3.bak` next to `config.json`.
 
 ### Updates
 
