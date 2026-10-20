@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use image::imageops::FilterType;
 
 use crate::config::Style;
-use crate::render::{self, blend_straight, blend_transformed, Faces};
+use crate::render::{self, blend_straight, blend_transformed, Faces, MotionPhase};
 use crate::{export, probe};
 
 /// Preview texture width in pixels; the height follows the video's aspect.
@@ -86,7 +86,7 @@ pub struct Preview {
     pub caption_error: Option<String>,
     faces: Option<FaceCache>,
     /// Motion phase the current composite was built for.
-    last_phase: f32,
+    last_motion: MotionPhase,
 }
 
 impl Default for Preview {
@@ -98,7 +98,7 @@ impl Default for Preview {
             composite_built: false,
             caption_error: None,
             faces: None,
-            last_phase: 1.0,
+            last_motion: MotionPhase::Settled,
         }
     }
 }
@@ -155,22 +155,22 @@ impl Preview {
         style: &Style,
         words: &[String],
         active: usize,
-        phase: f32,
+        motion: MotionPhase,
     ) {
-        if self.composite_built && (self.last_phase - phase).abs() < 1e-4 {
+        if self.composite_built && self.last_motion == motion {
             return;
         }
         let Some(base) = self.base.clone() else {
             return;
         };
-        let data = self.build_composite(style, words, active, phase);
+        let data = self.build_composite(style, words, active, motion);
         let image = egui::ColorImage::from_rgba_unmultiplied(
             [base.width as usize, base.height as usize],
             &data,
         );
         self.texture = Some(ctx.load_texture("preview_frame", image, egui::TextureOptions::LINEAR));
         self.composite_built = true;
-        self.last_phase = phase;
+        self.last_motion = motion;
     }
 
     /// Composite the caption onto the (already downscaled) preview frame and
@@ -181,7 +181,7 @@ impl Preview {
         style: &Style,
         words: &[String],
         active: usize,
-        phase: f32,
+        motion: MotionPhase,
     ) -> Vec<u8> {
         let Some(base) = self.base.clone() else {
             return Vec::new();
@@ -189,7 +189,7 @@ impl Preview {
         let (src_w, src_h) = self.src_size;
         let mut data = base.rgba.clone();
 
-        if !words.is_empty() {
+        if !words.is_empty() && !motion.is_hidden() {
             match self.render_caption(style, words, active, src_w, src_h) {
                 Ok(cap) => {
                     // Scale the caption by the *same* factor the frame was
@@ -210,11 +210,8 @@ impl Preview {
                     )
                     .round() as i32;
 
-                    let transform = render::popup_transform(
-                        &style.motion,
-                        phase,
-                        render::font_px(style, src_h) * factor,
-                    );
+                    let transform =
+                        motion.transform(&style.motion, render::font_px(style, src_h) * factor);
                     if transform.is_identity() {
                         blend_straight(&mut data, base.width, base.height, &scaled, sw, sh, x, y);
                     } else {
@@ -353,6 +350,7 @@ mod tests {
             duration_ms: 180,
             easing: Easing::EaseOut,
             intensity: 0.25,
+            ..MotionStyle::default()
         };
         let words: Vec<String> = ["Alright,", "I", "wanted", "to"]
             .iter()
@@ -360,8 +358,8 @@ mod tests {
             .collect();
         let mut preview = Preview::default();
         preview.set_frame(flat_frame(1080, 1920));
-        let start = preview.build_composite(&style, &words, 0, 0.0);
-        let settled = preview.build_composite(&style, &words, 0, 1.0);
+        let start = preview.build_composite(&style, &words, 0, MotionPhase::Entrance(0.0));
+        let settled = preview.build_composite(&style, &words, 0, MotionPhase::Settled);
         assert_ne!(start, settled);
     }
 
@@ -400,7 +398,7 @@ mod tests {
         let mut preview = Preview::default();
         preview.set_frame(flat_frame(src_w, src_h));
         let (pw, ph) = preview.image_size().unwrap();
-        let data = preview.build_composite(&style, &words, 0, 1.0);
+        let data = preview.build_composite(&style, &words, 0, MotionPhase::Settled);
         let (preview_w, preview_h) = caption_frac(&data, pw, ph);
 
         eprintln!("export : frac_w={export_w:.3} frac_h={export_h:.3} (frame {src_w}x{src_h})");

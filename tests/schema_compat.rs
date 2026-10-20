@@ -108,7 +108,9 @@ fn an_old_profile_gains_new_defaults_without_losing_its_look() {
     assert!(!p.style.highlight.pill.enabled);
     assert!(!p.style.highlight.underline.enabled);
     assert_eq!(p.style.motion.popup, PopupEffect::None);
-    assert_eq!(p.style.motion.duration_ms, 180);
+    assert_eq!(p.style.motion.exit, PopupEffect::None);
+    assert_eq!(p.style.motion.duration_ms, 260);
+    assert_eq!(p.style.motion.exit_duration_ms, 160);
     assert_eq!(p.style.motion.easing, Easing::EaseOut);
 }
 
@@ -122,8 +124,10 @@ fn unknown_values_degrade_to_defaults_instead_of_rejecting_the_profile() {
     assert_eq!(p.style.layout.fit, Fit::Shrink);
     assert_eq!(p.style.layout.max_lines, 4);
     assert_eq!(p.style.motion.popup, PopupEffect::None);
+    assert_eq!(p.style.motion.exit, PopupEffect::None);
     assert_eq!(p.style.motion.easing, Easing::EaseOut);
     assert_eq!(p.style.motion.duration_ms, 1200);
+    assert_eq!(p.style.motion.exit_duration_ms, 160);
     assert_eq!(p.grouping.unwrap().words_per_popup, 8);
     assert_eq!(p.schema, 1);
 }

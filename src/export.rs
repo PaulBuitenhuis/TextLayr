@@ -21,9 +21,7 @@
 
 use crate::config::{Anchor, MotionStyle, PopupEffect};
 use crate::probe::{parse_rate, Fftools, VideoInfo};
-use crate::render::{
-    blend_straight, blend_transformed, popup_transform, CaptionState, PopupTransform,
-};
+use crate::render::{blend_straight, blend_transformed, CaptionState, MotionPhase};
 use anyhow::{bail, Context, Result};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -674,14 +672,29 @@ pub fn export_pipe(
                 let x = ((w as f32 - *sw as f32) / 2.0).round() as i32;
                 let y = caption_y(h, position_pct, st.anchor, st.box_top, st.box_h).round() as i32;
 
-                // Popup motion runs from the chunk's first appearance, so it
-                // continues across the per-word states of the same popup.
-                let mut transform = PopupTransform::IDENTITY;
-                if motion.popup != PopupEffect::None && motion.duration_ms > 0 {
-                    let dur = motion.duration_ms as f64 / 1000.0;
-                    let phase = ((t - st.popup_start_secs) / dur).clamp(0.0, 1.0) as f32;
-                    transform = popup_transform(motion, phase, st.font_px);
-                }
+                // Popup motion runs across the per-word states of the same
+                // popup. Exit motion wins near the popup's end, so short
+                // popups still leave visibly.
+                let in_dur = motion.duration_ms as f64 / 1000.0;
+                let out_dur = motion.exit_duration_ms as f64 / 1000.0;
+                let phase = if motion.exit != PopupEffect::None
+                    && out_dur > 0.0
+                    && t >= st.popup_end_secs - out_dur
+                {
+                    MotionPhase::Exit(
+                        ((t - (st.popup_end_secs - out_dur)) / out_dur).clamp(0.0, 1.0) as f32,
+                    )
+                } else if motion.popup != PopupEffect::None
+                    && in_dur > 0.0
+                    && t < st.popup_start_secs + in_dur
+                {
+                    MotionPhase::Entrance(
+                        ((t - st.popup_start_secs) / in_dur).clamp(0.0, 1.0) as f32
+                    )
+                } else {
+                    MotionPhase::Settled
+                };
+                let transform = phase.transform(motion, st.font_px);
                 if transform.is_identity() {
                     blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
                 } else {

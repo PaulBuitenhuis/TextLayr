@@ -51,9 +51,11 @@
     },
     "motion": {
       "popup": "slide_up",
-      "duration_ms": 200,
+      "exit": "slide_down",
+      "duration_ms": 260,
+      "exit_duration_ms": 180,
       "easing": "ease_out",
-      "intensity": 0.35
+      "intensity": 0.8
     }
   },
   "grouping": {

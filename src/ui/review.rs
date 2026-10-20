@@ -10,6 +10,7 @@ use crate::config::{
 };
 use crate::pipeline::Ingest;
 use crate::probe::{Fftools, VideoInfo};
+use crate::render::MotionPhase;
 use crate::transcribe::Word;
 
 use super::preview::Preview;
@@ -188,19 +189,30 @@ pub fn preview_panel(ui: &mut egui::Ui, r: &mut ReviewState) -> Action {
     let mut action = Action::None;
     let words = r.preview_words();
     let active = r.active_word;
-    let animating = r.motion_playing
-        && r.style.motion.popup != PopupEffect::None
-        && r.style.motion.duration_ms > 0;
-    let phase = if animating {
-        let dur = r.style.motion.duration_ms as f64 / 1000.0;
-        let cycle = dur + 0.6;
-        let t = ui.input(|i| i.time);
-        ((t % cycle) / dur).clamp(0.0, 1.0) as f32
+    let has_in = r.style.motion.popup != PopupEffect::None && r.style.motion.duration_ms > 0;
+    let has_out = r.style.motion.exit != PopupEffect::None && r.style.motion.exit_duration_ms > 0;
+    let animating = r.motion_playing && (has_in || has_out);
+    let motion = if animating {
+        let in_dur = r.style.motion.duration_ms as f64 / 1000.0;
+        let out_dur = r.style.motion.exit_duration_ms as f64 / 1000.0;
+        let hold = 0.7;
+        let gap = 0.35;
+        let cycle = in_dur + hold + out_dur + gap;
+        let t = ui.input(|i| i.time) % cycle;
+        if has_in && t < in_dur {
+            MotionPhase::Entrance((t / in_dur) as f32)
+        } else if t < in_dur + hold {
+            MotionPhase::Settled
+        } else if has_out && t < in_dur + hold + out_dur {
+            MotionPhase::Exit(((t - in_dur - hold) / out_dur) as f32)
+        } else {
+            MotionPhase::Hidden
+        }
     } else {
-        1.0
+        MotionPhase::Settled
     };
     r.preview
-        .ensure(&ui.ctx().clone(), &r.style, &words, active, phase);
+        .ensure(&ui.ctx().clone(), &r.style, &words, active, motion);
     if animating {
         ui.ctx().request_repaint();
     }
@@ -957,19 +969,23 @@ fn easing_label(easing: Easing) -> &'static str {
 }
 
 fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
-    let enabled = r.style.motion.popup != PopupEffect::None;
-    let mut play = r.motion_playing && enabled;
+    let any_effect =
+        r.style.motion.popup != PopupEffect::None || r.style.motion.exit != PopupEffect::None;
+    let can_motion = (r.style.motion.popup != PopupEffect::None && r.style.motion.duration_ms > 0)
+        || (r.style.motion.exit != PopupEffect::None && r.style.motion.exit_duration_ms > 0);
+    let mut play = r.motion_playing && can_motion;
     {
         let s = &mut r.style;
-        theme::section(ui, "Popup entrance");
+        theme::section(ui, "Popup motion");
         ui.add_space(4.0);
         egui::Grid::new("motion_grid")
             .num_columns(2)
             .spacing([12.0, 10.0])
             .min_col_width(86.0)
             .show(ui, |ui| {
-                ui.label("Effect");
-                egui::ComboBox::from_id_salt("motion_effect")
+                ui.label("In");
+                let old_in = s.motion.popup;
+                egui::ComboBox::from_id_salt("motion_in")
                     .selected_text(popup_label(s.motion.popup))
                     .width(150.0)
                     .show_ui(ui, |ui| {
@@ -985,19 +1001,55 @@ fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
                             ui.selectable_value(&mut s.motion.popup, effect, popup_label(effect));
                         }
                     });
+                // Picking an entrance for the first time gives it a matching
+                // exit; the user can still set Out to None afterwards.
+                if old_in == PopupEffect::None
+                    && s.motion.popup != PopupEffect::None
+                    && s.motion.exit == PopupEffect::None
+                {
+                    s.motion.exit = s.motion.popup;
+                }
                 ui.end_row();
 
-                ui.label("Duration");
+                ui.label("Out");
+                egui::ComboBox::from_id_salt("motion_out")
+                    .selected_text(popup_label(s.motion.exit))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for effect in [
+                            PopupEffect::None,
+                            PopupEffect::Pop,
+                            PopupEffect::SlideUp,
+                            PopupEffect::SlideDown,
+                            PopupEffect::SlideLeft,
+                            PopupEffect::SlideRight,
+                            PopupEffect::Fade,
+                        ] {
+                            ui.selectable_value(&mut s.motion.exit, effect, popup_label(effect));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("In duration");
                 ui.add_enabled(
-                    enabled,
+                    s.motion.popup != PopupEffect::None,
                     egui::Slider::new(&mut s.motion.duration_ms, 0..=800)
                         .step_by(10.0)
                         .suffix(" ms"),
                 );
                 ui.end_row();
 
+                ui.label("Out duration");
+                ui.add_enabled(
+                    s.motion.exit != PopupEffect::None,
+                    egui::Slider::new(&mut s.motion.exit_duration_ms, 0..=800)
+                        .step_by(10.0)
+                        .suffix(" ms"),
+                );
+                ui.end_row();
+
                 ui.label("Easing");
-                ui.add_enabled_ui(enabled, |ui| {
+                ui.add_enabled_ui(any_effect, |ui| {
                     egui::ComboBox::from_id_salt("motion_easing")
                         .selected_text(easing_label(s.motion.easing))
                         .width(150.0)
@@ -1020,7 +1072,7 @@ fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
 
                 ui.label("Amount");
                 ui.add_enabled(
-                    enabled,
+                    any_effect,
                     egui::Slider::new(&mut s.motion.intensity, 0.0..=1.0).fixed_decimals(2),
                 );
                 ui.end_row();
@@ -1028,7 +1080,7 @@ fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
         ui.add_space(6.0);
         ui.label(
             RichText::new(
-                "Pop: how much it scales up. Slide: distance in font heights. Fade ignores the amount.",
+                "Pop: how much it scales. Slide: distance in font heights. Fade ignores the amount.",
             )
             .small()
             .weak(),
@@ -1036,12 +1088,12 @@ fn motion_tab(ui: &mut egui::Ui, r: &mut ReviewState) {
     }
 
     ui.add_space(10.0);
-    ui.add_enabled(enabled, egui::Checkbox::new(&mut play, "Play preview"));
-    r.motion_playing = play && enabled;
+    ui.add_enabled(can_motion, egui::Checkbox::new(&mut play, "Play preview"));
+    r.motion_playing = play && can_motion;
     ui.add_space(6.0);
     ui.label(
         RichText::new(
-            "The popup transition runs when a new caption appears. Word-level karaoke effects come in a later phase.",
+            "The preview plays in, holds, then out. Word-level karaoke effects come later.",
         )
         .small()
         .weak(),

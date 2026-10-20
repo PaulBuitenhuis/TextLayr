@@ -42,9 +42,11 @@
     },
     "motion": {
       "popup": "pop",
-      "duration_ms": 120,
+      "exit": "pop",
+      "duration_ms": 160,
+      "exit_duration_ms": 120,
       "easing": "spring",
-      "intensity": 0.15
+      "intensity": 0.18
     }
   },
   "grouping": {

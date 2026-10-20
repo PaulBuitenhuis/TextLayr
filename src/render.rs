@@ -29,6 +29,8 @@ pub struct CaptionState {
     pub anchor: Anchor,
     /// When the containing popup first appeared (for popup motion).
     pub popup_start_secs: f64,
+    /// When the containing popup disappears (for exit motion).
+    pub popup_end_secs: f64,
     /// Font size in pixels at render resolution (for slide distances).
     pub font_px: f32,
 }
@@ -169,6 +171,72 @@ pub fn popup_transform(motion: &MotionStyle, phase: f32, font_px: f32) -> PopupT
             alpha: eased.clamp(0.0, 1.0),
             ..PopupTransform::IDENTITY
         },
+    }
+}
+
+/// The transform for a popup leaving at `phase` (0 = still settled, 1 = gone).
+pub fn popup_exit_transform(motion: &MotionStyle, phase: f32, font_px: f32) -> PopupTransform {
+    if motion.exit == PopupEffect::None || motion.exit_duration_ms == 0 {
+        return PopupTransform::IDENTITY;
+    }
+    let eased = ease(motion.easing, phase);
+    let amount = motion.intensity.max(0.0);
+    let travel = amount * font_px * eased;
+    let alpha = (1.0 - eased).clamp(0.0, 1.0);
+    match motion.exit {
+        PopupEffect::None => PopupTransform::IDENTITY,
+        PopupEffect::Pop => PopupTransform {
+            scale: (1.0 - amount * eased).max(0.05),
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+        PopupEffect::SlideUp => PopupTransform {
+            dy: -travel,
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+        PopupEffect::SlideDown => PopupTransform {
+            dy: travel,
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+        PopupEffect::SlideLeft => PopupTransform {
+            dx: -travel,
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+        PopupEffect::SlideRight => PopupTransform {
+            dx: travel,
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+        PopupEffect::Fade => PopupTransform {
+            alpha,
+            ..PopupTransform::IDENTITY
+        },
+    }
+}
+
+/// Which phase of a popup's life a frame is in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MotionPhase {
+    Entrance(f32),
+    Settled,
+    Exit(f32),
+    Hidden,
+}
+
+impl MotionPhase {
+    pub fn transform(self, motion: &MotionStyle, font_px: f32) -> PopupTransform {
+        match self {
+            MotionPhase::Entrance(p) => popup_transform(motion, p, font_px),
+            MotionPhase::Exit(p) => popup_exit_transform(motion, p, font_px),
+            MotionPhase::Settled | MotionPhase::Hidden => PopupTransform::IDENTITY,
+        }
+    }
+
+    pub fn is_hidden(self) -> bool {
+        matches!(self, MotionPhase::Hidden)
     }
 }
 
@@ -1516,6 +1584,7 @@ pub fn render_states(
                 box_h,
                 anchor: style.layout.anchor,
                 popup_start_secs: chunk.start_secs,
+                popup_end_secs: chunk.end_secs,
                 font_px,
             });
             done += 1;
@@ -1766,6 +1835,7 @@ mod tests {
             duration_ms: 180,
             easing: Easing::EaseOut,
             intensity: 0.2,
+            ..MotionStyle::default()
         };
         assert!(popup_transform(&m, 1.0, 50.0).is_identity());
         assert!((popup_transform(&m, 0.0, 50.0).scale - 0.8).abs() < 1e-4);
@@ -1784,12 +1854,54 @@ mod tests {
     }
 
     #[test]
+    fn popup_exit_motion_progresses_monotonically() {
+        let pop = MotionStyle {
+            popup: PopupEffect::None,
+            exit: PopupEffect::Pop,
+            duration_ms: 0,
+            exit_duration_ms: 200,
+            easing: Easing::EaseOut,
+            intensity: 0.25,
+        };
+        let scales: Vec<f32> = (0..=10)
+            .map(|i| popup_exit_transform(&pop, i as f32 / 10.0, 50.0).scale)
+            .collect();
+        assert!(scales.windows(2).all(|w| w[1] <= w[0] + 1e-6));
+        assert!((scales[10] - 0.75).abs() < 1e-4);
+        let alphas: Vec<f32> = (0..=10)
+            .map(|i| popup_exit_transform(&pop, i as f32 / 10.0, 50.0).alpha)
+            .collect();
+        assert!(alphas.windows(2).all(|w| w[1] <= w[0] + 1e-6));
+        assert!(alphas[10].abs() < 1e-4);
+
+        let slide = MotionStyle {
+            popup: PopupEffect::None,
+            exit: PopupEffect::SlideUp,
+            duration_ms: 0,
+            exit_duration_ms: 200,
+            easing: Easing::EaseOut,
+            intensity: 0.6,
+        };
+        let offsets: Vec<f32> = (0..=10)
+            .map(|i| popup_exit_transform(&slide, i as f32 / 10.0, 50.0).dy)
+            .collect();
+        assert!(offsets.windows(2).all(|w| w[1] <= w[0] + 1e-6));
+        assert!(offsets[0].abs() < 1e-4);
+        assert!((offsets[10] + 30.0).abs() < 1e-4);
+
+        assert!(!MotionPhase::Settled.is_hidden());
+        assert!(MotionPhase::Hidden.is_hidden());
+        assert!(MotionPhase::Settled.transform(&pop, 50.0).is_identity());
+    }
+
+    #[test]
     fn popup_motion_progresses_monotonically() {
         let pop = MotionStyle {
             popup: PopupEffect::Pop,
             duration_ms: 300,
             easing: Easing::EaseOut,
             intensity: 0.25,
+            ..MotionStyle::default()
         };
         let scales: Vec<f32> = (0..=10)
             .map(|i| popup_transform(&pop, i as f32 / 10.0, 50.0).scale)
@@ -1802,6 +1914,7 @@ mod tests {
             duration_ms: 300,
             easing: Easing::EaseOut,
             intensity: 0.6,
+            ..MotionStyle::default()
         };
         let offsets: Vec<f32> = (0..=10)
             .map(|i| popup_transform(&slide, i as f32 / 10.0, 50.0).dy)
@@ -1814,6 +1927,7 @@ mod tests {
             duration_ms: 300,
             easing: Easing::EaseOut,
             intensity: 0.0,
+            ..MotionStyle::default()
         };
         let alphas: Vec<f32> = (0..=10)
             .map(|i| popup_transform(&fade, i as f32 / 10.0, 50.0).alpha)

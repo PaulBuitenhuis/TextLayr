@@ -466,6 +466,7 @@ impl Style {
             *h = h.clamp(5.0, 60.0);
         }
         self.motion.duration_ms = self.motion.duration_ms.clamp(0, 1200);
+        self.motion.exit_duration_ms = self.motion.exit_duration_ms.clamp(0, 1200);
         self.motion.intensity = self.motion.intensity.clamp(0.0, 1.5);
     }
 }
@@ -531,9 +532,14 @@ impl<'de> Deserialize<'de> for Easing {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MotionStyle {
+    /// Entrance effect when a popup appears.
     pub popup: PopupEffect,
-    /// Transition length in milliseconds (0 disables it).
+    /// Exit effect when a popup disappears.
+    pub exit: PopupEffect,
+    /// Entrance length in milliseconds (0 disables it).
     pub duration_ms: u32,
+    /// Exit length in milliseconds (0 disables it).
+    pub exit_duration_ms: u32,
     pub easing: Easing,
     /// Scale delta for Pop, or distance in em for slide effects.
     pub intensity: f32,
@@ -543,9 +549,11 @@ impl Default for MotionStyle {
     fn default() -> Self {
         MotionStyle {
             popup: PopupEffect::None,
-            duration_ms: 180,
+            exit: PopupEffect::None,
+            duration_ms: 260,
+            exit_duration_ms: 160,
             easing: Easing::EaseOut,
-            intensity: 0.15,
+            intensity: 0.20,
         }
     }
 }
@@ -1170,20 +1178,25 @@ mod tests {
     fn motion_defaults_to_static() {
         let m = MotionStyle::default();
         assert_eq!(m.popup, PopupEffect::None);
-        assert_eq!(m.duration_ms, 180);
+        assert_eq!(m.exit, PopupEffect::None);
+        assert_eq!(m.duration_ms, 260);
+        assert_eq!(m.exit_duration_ms, 160);
         assert_eq!(m.easing, Easing::EaseOut);
-        assert_eq!(m.intensity, 0.15);
+        assert_eq!(m.intensity, 0.20);
     }
 
     #[test]
     fn motion_round_trips_and_clamps() {
         let mut style = Style::default();
         style.motion.popup = PopupEffect::SlideUp;
+        style.motion.exit = PopupEffect::SlideDown;
         style.motion.easing = Easing::Spring;
         style.motion.duration_ms = 9_000;
+        style.motion.exit_duration_ms = 9_000;
         style.motion.intensity = 9.0;
         style.sanitize();
         assert_eq!(style.motion.duration_ms, 1200);
+        assert_eq!(style.motion.exit_duration_ms, 1200);
         assert_eq!(style.motion.intensity, 1.5);
 
         let json = serde_json::to_string(&style).unwrap();
@@ -1198,6 +1211,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.motion.popup, PopupEffect::None);
+        assert_eq!(s.motion.exit, PopupEffect::None);
         assert_eq!(s.motion.easing, Easing::EaseOut);
         assert_eq!(s.motion.duration_ms, 250);
     }

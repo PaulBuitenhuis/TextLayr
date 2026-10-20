@@ -51,7 +51,9 @@
     },
     "motion": {
       "popup": "fade",
-      "duration_ms": 160,
+      "exit": "fade",
+      "duration_ms": 220,
+      "exit_duration_ms": 160,
       "easing": "ease_out",
       "intensity": 0.0
     }

@@ -377,7 +377,9 @@ fn run_cli(args: &Args) -> Result<()> {
     apply_overrides(&mut style, &mut grouping, &args.style_overrides);
     style.sanitize();
     grouping.sanitize();
-    if args.graph && style.motion.popup != PopupEffect::None {
+    if args.graph
+        && (style.motion.popup != PopupEffect::None || style.motion.exit != PopupEffect::None)
+    {
         bail!("motion effects require the default pipe encoder; remove --graph");
     }
 

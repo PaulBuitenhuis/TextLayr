@@ -8,11 +8,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Popup motion.** A caption can pop, slide in from any edge, or fade in, with
-  adjustable duration, easing (linear, ease-out, ease-in-out or spring
-  overshoot) and amount. The Motion tab can loop the transition in the live
-  preview. Motion is applied frame-by-frame by the default pipe exporter; the
-  legacy `--graph` encoder rejects it with a clear message.
+- **Popup motion, in and out.** A caption can pop, slide or fade in and out,
+  with independent entrance/exit effects and durations, easing (linear,
+  ease-out, ease-in-out or spring overshoot) and amount. The Motion tab plays
+  in → hold → out in the live preview. Motion is applied frame-by-frame by the
+  default pipe exporter; the legacy `--graph` encoder rejects it with a clear
+  message.
 - **Wrapping and fixed-size layouts.** The Layout tab now has a **Fit** mode:
   shrink to one line (the original behaviour), keep the chosen size and wrap, or
   keep the size and clip. Wrapped captions have a line cap, optional words-per-

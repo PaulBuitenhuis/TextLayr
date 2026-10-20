@@ -39,9 +39,9 @@
   or a fixed-width/height box. Reserve lines so popups keep the same height, set
   the line cap and line height, align left/centre/right, and anchor the box to
   its top, centre or bottom.
-- **Entrances that move.** Pop, slide from any edge, or fade a caption in, with
-  adjustable duration, easing (including a springy overshoot) and amount. The
-  Motion tab loops the transition in the live preview.
+- **Entrances and exits that move.** Pop, slide or fade a caption in and out,
+  with independent in/out effects and durations, easing (including a springy
+  overshoot) and amount. The Motion tab plays in → hold → out in the preview.
 - **Style profiles.** Save the current look and caption mode as a named profile,
   start from eight built-in looks, and update, rename, duplicate or delete your
   own. A profile can also change how many words share a popup, with a warning

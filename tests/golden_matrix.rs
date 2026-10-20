@@ -7,7 +7,7 @@
 use textlayr::config::{Color, Easing, Fit, MotionStyle, PopupEffect, Style};
 use textlayr::export::caption_y;
 use textlayr::profile;
-use textlayr::render::{self, blend_transformed, popup_transform, Faces};
+use textlayr::render::{self, blend_transformed, Faces, MotionPhase};
 
 fn fnv1a(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
@@ -314,12 +314,14 @@ fn gradient(w: u32, h: u32) -> Vec<u8> {
     out
 }
 
-fn motion_hashes() -> Vec<(f32, u64)> {
+fn motion_hashes() -> Vec<(&'static str, u64)> {
     let (w, h) = (540u32, 960u32);
     let mut style = builtin("builtin:bold-pop");
     style.motion = MotionStyle {
         popup: PopupEffect::Pop,
+        exit: PopupEffect::Pop,
         duration_ms: 300,
+        exit_duration_ms: 200,
         easing: Easing::EaseOut,
         intensity: 0.25,
     };
@@ -342,41 +344,52 @@ fn motion_hashes() -> Vec<(f32, u64)> {
     let pivot_x = cap.width as f32 / 2.0;
     let pivot_y = cap.box_top + cap.box_h / 2.0;
 
-    [0.0f32, 0.5, 1.0]
-        .iter()
-        .map(|&phase| {
-            let mut frame = gradient(w, h);
-            let transform = popup_transform(&style.motion, phase, px);
-            blend_transformed(
-                &mut frame, w, h, &cap.rgba, cap.width, cap.height, x, y, pivot_x, pivot_y,
-                transform,
-            );
-            (phase, fnv1a(&frame))
-        })
-        .collect()
+    let composite = |motion: MotionPhase| {
+        let mut frame = gradient(w, h);
+        let transform = motion.transform(&style.motion, px);
+        blend_transformed(
+            &mut frame, w, h, &cap.rgba, cap.width, cap.height, x, y, pivot_x, pivot_y, transform,
+        );
+        fnv1a(&frame)
+    };
+
+    [
+        ("in-0.0", MotionPhase::Entrance(0.0)),
+        ("in-0.5", MotionPhase::Entrance(0.5)),
+        ("in-1.0", MotionPhase::Entrance(1.0)),
+        ("out-0.0", MotionPhase::Exit(0.0)),
+        ("out-0.5", MotionPhase::Exit(0.5)),
+        ("out-1.0", MotionPhase::Exit(1.0)),
+    ]
+    .into_iter()
+    .map(|(name, motion)| (name, composite(motion)))
+    .collect()
 }
 
-/// `(phase, composite hash)`. Regenerate with `TEXTLAYR_PRINT_GOLDEN=1`.
-const MOTION_GOLDEN: &[(f32, u64)] = &[
-    (0.0f32, 0xa0bc_119b_a34f_cfc3),
-    (0.5f32, 0x3636_4bc9_5acc_2535),
-    (1.0f32, 0x6fdd_44c8_13d0_cdb1),
+/// `(phase name, composite hash)`. Regenerate with `TEXTLAYR_PRINT_GOLDEN=1`.
+const MOTION_GOLDEN: &[(&str, u64)] = &[
+    ("in-0.0", 0xa0bc_119b_a34f_cfc3),
+    ("in-0.5", 0x3636_4bc9_5acc_2535),
+    ("in-1.0", 0x6fdd_44c8_13d0_cdb1),
+    ("out-0.0", 0x6fdd_44c8_13d0_cdb1),
+    ("out-0.5", 0xb2b2_738d_7515_7047),
+    ("out-1.0", 0x7a0d_b6d8_cf5b_49fd),
 ];
 
 #[test]
 fn popup_motion_composites_consistently() {
     let print = std::env::var_os("TEXTLAYR_PRINT_GOLDEN").is_some();
     let got = motion_hashes();
-    for (phase, hash) in &got {
+    for (name, hash) in &got {
         if print {
-            println!("        ({:.1}f32, 0x{:016x}),", phase, hash);
+            println!("        (\"{}\", 0x{:016x}),", name, hash);
             continue;
         }
         let expected = MOTION_GOLDEN
             .iter()
-            .find(|g| g.0.to_bits() == phase.to_bits())
-            .unwrap_or_else(|| panic!("no motion golden for phase {phase}"));
-        assert_eq!(*hash, expected.1, "motion golden mismatch at {phase}");
+            .find(|g| g.0 == *name)
+            .unwrap_or_else(|| panic!("no motion golden for {name}"));
+        assert_eq!(*hash, expected.1, "motion golden mismatch at {name}");
     }
     if !print {
         assert_eq!(
