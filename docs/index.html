@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>TextLayr — word-synced karaoke captions, burned in offline</title>
-<meta name="description" content="TextLayr transcribes your video on your Mac and burns in word-synced popup captions — the Reels/TikTok/Shorts style. Free and open source, no uploads, no accounts, no watermark.">
+<title>TextLayr — burn captions into video, offline on your Mac</title>
+<meta name="description" content="Free, open-source macOS app that burns word-by-word captions into your video. Whisper transcribes locally in the TikTok/Reels style — no uploads, no accounts.">
 <link rel="canonical" href="https://paulbuitenhuis.github.io/TextLayr/">
 
 <meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)">
@@ -13,16 +13,51 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="TextLayr">
-<meta property="og:title" content="TextLayr — word-synced karaoke captions, burned in offline">
-<meta property="og:description" content="A free, private, offline caption burner for macOS. Transcribe locally with Whisper, review the transcript, export popup captions baked into your video.">
+<meta property="og:title" content="TextLayr — burn captions into video, offline on your Mac">
+<meta property="og:description" content="A free, private, offline caption burner for macOS. Whisper transcribes locally, you review the transcript, and it burns word-by-word captions into the video.">
 <meta property="og:url" content="https://paulbuitenhuis.github.io/TextLayr/">
 <meta property="og:image" content="https://paulbuitenhuis.github.io/TextLayr/assets/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="TextLayr — word-synced karaoke captions, burned in offline">
+<meta name="twitter:title" content="TextLayr — burn captions into video, offline on your Mac">
 <meta name="twitter:description" content="A free, private, offline caption burner for macOS. No uploads, no accounts, no watermark.">
 <meta name="twitter:image" content="https://paulbuitenhuis.github.io/TextLayr/assets/og.jpg">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "TextLayr",
+  "applicationCategory": "MultimediaApplication",
+  "applicationSubCategory": "Video captioning",
+  "operatingSystem": "macOS 13 or later (Apple Silicon)",
+  "description": "An offline caption burner for macOS: Whisper transcribes the video locally, you review and edit the transcript, and TextLayr burns word-by-word captions into the exported MP4.",
+  "url": "https://paulbuitenhuis.github.io/TextLayr/",
+  "downloadUrl": "https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg",
+  "screenshot": "https://paulbuitenhuis.github.io/TextLayr/screenshots/overview.jpg",
+  "license": "https://opensource.org/license/mit",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": [
+    "Burned-in, word-by-word captions",
+    "Offline Whisper transcription",
+    "Editable transcript before export",
+    "Caption style presets and custom profiles",
+    "Scriptable command-line interface"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "Paul Buitenhuis",
+    "url": "https://github.com/PaulBuitenhuis"
+  },
+  "sameAs": ["https://github.com/PaulBuitenhuis/TextLayr"]
+}
+</script>
 
 <link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
@@ -37,6 +72,11 @@
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) {}
 </script>
+
+<!-- GoatCounter pageviews: anonymous, cookie-free, no personal data. The app
+     itself sends nothing; this is the website only. -->
+<script data-goatcounter="https://textlayr.goatcounter.com/count"
+        async src="https://gc.zgo.at/count.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -54,7 +94,8 @@
       <a href="#install">Install</a>
       <a href="#faq">FAQ</a>
       <a href="#support">Support</a>
-      <a class="nav-gh" href="https://github.com/PaulBuitenhuis/TextLayr" rel="noopener">
+      <a class="nav-gh" href="https://github.com/PaulBuitenhuis/TextLayr" rel="noopener"
+         data-goatcounter-click="github-repo" data-goatcounter-title="GitHub repository">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
         <span>GitHub</span>
       </a>
@@ -75,16 +116,18 @@
         <img class="hero-mark logo-dark" src="assets/banner-dark.png" width="713" height="160" alt="TextLayr">
         <img class="hero-mark logo-light" src="assets/banner-light.png" width="713" height="160" alt="TextLayr">
 
-        <h1>Karaoke captions,<br>burned into your video.</h1>
+        <h1>Word-by-word captions,<br>burned into your video.</h1>
 
         <p class="lede">
-          TextLayr transcribes your video <b>on your own Mac</b> and bakes in
-          word-synced popup captions — the style that stops the scroll on Reels,
-          TikTok and Shorts. Review every line first, fix the typos, then export.
+          TextLayr transcribes your video <b>on your own Mac</b> and burns in
+          word-by-word captions — the TikTok, Reels and Shorts style, where each
+          word lights up as it's spoken. Review every line first, fix the typos,
+          then export. Free, open source, no account.
         </p>
 
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>
+          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
+             data-goatcounter-click="download-dmg" data-goatcounter-title="Download DMG (hero)">
             <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 4v11M7.5 10.8 12 15.3l4.5-4.5M5 19.5h14"/></svg>
             <span>Download for macOS</span>
           </a>
@@ -101,11 +144,11 @@
           <span class="dot" aria-hidden="true"></span><b data-version>—</b>
           <span class="sep">·</span> <span data-size>—</span>
           <span class="sep">·</span> free &amp; open source (MIT)
-          <span class="sep">·</span> macOS 13+ on Apple&nbsp;Silicon
+          <span class="sep">·</span> supported by donations
         </p>
         <p class="cta-note" data-release-fallback>
-          Free &amp; open source (MIT) · macOS 13+ on Apple Silicon · about 8&nbsp;MB
-          · ~190&nbsp;MB first-run setup
+          Free &amp; open source (MIT), supported by donations · macOS 13+ on Apple Silicon
+          · about 8&nbsp;MB · ~190&nbsp;MB first-run setup
         </p>
       </div>
 
@@ -113,7 +156,7 @@
         <div class="phone">
           <video id="demo" muted loop playsinline preload="metadata"
                  poster="assets/demo-poster.jpg" width="640" height="1138"
-                 aria-label="A sample video exported from TextLayr, showing word-synced popup captions">
+                 aria-label="A sample video exported from TextLayr, showing word-by-word captions">
             <source src="assets/demo.mp4" type="video/mp4">
           </video>
           <button class="play-toggle" type="button" data-play-toggle hidden aria-label="Play or pause the sample video">
@@ -145,8 +188,8 @@
       <div class="cards">
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/></svg></div>
-          <h3>Word-synced popups</h3>
-          <p>A few words on screen at a time with the spoken word lit up and the rest dimmed. Two to six words per popup, your call.</p>
+          <h3>Word-by-word captions</h3>
+          <p>A few words on screen at a time with the spoken word lit up and the rest dimmed — the look people call karaoke-style captions. Two to six words per popup, your call.</p>
         </article>
 
         <article class="card">
@@ -164,7 +207,7 @@
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14M5 16h14"/><circle cx="9" cy="8" r="2.3"/><circle cx="15" cy="16" r="2.3"/></svg></div>
           <h3>All the style knobs</h3>
-          <p>Font, size, colours, outline, text shadow, glow, an active-word pill or underline, box shape and padding. Wrap over one to three lines, or use a fixed-width bar. Pop, slide or fade captions in and out. One inline panel of about twenty visual controls keeps it approachable. Save the look as a profile and switch between built-ins from a dropdown.</p>
+          <p>Font, colour, outline, pill, underline, box, padding and motion — about twenty controls in one inline panel. Save the look as a profile, or start from a built-in.</p>
         </article>
 
         <article class="card">
@@ -178,6 +221,65 @@
           <h3>Scriptable CLI included</h3>
           <p>The same pipeline runs headlessly for batch jobs and automation: <code>textlayr video.mp4 --headless</code>.</p>
         </article>
+      </div>
+
+      <div class="styles" id="styles">
+        <div class="styles-head">
+          <h3>Eight looks, built in</h3>
+          <p class="styles-lede">
+            These are the eight profiles that ship with the app. Click one to
+            preview it; every setting behind it is editable.
+          </p>
+        </div>
+
+        <div class="styles-body">
+          <div class="stage-wrap">
+            <div class="stage" data-stage data-style="lower-third" data-ratio="16:9">
+              <img class="stage-frame" src="assets/style-stage.jpg" width="2000" height="1125"
+                   alt="" loading="lazy">
+              <div class="stage-caption" data-stage-caption aria-hidden="true">
+                <span class="cap-line" data-cap-line><span class="cap-w is-on">watch</span> <span class="cap-w">every</span> <span class="cap-w">single</span> <span class="cap-w">word</span> <span class="cap-w">land</span></span>
+              </div>
+            </div>
+
+            <div class="ratio-toggle" role="group" aria-label="Preview aspect ratio">
+              <button type="button" data-ratio="9:16" aria-pressed="false">9:16</button>
+              <button type="button" data-ratio="16:9" aria-pressed="true">16:9</button>
+            </div>
+          </div>
+
+          <ul class="styles-grid" data-styles>
+            <li><button type="button" class="style-btn" data-style="classic" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Classic Serif</b>
+              <span>Serif text in a soft rounded box.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="bold-pop" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Bold Pop</b>
+              <span>Uppercase, black outline, lime active word.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="clean-subtitle" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Clean Subtitle</b>
+              <span>Small neutral text in a subtle bar.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="minimal" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Minimal</b>
+              <span>No box, soft type, gold accent.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="highlight-pill" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Highlight Pill</b>
+              <span>Active word on a yellow plate.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="editorial" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Editorial</b>
+              <span>Cream card, dark serif, rust highlight.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="word-by-word" aria-pressed="false">
+              <span class="style-dot" aria-hidden="true"></span><b>Word by Word</b>
+              <span>One large word at a time.</span></button></li>
+            <li><button type="button" class="style-btn" data-style="lower-third" aria-pressed="true">
+              <span class="style-dot" aria-hidden="true"></span><b>Lower Third</b>
+              <span>Low in frame, six words at a time.</span></button></li>
+          </ul>
+        </div>
+
+        <p class="styles-note">
+          Rendered live from the same settings the app uses — these are the real
+          looks, not screenshots.
+        </p>
       </div>
     </div>
   </section>
@@ -209,16 +311,6 @@
              alt="The TextLayr window with the live preview, editable transcript, single-panel style inspector and export button.">
         <figcaption>Live preview, editable transcript, styling, and export — all in one window.</figcaption>
       </figure>
-
-      <figure class="shot shot--pair">
-        <div class="pair">
-          <img class="pair-item" src="assets/demo-poster.jpg" width="640" height="1138" loading="lazy"
-               alt="A vertical 9:16 export with a bordered caption box and the spoken word highlighted">
-          <img class="pair-item pair-item--wide" src="assets/example-16x9.jpg" width="1600" height="900" loading="lazy"
-               alt="A landscape 16:9 export with a green highlighted caption and no border">
-        </div>
-        <figcaption>Any frame, any look — 9:16 or 16:9, and the font, colours, box and position are all yours.</figcaption>
-      </figure>
     </div>
   </section>
 
@@ -246,7 +338,8 @@
           free, un-notarized app, and it only happens the first time.
         </p>
         <p>
-          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>Download for macOS</a>
+          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
+             data-goatcounter-click="download-dmg" data-goatcounter-title="Download DMG (install)">Download for macOS</a>
         </p>
         <p class="install-meta">
           <span data-release-meta hidden><b data-version>—</b> · <span data-size>—</span> · </span>
@@ -317,7 +410,8 @@
             </p>
             <div class="code">
               <code>xattr -dr com.apple.quarantine /Applications/TextLayr.app</code>
-              <button class="copy" type="button" data-copy aria-label="Copy command">
+              <button class="copy" type="button" data-copy aria-label="Copy command"
+                      data-goatcounter-click="copy-unquarantine" data-goatcounter-title="Copy unquarantine command">
                 <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
                 <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
                 <span class="copy-label">Copy</span>
@@ -348,7 +442,8 @@
         </p>
         <p class="install-note">
           Prefer a printable guide?
-          <a href="assets/install/TextLayr-install-guide.pdf">Download the two-page PDF</a>
+          <a href="assets/install/TextLayr-install-guide.pdf"
+             data-goatcounter-click="install-guide-pdf" data-goatcounter-title="Download install guide PDF">Download the two-page PDF</a>
           — the same steps with the pictures.
         </p>
       </article>
@@ -365,14 +460,16 @@
         </p>
         <div class="code">
           <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
-          <button class="copy" type="button" data-copy aria-label="Copy command">
+          <button class="copy" type="button" data-copy aria-label="Copy command"
+                  data-goatcounter-click="copy-install-command" data-goatcounter-title="Copy terminal install command">
             <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
             <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
             <span class="copy-label">Copy</span>
           </button>
         </div>
         <p class="install-alt">
-          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/install.sh" rel="noopener">Read the script first</a>
+          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/install.sh" rel="noopener"
+             data-goatcounter-click="read-install-script">Read the script first</a>
           — a self-contained POSIX shell script. It checks the release's SHA-256 and installs
           to <code>/Applications</code>, or <code>~/Applications</code> when that
           isn't writable.
@@ -389,7 +486,8 @@
           </p>
           <div class="code">
             <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --no-open</code>
-            <button class="copy" type="button" data-copy aria-label="Copy command">
+            <button class="copy" type="button" data-copy aria-label="Copy command"
+                    data-goatcounter-click="copy-install-options" data-goatcounter-title="Copy install options command">
               <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
               <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
               <span class="copy-label">Copy</span>
@@ -555,7 +653,7 @@
 
       <details>
         <summary>How can I support TextLayr?</summary>
-        <p>TextLayr is free and always will be. If it's useful to you, you can <a href="https://ko-fi.com/U6R0290CU2" rel="noopener">buy me a coffee on Ko-fi</a> — entirely optional. Starring or sharing the project helps just as much.</p>
+        <p>TextLayr is free and always will be. If it's useful to you, you can <a href="https://ko-fi.com/U6R0290CU2" rel="noopener" data-goatcounter-click="support-kofi">buy me a coffee on Ko-fi</a> — entirely optional. Starring or sharing the project helps just as much.</p>
       </details>
     </div>
   </section>
@@ -565,9 +663,9 @@
     <div class="wrap narrow center">
       <h2 class="section-title">Support the project</h2>
       <p class="section-lede">
-        TextLayr is free and open source, built on evenings and weekends.
-        If it saves you time, you can buy me a coffee — it helps keep the
-        updates coming.
+        TextLayr is free, open source and donation-supported — built on evenings
+        and weekends. If it saves you time, you can buy me a coffee, and it helps
+        keep the updates coming.
       </p>
       <div class="kofi-widget">
         <script type="text/javascript" src="https://storage.ko-fi.com/cdn/widget/Widget_2.js"></script>
@@ -583,7 +681,8 @@
       <img class="final-mark logo-dark" src="assets/banner-dark.png" width="713" height="160" alt="TextLayr" loading="lazy">
       <img class="final-mark logo-light" src="assets/banner-light.png" width="713" height="160" alt="TextLayr" loading="lazy">
       <p class="final-lede">Captions in, videos out. Nothing uploaded.</p>
-      <p><a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download>Download for macOS</a></p>
+      <p><a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
+            data-goatcounter-click="download-dmg" data-goatcounter-title="Download DMG (footer)">Download for macOS</a></p>
       <p class="cta-alt">or <a href="#terminal">install from the terminal</a> to skip the first-launch security prompt</p>
     </div>
   </section>
@@ -597,17 +696,21 @@
       <span>TextLayr</span>
     </div>
     <nav class="footer-links" aria-label="Project links">
-      <a href="https://github.com/PaulBuitenhuis/TextLayr" rel="noopener">GitHub</a>
-      <a href="https://github.com/PaulBuitenhuis/TextLayr/releases" rel="noopener">Releases</a>
-      <a href="https://ko-fi.com/U6R0290CU2" rel="noopener">Support</a>
-      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/CHANGELOG.md" rel="noopener">Changelog</a>
-      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/CONTRIBUTING.md" rel="noopener">Contributing</a>
-      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/SECURITY.md" rel="noopener">Security</a>
-      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/LICENSE" rel="noopener">MIT Licence</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr" rel="noopener" data-goatcounter-click="github-repo">GitHub</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr/releases" rel="noopener" data-goatcounter-click="github-releases">Releases</a>
+      <a href="https://ko-fi.com/U6R0290CU2" rel="noopener" data-goatcounter-click="support-kofi">Support</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/CHANGELOG.md" rel="noopener" data-goatcounter-click="github-changelog">Changelog</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/CONTRIBUTING.md" rel="noopener" data-goatcounter-click="github-contributing">Contributing</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/SECURITY.md" rel="noopener" data-goatcounter-click="github-security">Security</a>
+      <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/LICENSE" rel="noopener" data-goatcounter-click="github-licence">MIT Licence</a>
     </nav>
     <p class="footer-note">
       Built with Rust, egui, whisper.cpp and ffmpeg. Fonts bundled under the SIL Open Font Licence.
       TextLayr invokes ffmpeg and the Whisper model as separate programs and does not distribute them.
+    </p>
+    <p class="footer-note">
+      This site counts visits with <a href="https://www.goatcounter.com/" rel="noopener">GoatCounter</a>:
+      no cookies, no personal data, no cross-site tracking. The app itself sends no analytics at all.
     </p>
   </div>
 </footer>

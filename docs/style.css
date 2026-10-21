@@ -441,36 +441,397 @@ section[id] { scroll-margin-top: 78px; }
   margin-top: 14px;
 }
 
-/* Two-up: the same tool on a vertical and a landscape clip. One row height
-   keeps both frames identical in height, and each width is derived from that
-   height via its own aspect ratio — an explicit `width: auto` on a flex item
-   resolves to the container width and squashes the image instead. */
-.shot--pair { max-width: 820px; margin-top: 46px; }
-.pair {
-  --pair-h: clamp(200px, 24vw, 320px);
-  display: flex;
+/* Two-up pair: removed in favour of the live style gallery below. */
+
+/* ── Style gallery ──────────────────────────────────────────────────── */
+
+/* The gallery renders the app's caption profiles in the browser, so the
+   families those profiles use have to be served here too. These are WOFF
+   subsets from `scripts/make_style_fonts.py` (the full TTFs stay in
+   `assets/fonts/` for the app). */
+@font-face {
+  font-family: "Nunito";
+  src: url("assets/fonts/Nunito-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nunito";
+  src: url("assets/fonts/Nunito-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Libre Baskerville";
+  src: url("assets/fonts/LibreBaskerville-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Libre Baskerville";
+  src: url("assets/fonts/LibreBaskerville-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.styles { margin-top: 76px; scroll-margin-top: 88px; }
+.styles-head { max-width: 620px; margin: 0 auto; text-align: center; }
+.styles-head h3 { font-size: 1.32rem; }
+.styles-lede { color: var(--muted); font-size: 0.95rem; margin: 10px 0 0; }
+
+.styles-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: 44px;
   align-items: center;
-  justify-content: center;
+  margin-top: 30px;
+}
+.stage-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 16px;
 }
-.pair-item {
-  flex: 0 0 auto;
-  height: var(--pair-h);
-  width: auto;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-}
-/* 640x1138 and 1600x900 — keep in step with the asset dimensions. */
-.pair-item:not(.pair-item--wide) { width: calc(var(--pair-h) * 640 / 1138); }
-.pair-item--wide { width: calc(var(--pair-h) * 1600 / 900); }
 
-/* Too narrow for a row: stack, and let each width drive its own height again. */
+/* Height-driven like a real export: the caption's size comes from the frame
+   height (cqh), so 16:9 and 9:16 correct each other automatically. */
+.stage {
+  position: relative;
+  /* 520 px tall in portrait; in landscape the frame takes the column width. */
+  width: min(calc(520px * 9 / 16), 100%);
+  aspect-ratio: 9 / 16;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0b0d11;
+  box-shadow: var(--shadow-lg);
+  container-type: size;
+  isolation: isolate;
+
+  --cap-font: "Inter", system-ui, sans-serif;
+  --cap-size: 4;
+  --cap-hl: #ffffff;
+  --cap-dim: #f5f5f5;
+  --cap-w-on: 700;
+  --cap-w-dim: 400;
+  --cap-upper: none;
+  --cap-box: transparent;
+  --cap-pad-x: 0;
+  --cap-pad-y: 0;
+  --cap-radius: 0;
+  --cap-shadow: none;
+  --cap-outline: none;
+  --cap-scale: 1;
+  --cap-pill: transparent;
+  --cap-pill-pad-x: 0;
+  --cap-pill-pad-y: 0;
+  --cap-pill-radius: 0;
+  --cap-anim: none;
+  --cap-dur: 0ms;
+  --cap-ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --cap-dot: #8a94a3;
+}
+.stage[data-ratio="16:9"] {
+  width: min(calc(520px * 16 / 9), 100%);
+  aspect-ratio: 16 / 9;
+}
+
+.stage-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+}
+/* Enough weight behind the text without dimming the whole frame. */
+.stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.3));
+  pointer-events: none;
+}
+
+.stage-caption {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  top: 70%;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: var(--cap-font);
+  /* Scales with frame height like the app. The floor only matters for a
+     landscape frame on a narrow phone, where 3% of ~200px stops being
+     readable in a still preview. */
+  font-size: clamp(12px, calc(var(--cap-size) * 1cqh), 48px);
+  line-height: 1.25;
+  text-transform: var(--cap-upper);
+  letter-spacing: 0.005em;
+  /* Above the ::after gradient, which is the stage's last child. */
+  z-index: 1;
+}
+/* A landscape export is normally configured with larger type, so the preview
+   shows it that way rather than shrinking with the shorter frame. */
+.stage[data-ratio="16:9"] .stage-caption {
+  top: 76%;
+  font-size: clamp(18px, calc(var(--cap-size) * 1.9 * 1cqh), 72px);
+}
+/* No container queries: fall back to a sensible fixed size. */
+@supports not (container-type: size) {
+  .stage-caption { font-size: calc(var(--cap-size) * 4.2px); }
+}
+
+.cap-line {
+  display: inline-block;
+  padding: calc(var(--cap-pad-y) * 1em) calc(var(--cap-pad-x) * 1em);
+  border-radius: calc(var(--cap-radius) * 1em);
+  background: var(--cap-box);
+  box-shadow: var(--cap-shadow);
+  /* Profiles may run out of frame width; the app wraps rather than clipping. */
+  max-width: 100%;
+  text-wrap: balance;
+}
+.cap-line.is-enter { animation: var(--cap-anim) var(--cap-dur) var(--cap-ease) both; }
+
+.cap-w {
+  display: inline-block;
+  color: var(--cap-dim);
+  font-weight: var(--cap-w-dim);
+  text-shadow: var(--cap-outline);
+  padding: calc(var(--cap-pill-pad-y) * 1em) calc(var(--cap-pill-pad-x) * 1em);
+  margin-inline: calc(var(--cap-pill-pad-x) * -1em);
+  border-radius: calc(var(--cap-pill-radius) * 1em);
+  transition: color 120ms linear, background-color 120ms linear, transform 140ms var(--cap-ease);
+}
+.cap-w.is-on {
+  color: var(--cap-hl);
+  font-weight: var(--cap-w-on);
+  background: var(--cap-pill);
+  transform: scale(var(--cap-scale));
+}
+
+@keyframes cap-pop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes cap-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cap-slide {
+  from { opacity: 0; transform: translateY(0.7em); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Profile tokens, mirroring assets/profiles/*.json. `--cap-dot` is the
+   accent shown next to the profile's name. */
+[data-style="classic"] {
+  --cap-font: "Libre Baskerville", Georgia, serif;
+  --cap-size: 3.4;
+  --cap-hl: #ffffff;
+  --cap-dim: #9a9a9a;
+  --cap-box: rgba(0, 0, 0, 0.72);
+  --cap-pad-x: 0.5;
+  --cap-pad-y: 0.24;
+  --cap-radius: 0.18;
+  --cap-shadow: 0 0.2em 0.32em rgba(0, 0, 0, 0.45);
+  --cap-dot: #d8d2c6;
+}
+[data-style="bold-pop"] {
+  --cap-size: 5.2;
+  --cap-hl: #c6ff00;
+  --cap-dim: #f5f5f5;
+  --cap-w-on: 700;
+  --cap-w-dim: 700;
+  --cap-upper: uppercase;
+  --cap-outline:
+    0.042em 0 0 #000, -0.042em 0 0 #000, 0 0.042em 0 #000, 0 -0.042em 0 #000,
+    0.03em 0.03em 0 #000, -0.03em 0.03em 0 #000, 0.03em -0.03em 0 #000,
+    -0.03em -0.03em 0 #000;
+  --cap-anim: cap-pop;
+  --cap-dur: 220ms;
+  --cap-dot: #c6ff00;
+}
+[data-style="clean-subtitle"] {
+  --cap-size: 3;
+  --cap-hl: #ffffff;
+  --cap-dim: #bcc0c6;
+  --cap-box: rgba(10, 12, 16, 0.55);
+  --cap-pad-x: 0.55;
+  --cap-pad-y: 0.28;
+  --cap-radius: 0.22;
+  --cap-anim: cap-fade;
+  --cap-dur: 220ms;
+  --cap-dot: #bcc0c6;
+}
+[data-style="minimal"] {
+  --cap-font: "Nunito", ui-rounded, system-ui, sans-serif;
+  --cap-size: 4.1;
+  --cap-hl: #ffd666;
+  --cap-dim: #ececec;
+  --cap-w-on: 700;
+  --cap-w-dim: 400;
+  --cap-outline:
+    0.028em 0 0 rgba(0, 0, 0, 0.82), -0.028em 0 0 rgba(0, 0, 0, 0.82),
+    0 0.028em 0 rgba(0, 0, 0, 0.82), 0 -0.028em 0 rgba(0, 0, 0, 0.82),
+    0.02em 0.02em 0 rgba(0, 0, 0, 0.82), -0.02em 0.02em 0 rgba(0, 0, 0, 0.82),
+    0.02em -0.02em 0 rgba(0, 0, 0, 0.82), -0.02em -0.02em 0 rgba(0, 0, 0, 0.82);
+  --cap-anim: cap-pop;
+  --cap-dur: 200ms;
+  --cap-dot: #ffd666;
+}
+[data-style="highlight-pill"] {
+  --cap-size: 4;
+  --cap-hl: #14120c;
+  --cap-dim: #f5f5f5;
+  --cap-w-on: 700;
+  --cap-w-dim: 700;
+  --cap-scale: 1.04;
+  --cap-pill: #ffcd4c;
+  --cap-pill-pad-x: 0.14;
+  --cap-pill-pad-y: 0.05;
+  --cap-pill-radius: 0.35;
+  --cap-anim: cap-pop;
+  --cap-dur: 200ms;
+  --cap-dot: #ffcd4c;
+}
+[data-style="editorial"] {
+  --cap-font: "Libre Baskerville", Georgia, serif;
+  --cap-size: 3.6;
+  --cap-hl: #9c3723;
+  --cap-dim: #3a322a;
+  --cap-box: rgba(244, 233, 216, 0.94);
+  --cap-pad-x: 0.65;
+  --cap-pad-y: 0.3;
+  --cap-radius: 0.14;
+  --cap-dot: #9c3723;
+}
+[data-style="word-by-word"] {
+  --cap-size: 6.4;
+  --cap-hl: #ffffff;
+  --cap-dim: #ffffff;
+  --cap-w-on: 400;
+  --cap-w-dim: 400;
+  --cap-box: rgba(0, 0, 0, 0.58);
+  --cap-pad-x: 0.5;
+  --cap-pad-y: 0.24;
+  --cap-radius: 0.24;
+  --cap-shadow: 0 0.18em 0.3em rgba(0, 0, 0, 0.4);
+  --cap-scale: 1.06;
+  --cap-anim: cap-pop;
+  --cap-dur: 160ms;
+  --cap-dot: #ffffff;
+}
+[data-style="lower-third"] {
+  --cap-size: 2.9;
+  --cap-hl: #ffd166;
+  --cap-dim: #ebebeb;
+  --cap-box: rgba(0, 0, 0, 0.65);
+  --cap-pad-x: 0.6;
+  --cap-pad-y: 0.2;
+  --cap-radius: 0;
+  --cap-anim: cap-slide;
+  --cap-dur: 260ms;
+  --cap-dot: #ffd166;
+}
+
+.ratio-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.ratio-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 5px 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.ratio-toggle button:hover { color: var(--text); }
+.ratio-toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+.styles-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.style-btn {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "dot name"
+    "dot desc";
+  align-content: start;
+  gap: 3px 9px;
+  width: 100%;
+  height: 100%;
+  padding: 13px 15px 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.style-btn:hover { border-color: var(--border-strong, var(--accent)); }
+.style-btn:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+.style-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.style-dot {
+  grid-area: dot;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--cap-dot);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+.style-btn b { grid-area: name; font-size: 0.93rem; }
+.style-btn span:last-child {
+  grid-area: desc;
+  color: var(--muted);
+  font-size: 0.81rem;
+  line-height: 1.45;
+}
+
+.styles-note {
+  margin: 16px 0 0;
+  text-align: center;
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 980px) {
+  .styles-body { grid-template-columns: 1fr; gap: 32px; justify-items: stretch; }
+  .stage { width: min(300px, 70vw); }
+  .stage[data-ratio="16:9"] { width: min(560px, 100%); }
+  .styles-grid { width: 100%; }
+}
 @media (max-width: 620px) {
-  .pair { flex-direction: column; gap: 14px; }
-  .pair-item { height: auto; }
-  .pair-item:not(.pair-item--wide) { width: 52%; }
-  .pair-item--wide { width: 100%; }
+  .stage { width: min(280px, 78vw); }
+  .stage[data-ratio="16:9"] { width: 100%; }
+  .styles-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Install ────────────────────────────────────────────────────────── */

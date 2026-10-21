@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  <b>Offline karaoke caption burner for short-form video.</b><br>
-  Drop in a video, review the transcript, and export with word-synced popup captions baked in.<br>
-  No uploads, no accounts, and no network after the one-time setup download (beyond an optional once-a-day update check).
+  <b>Offline caption burner for short-form video.</b><br>
+  Drop in a video, review the transcript, and export with word-by-word captions burned in.<br>
+  Free, open source and donation-supported. No uploads, no accounts, and no network after the one-time setup download (beyond an optional once-a-day update check).
 </p>
 
 <p align="center">
@@ -24,8 +24,8 @@
 
 ## What it does
 
-- **Word-synced "popup" captions.** A few words on screen at a time, with the
-  spoken word lit up — the style popular on Reels/TikTok/Shorts.
+- **Word-by-word captions.** A few words on screen at a time, with the spoken
+  word lit up — the karaoke-style look popular on TikTok/Reels/Shorts.
 - **Whisper transcription, offline.** Speech-to-text runs locally on your Mac
   via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with DTW word
   timings for tight sync.
@@ -322,10 +322,10 @@ stay small and the export's memory stays flat. See
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U6R0290CU2)
 
-TextLayr is free and open source, and always will be. If it saves you time,
-you can buy me a coffee - it's completely optional. Starring or sharing the
-project helps just as much. Support is for the software as it is: it doesn't
-buy features, priority, or a place on the roadmap.
+TextLayr is free, open source and donation-supported, and always will be. If it
+saves you time, you can buy me a coffee - it's completely optional. Starring or
+sharing the project helps just as much. Support is for the software as it is: it
+doesn't buy features, priority, or a place on the roadmap.
 
 ## Contributing
 

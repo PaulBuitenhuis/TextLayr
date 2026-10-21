@@ -170,3 +170,175 @@
       .catch(function () { /* keep the static copy and Releases fallback */ });
   }
 })();
+
+/* ── Style gallery ─────────────────────────────────────────────────────────
+   Composes each built-in caption profile over the still frame, the same way
+   the app composites over video. The look itself (fonts, colours, box, pill,
+   motion) is CSS in style.css, keyed off [data-style]; this file only walks
+   the words so the active-word highlight actually moves.
+
+   GROUPING mirrors words-per-popup in assets/profiles/*.json. A landscape
+   frame is shown with two extra words and larger type, the way you would
+   configure it for a wider screen, so the preview is not just a narrower
+   portrait. TEXT supplies preview copy sized to each grouping. */
+(function () {
+  'use strict';
+
+  var stage = document.querySelector('[data-stage]');
+  if (!stage) return;
+
+  var line = stage.querySelector('[data-cap-line]');
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.style-btn[data-style]'));
+  var ratios = Array.prototype.slice.call(document.querySelectorAll('.ratio-toggle [data-ratio]'));
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  var GROUPING = {
+    'classic': 3,
+    'bold-pop': 3,
+    'clean-subtitle': 5,
+    'minimal': 4,
+    'highlight-pill': 3,
+    'editorial': 3,
+    'word-by-word': 1,
+    'lower-third': 6
+  };
+
+  var TEXT = {
+    1: 'every word lights up',
+    3: 'every word lights',
+    4: 'every word lights up',
+    5: 'watch every word light up',
+    6: 'watch every single word land'
+  };
+
+  var ratio = '16:9';
+  var current = 'lower-third';
+
+  var WORD_MS = 430;
+  var GROUP_MS = 720;
+
+  var groups = [];
+  var groupIndex = 0;
+  var wordIndex = 0;
+  var timer = 0;
+  var onScreen = true;
+
+  function split(text, size) {
+    var words = text.split(' ');
+    var out = [];
+    for (var i = 0; i < words.length; i += size) out.push(words.slice(i, i + size));
+    return out;
+  }
+
+  function paint(enter) {
+    var words = groups[groupIndex] || [];
+    if (!words.length) return;
+
+    line.textContent = '';
+    words.forEach(function (word, i) {
+      var span = document.createElement('span');
+      span.className = 'cap-w' + (i === wordIndex ? ' is-on' : '');
+      span.textContent = word;
+      line.appendChild(span);
+      if (i < words.length - 1) line.appendChild(document.createTextNode(' '));
+    });
+
+    if (enter) {
+      line.classList.remove('is-enter');
+      void line.offsetWidth; // restart the keyframe animation
+      line.classList.add('is-enter');
+    }
+  }
+
+  function schedule(ms) {
+    window.clearTimeout(timer);
+    timer = 0;
+    if (!onScreen || reduce.matches) return;
+    timer = window.setTimeout(step, ms);
+  }
+
+  function step() {
+    timer = 0;
+    var current = groups[groupIndex] || [];
+
+    if (wordIndex + 1 < current.length) {
+      wordIndex += 1;
+      paint(false);
+      schedule(WORD_MS);
+    } else {
+      var next = (groupIndex + 1) % groups.length;
+      // A single-group profile (5 words at 5 per popup) never changes group,
+      // so replaying the entrance animation would just blink the line.
+      var changed = next !== groupIndex;
+      wordIndex = 0;
+      groupIndex = next;
+      paint(changed);
+      schedule(GROUP_MS);
+    }
+  }
+
+  function confFor(id) {
+    var words = GROUPING[id] || 3;
+    // Word by Word stays one word at a time whatever the frame.
+    if (ratio === '16:9' && words > 1) words = Math.min(words + 2, 6);
+    return { words: words, text: TEXT[words] || TEXT[3] };
+  }
+
+  function apply(id, animate) {
+    if (!GROUPING[id]) return;
+    var conf = confFor(id);
+
+    current = id;
+    stage.setAttribute('data-style', id);
+    groups = split(conf.text, conf.words);
+    groupIndex = 0;
+    wordIndex = 0;
+    paint(animate);
+
+    buttons.forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-style') === id));
+    });
+
+    schedule(GROUP_MS);
+  }
+
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      apply(btn.getAttribute('data-style'), true);
+    });
+  });
+
+  ratios.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      ratio = btn.getAttribute('data-ratio');
+      stage.setAttribute('data-ratio', ratio);
+      ratios.forEach(function (other) {
+        other.setAttribute('aria-pressed', String(other === btn));
+      });
+      // Grouping and copy change with the frame, so rebuild the line.
+      apply(current, false);
+    });
+  });
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      onScreen = entries[0].isIntersecting;
+      if (onScreen) schedule(WORD_MS);
+      else window.clearTimeout(timer);
+    }, { threshold: 0.25 }).observe(stage);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) window.clearTimeout(timer);
+    else schedule(WORD_MS);
+  });
+
+  var onMotionChange = function () {
+    if (reduce.matches) window.clearTimeout(timer);
+    else schedule(WORD_MS);
+  };
+  if (reduce.addEventListener) reduce.addEventListener('change', onMotionChange);
+  else if (reduce.addListener) reduce.addListener(onMotionChange);
+
+  apply('lower-third', false);
+})();
