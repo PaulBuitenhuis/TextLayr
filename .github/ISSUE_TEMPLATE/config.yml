@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request or idea
+    url: https://github.com/PaulBuitenhuis/TextLayr/discussions/categories/ideas
+    about: Ideas are welcome in Discussions; code PRs aren't.
+  - name: Question or help
+    url: https://github.com/PaulBuitenhuis/TextLayr/discussions/categories/q-a
+    about: Setup, models, exports, the CLI.
+  - name: Security report
+    url: https://github.com/PaulBuitenhuis/TextLayr/security/advisories/new
+    about: Report vulnerabilities privately, not in a public issue.

@@ -1,53 +1,52 @@
 # Contributing to TextLayr
 
-Thanks for taking a look. TextLayr is a small, focused project: an offline karaoke
-caption burner for short-form video. Issues and pull requests are welcome.
+TextLayr is a small, focused project: an offline karaoke caption burner for
+short-form video. It is maintained by a single author, and **unsolicited pull
+requests are closed automatically** — see the
+[contribution policy](#contribution-policy) for why, and for what to send
+instead.
 
-- [Project layout](#project-layout)
-- [Development setup](#development-setup)
-- [Building and running](#building-and-running)
+- [Contribution policy](#contribution-policy)
+- [Building from source](#building-from-source)
 - [Tests](#tests)
-- [Design notes](#design-notes)
+- [Architecture notes](#architecture-notes)
 - [Third-party licenses](#third-party-licenses)
-- [Packaging and releases](#packaging-and-releases)
 
-## Project layout
+## Contribution policy
 
-```
-src/
-  main.rs        arg parsing + headless CLI: probe → transcribe → chunk → render → export
-  pipeline.rs    shared orchestration (ingest + export) for CLI and GUI
-  probe.rs       ffprobe wrapper (rotation-aware display dims, color tags) + ffmpeg discovery
-  audio.rs       16 kHz mono f32le extraction + PCM read
-  transcribe.rs  whisper transcription, word merge, timing normalization, cache
-  model.rs       whisper model identity, discovery, download metadata
-  chunk.rs       word grouping into caption chunks + highlight windows
-  config.rs      grouped Style/Grouping model, font discovery, versioned preference persistence
-  profile.rs     built-in + saved style profiles (CRUD, stable ids, atomic JSON files)
-  deps.rs        startup dependency check + installable-missing description
-  download.rs    checksum-verified downloads (curl transport)
-  install.rs     first-run installer (ffmpeg/model)
-  paths.rs       platform data dirs for downloaded files
-  source.rs      provenance of a located dependency (bundled/downloaded/system/…)
-  render.rs      fontdue + tiny-skia -> per-state PNGs with outline/shadow/glow/pill effects
-  export.rs      frame-pipe export (default) + overlay-graph export, encoder selection
-  ui/            egui app: drop, ingest, review (preview/editor/style), export, done
-    licenses.rs  in-app viewer for THIRD_PARTY_LICENSES.md
-    profile.rs   profile picker, thumbnail gallery and management dialogs
-assets/fonts/    bundled caption fonts (Inter, Nunito, Libre Baskerville, OFL)
-assets/profiles/ built-in style profiles (embedded into the binary with include_str!)
-assets/icon.png  app icon master (generated; see scripts/make_icon.py)
-assets/AppIcon.icns  macOS bundle icon (generated)
-assets/dmg-background.png  install-window background (generated)
-models/          whisper models (downloaded, not committed; dev only)
-scripts/         fetch_model.sh + package_macos.sh + make_dmg.sh + make_icon.py
-                 + make_dmg_background.py + make_install_shots.py
-                 + make_install_guide.py + gen_third_party_licenses.py
-docs/screenshots/  README imagery
-vendor/          static ffmpeg (macOS dev) + whisper-rs-sys build patch
-```
+**Bug reports and feature ideas are welcome. Code contributions are by
+invitation only.**
 
-## Development setup
+### What to send
+
+| You have | Where it goes |
+|---|---|
+| A crash, a wrong export, a broken install | [Open a bug report](https://github.com/PaulBuitenhuis/TextLayr/issues/new?template=bug_report.yml) |
+| A feature idea or a question | [Discussions](https://github.com/PaulBuitenhuis/TextLayr/discussions) |
+| A security problem | [Private advisory](https://github.com/PaulBuitenhuis/TextLayr/security/advisories/new) — never a public issue |
+| A patch you want to exist | Fork the repo; MIT lets you publish your own version |
+
+A reproducible bug report is worth more than a patch written against a guess at
+the design, so the issue form asks for the version, the macOS release and the
+error text. Please fill it in.
+
+### Why no pull requests
+
+TextLayr is a single-author project. Every merged patch becomes code I have to
+maintain across ffmpeg, whisper.cpp and future macOS releases, so unsolicited
+PRs are closed automatically. A good bug report is the useful contribution.
+
+### If you fork
+
+Forking is fine — that's what the licence is for. If you publish a fork, though:
+
+- **Rename it and replace the app icon.** The MIT licence covers the code; it
+  doesn't grant trademark rights in the TextLayr name, wordmark or logo, and a
+  fork must not imply it is official or endorsed.
+- **Don't send users here for support.** Only official releases are supported.
+  Bugs that come from a fork's changes will be closed.
+
+## Building from source
 
 TextLayr targets **macOS 13+ on Apple Silicon**; it also builds and runs on Linux,
 which is a convenient dev environment. You need:
@@ -68,10 +67,9 @@ Then:
    ```
    Overridable with `$TEXTLAYR_MODEL`; the script also takes an optional
    destination path.
-2. **Fonts** — already bundled in `assets/fonts/` (OFL-licensed). To re-fetch,
-   see the loop in the repo history / Google Fonts' static-TTF CSS API.
+2. **Fonts** — already bundled in `assets/fonts/` (OFL-licensed); nothing to fetch.
 
-## Building and running
+### Build and run
 
 ```sh
 cargo build --release
@@ -101,7 +99,7 @@ parity, dependency reporting, model metadata, the updater's manifest/version
 parsing, and the licenses splitter. It does not download anything or require a
 model.
 
-## Design notes
+## Architecture notes
 
 - **Vendored `whisper-rs-sys` patch.** Upstream `whisper-rs-sys` regenerates
   bindgen bindings at build time; on some glibc it emits a `_IO_FILE` layout
@@ -180,93 +178,3 @@ It walks `cargo metadata`, collects each dependency's shipped license/notice
 files, and emits one deduplicated document (also embedded in the app's About →
 "Open source licenses" viewer). The bundled fonts and whisper.cpp texts are
 inlined too.
-
-## Packaging and releases
-
-```sh
-scripts/package_macos.sh
-```
-
-builds `dist/TextLayr.app` and `dist/TextLayr-<version>.{zip,dmg}`. The bundle holds
-the binary and fonts only; `ffmpeg`/`probe` and the model are downloaded on first
-run.
-
-The build is ad-hoc signed and **not notarized**, so a copy that arrives with the
-`com.apple.quarantine` flag — anything downloaded in a browser or AirDropped — is
-refused by Gatekeeper on first launch. Two ways round it, both documented in the
-README: install with `docs/install.sh` (curl downloads are never quarantined), or
-let the user clear the flag with `xattr -dr com.apple.quarantine`. Note macOS 15
-**removed** the old "right-click → Open" shortcut, so that advice is dead.
-
-The macOS floor is 13. `scripts/Info.plist` sets `LSMinimumSystemVersion`, the
-packaging script pins `MACOSX_DEPLOYMENT_TARGET=13.0`, and the README, landing
-page and install guide all say 13 — keep them in sync. The downloaded ffmpeg
-needs 12.0, but 12 itself is unverified; add it only after testing on a Monterey
-machine/VM.
-
-`docs/install.sh` is the terminal installer, served straight from GitHub Pages at
-<https://paulbuitenhuis.github.io/TextLayr/install.sh>. It resolves the release
-from `latest.json`, verifies the SHA-256, unpacks with `ditto` (keeping the
-signature) and installs to `/Applications` or `~/Applications`. `--cli` links a
-`textlayr` command onto `PATH`, and `--uninstall` removes the app plus the
-downloaded ffmpeg/models/preferences/cache. Test it before pushing with:
-
-```sh
-tmp="$(mktemp -d)"
-curl -fsSL https://raw.githubusercontent.com/PaulBuitenhuis/TextLayr/main/docs/install.sh \
-  | HOME="$tmp" sh -s -- --dir "$tmp/apps" --no-open
-rm -rf "$tmp"
-```
-
-The `.dmg` is a drag-to-Applications installer: when mounted it shows the app on
-the left and an `Applications` alias on the right, with an arrow background and
-an `Install guide.pdf` below. `scripts/make_dmg.sh` builds it (staging →
-read-write image → Finder layout via AppleScript → compressed `UDZO`). That
-Finder step needs Automation permission (`Terminal` → `Finder`) on first local
-run and is skipped gracefully if denied or if there's no GUI session, leaving a
-still-installable image with the alias. The background is generated by
-`scripts/make_dmg_background.py` and committed.
-
-The install artwork lives in `docs/assets/install/`. `1-dmg-window.png`,
-`2-drag.png` and `3-warning.png` are real screen captures (the window and the
-Gatekeeper alert); `4-open-anyway.png` is an illustration because the Open Anyway
-row only appears after dismissing the alert. Regenerate the illustration with:
-
-```sh
-scripts/make_install_shots.py   # only 4-open-anyway.png by default
-scripts/make_install_guide.py   # docs/assets/install/TextLayr-install-guide.pdf
-```
-
-`make_install_shots.py` reads the real artwork for the fallback compositions;
-`TEXTLAYR_REDRAW_ALL=1` rewrites all four images. The page and the PDF both read
-these files, so replacing one image updates both.
-
-Releases are cut by pushing a `v*` tag; the `release` GitHub Actions workflow
-builds the artifacts and attaches them to a GitHub Release, along with a
-`SHA256SUMS` file and the `latest.json` update manifest the app reads.
-
-### Testing the updater
-
-The updater compares the running `CARGO_PKG_VERSION` against the newest release,
-so exercising the real flow needs a *newer* release. `scripts/serve_updates_local.sh`
-packages a higher-versioned build, writes a matching `latest.json`, and serves
-`dist/` over HTTP. Run a **scratch copy** against it (the script prints the exact
-command):
-
-```sh
-scripts/serve_updates_local.sh            # packages 9.9.9, serves on :8000
-# in another terminal:
-mkdir -p ~/Applications/TextLayr-test
-cp -R dist/TextLayr.app ~/Applications/TextLayr-test/
-TEXTLAYR_UPDATE_URL="http://127.0.0.1:8000/latest.json" \
-  ~/Applications/TextLayr-test/TextLayr.app/Contents/MacOS/TextLayr
-```
-
-Then **Settings → Updates → Download & install** swaps the scratch copy and
-relaunches it — your real install is untouched. (The script repackages `dist/` at
-9.9.9; re-run `TEXTLAYR_VERSION=0.2.0 scripts/package_macos.sh` afterwards.)
-
-Overrides that help when iterating: `TEXTLAYR_UPDATE_URL` (an alternate manifest —
-URL, `file://`, or path), `TEXTLAYR_UPDATE_FORCE=1` (ignore the version gate), and
-`TEXTLAYR_UPDATE_SKIP_CODESIGN=1`. `textlayr --check-updates` runs just the check
-headlessly (exit 0 up to date, 10 update available, 1 error).

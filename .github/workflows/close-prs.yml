@@ -1,0 +1,54 @@
+name: Close unsolicited PRs
+
+# TextLayr is a single-author project and does not accept unsolicited pull
+# requests. This workflow comments, closes and locks them.
+#
+# `pull_request_target` is required: the GITHUB_TOKEN for a plain
+# `pull_request` from a fork is read-only, so it could neither comment nor
+# close. That event is safe here only because this job never checks out the
+# PR's code. Do not add an `actions/checkout` with the head SHA to this file.
+#
+# Dependabot is exempt so the weekly dependency PRs still work.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  close:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            const body = [
+              'Thanks for taking the time to write this.',
+              '',
+              "TextLayr doesn't take unsolicited pull requests: it's a single-author",
+              "codebase, so every patch becomes a long-term maintenance commitment I",
+              "can't make. This is closed automatically, and nothing is wrong with",
+              'your work.',
+              '',
+              '**Bugs:** open an issue.',
+              '**Ideas and questions:** use Discussions.',
+              '**Want to change the code?** Fork it (MIT allows that), but rename the',
+              "fork, replace the icon, and don't present it as the official TextLayr.",
+              '',
+              'Full policy: https://github.com/PaulBuitenhuis/TextLayr/blob/main/CONTRIBUTING.md#contribution-policy',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: number, body,
+            });
+            await github.rest.pulls.update({
+              owner, repo, pull_number: number, state: 'closed',
+            });
+            await github.rest.issues.lock({
+              owner, repo, issue_number: number, lock_reason: 'resolved',
+            });

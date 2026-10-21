@@ -294,8 +294,8 @@ textlayr --version                          # version + build hash
 
 ## Building from source
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer setup (Rust,
-cmake/clang for whisper.cpp, and packaging). In short:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the prerequisites and the test suite.
+In short:
 
 ```sh
 cargo build --release          # -> target/release/textlayr
@@ -316,7 +316,7 @@ PNGs → export: ffmpeg decode → Rust compositing → hardware encode
 
 Caption states are tight crops of just the caption box, so a few hundred of them
 stay small and the export's memory stays flat. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the deeper design notes.
+[CONTRIBUTING.md](CONTRIBUTING.md) for the deeper architecture notes.
 
 ## Support
 
@@ -324,7 +324,14 @@ stay small and the export's memory stays flat. See
 
 TextLayr is free and open source, and always will be. If it saves you time,
 you can buy me a coffee - it's completely optional. Starring or sharing the
-project helps just as much.
+project helps just as much. Support is for the software as it is: it doesn't
+buy features, priority, or a place on the roadmap.
+
+## Contributing
+
+Bug reports and feature ideas are welcome. TextLayr is a single-author project
+and doesn't take unsolicited pull requests — see
+[CONTRIBUTING.md](CONTRIBUTING.md#contribution-policy) for what to do instead.
 
 ## License
 
