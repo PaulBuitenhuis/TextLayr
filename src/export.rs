@@ -25,6 +25,8 @@ use crate::render::{blend_straight, blend_transformed, CaptionState, MotionPhase
 use anyhow::{bail, Context, Result};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::process::{ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -66,54 +68,79 @@ enum Active {
     VideoToolbox,
 }
 
-/// Device used for VAAPI. Linux-only; [`vaapi_works`] checks it first.
+/// Device used for VAAPI. Linux-only: probed from `/dev/dri` the first time an
+/// encoder is resolved, so a machine whose render node is `renderD129` (or
+/// anything else) still gets hardware encoding.
 #[cfg(target_os = "linux")]
-const VAAPI_DEVICE: &str = "/dev/dri/renderD128";
+fn render_nodes(dir: &Path) -> Vec<PathBuf> {
+    let mut nodes: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_prefix("renderD"))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .collect();
+    nodes.sort();
+    nodes
+}
 
-/// Probe once per process whether a working VAAPI encoder is present:
-/// the device node must exist and a 1-frame test encode must succeed.
+/// The first render node that passes a one-frame VAAPI probe, once per process.
+#[cfg(target_os = "linux")]
+fn vaapi_device(tools: &Fftools) -> Option<&'static Path> {
+    static DEVICE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DEVICE
+        .get_or_init(|| {
+            render_nodes(Path::new("/dev/dri"))
+                .into_iter()
+                .find(|device| vaapi_probe(tools, device))
+        })
+        .as_deref()
+}
+
+/// Probe once per process whether a working VAAPI encoder is present: a render
+/// node must exist and a 1-frame test encode must succeed against it.
 fn vaapi_works(tools: &Fftools) -> bool {
-    static OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *OK.get_or_init(|| {
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = tools;
-            false
-        }
-        #[cfg(target_os = "linux")]
-        {
-            if !Path::new(VAAPI_DEVICE).exists() {
-                return false;
-            }
-            Command::new(&tools.ffmpeg)
-                .args([
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-vaapi_device",
-                    VAAPI_DEVICE,
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=black:s=256x256:r=30:d=0.2",
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "format=nv12,hwupload",
-                    "-c:v",
-                    "h264_vaapi",
-                    "-qp",
-                    "22",
-                    "-f",
-                    "null",
-                    "-",
-                ])
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
-        }
-    })
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = tools;
+        false
+    }
+    #[cfg(target_os = "linux")]
+    {
+        vaapi_device(tools).is_some()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn vaapi_probe(tools: &Fftools, device: &Path) -> bool {
+    Command::new(&tools.ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-vaapi_device"])
+        .arg(device)
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:s=256x256:r=30:d=0.2",
+            "-frames:v",
+            "1",
+            "-vf",
+            "format=nv12,hwupload",
+            "-c:v",
+            "h264_vaapi",
+            "-qp",
+            "22",
+            "-f",
+            "null",
+            "-",
+        ])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Probe once per process whether VideoToolbox can encode on this machine.
@@ -540,7 +567,9 @@ pub fn export_pipe(
     enc_cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
     #[cfg(target_os = "linux")]
     if use_vaapi {
-        enc_cmd.arg("-vaapi_device").arg(VAAPI_DEVICE);
+        let device =
+            vaapi_device(tools).context("VAAPI was selected but no render node is available")?;
+        enc_cmd.arg("-vaapi_device").arg(device);
     }
     enc_cmd
         .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
@@ -822,5 +851,24 @@ mod tests {
         assert_eq!(caption_y(h, pos, Anchor::Center, top, bh), 480.0);
         assert_eq!(caption_y(h, pos, Anchor::Top, top, bh), 490.0);
         assert_eq!(caption_y(h, pos, Anchor::Bottom, top, bh), 470.0);
+    }
+
+    /// A machine whose render node is not `renderD128` still gets VAAPI; the
+    /// walk must ignore card nodes and non-numeric names.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn render_nodes_are_found_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["renderD129", "card0", "renderD128", "renderD", "renderDabc"] {
+            std::fs::write(dir.path().join(name), b"").unwrap();
+        }
+        let nodes: Vec<PathBuf> = render_nodes(dir.path());
+        assert_eq!(
+            nodes,
+            vec![dir.path().join("renderD128"), dir.path().join("renderD129")]
+        );
+
+        let empty = tempfile::tempdir().unwrap();
+        assert!(render_nodes(empty.path()).is_empty());
     }
 }

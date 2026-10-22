@@ -12,6 +12,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   running whisper, so the render → export path can be run without a model.
   Intended for tests, CI and debugging a style change; it is the same
   `{text, start_secs, end_secs}` shape as the transcript cache.
+- **Linux support (x86_64).** TextLayr builds and runs on Linux: resources
+  resolve from an AppImage or a standard prefix, first run downloads a pinned
+  static ffmpeg build, and `scripts/package_linux.sh` produces a portable tarball
+  (plus an AppImage when `appimagetool` is available). Releases publish a
+  `linux-x86_64` entry in `latest.json` alongside the macOS one, and the in-app
+  updater hands the Linux package over for you to install instead of replacing
+  the running binary. First-run downloads and updates no longer shell out to
+  `curl` or `ditto`.
 
 ## [0.2.3] - 2026-10-20
 

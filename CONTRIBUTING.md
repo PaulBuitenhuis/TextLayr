@@ -48,8 +48,8 @@ Forking is fine — that's what the licence is for. If you publish a fork, thoug
 
 ## Building from source
 
-TextLayr targets **macOS 13+ on Apple Silicon**; it also builds and runs on Linux,
-which is a convenient dev environment. You need:
+TextLayr targets **macOS 13+ on Apple Silicon** and **Linux on x86_64**; Linux is
+also the convenient dev environment. You need:
 
 | Tool | Why | Notes |
 |---|---|---|
@@ -78,6 +78,13 @@ cargo build --release
 # through Terminal, which is why the binary pops a terminal window).
 scripts/package_macos.sh
 open dist/TextLayr.app
+
+# Linux: portable tarball, plus an AppImage when `appimagetool` is on PATH.
+# egui/winit need their dev headers first, e.g. on Debian/Ubuntu:
+#   sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
+#                    libxcursor-dev libxrandr-dev libxinerama-dev
+scripts/package_linux.sh
+./dist/TextLayr-<version>-linux-x86_64/textlayr
 
 # GUI straight from a terminal (fine on Linux too); drop zone, or pass a video:
 ./target/release/textlayr
@@ -115,6 +122,9 @@ model.
   fault and not the harness's.
 - Anything requiring a real ffmpeg skips with a printed reason when none is
   found. CI installs ffmpeg on both macOS and Linux, so it runs there.
+
+CI runs the gates on macOS and Linux. The Linux job also compiles the
+`cfg(target_os = "linux")` branches (VAAPI, PATH lookup) that macOS never sees.
 
 Neither switch is used in normal operation: `$TEXTLAYR_FFTOOLS` is a development
 override, and `--transcript` is documented under testing in `--help`.
@@ -178,12 +188,15 @@ override, and `--transcript` is documented under testing in `--help`.
   every release) from the version-independent
   `releases/latest/download/latest.json` URL, falling back to the GitHub REST API
   for releases cut before the manifest existed (the fallback is skipped when
-  `$TEXTLAYR_UPDATE_URL` is set). Asset URLs resolve as *siblings of the
-  manifest*, so the identical file works from GitHub or a local server. Downloads
-  are verified against the manifest's SHA-256, and the extracted bundle is checked
-  (identifier, version, codesign) before a detached helper swaps it in and
-  relaunches. Quarantined "App Translocation" or read-only copies fall back to
-  opening the `.dmg` for a manual drag.
+  `$TEXTLAYR_UPDATE_URL` is set). Assets are selected from the manifest's
+  per-platform `platforms{}` map (keyed by `platform::slug()`), with the legacy
+  top-level macOS entries understood for older manifests. Asset URLs resolve as
+  *siblings of the manifest*, so the identical file works from GitHub or a local
+  server. Downloads are verified against the manifest's SHA-256, and the
+  extracted bundle is checked (identifier, version, codesign) before a detached
+  helper swaps it in and relaunches. Quarantined "App Translocation" or read-only
+  copies fall back to opening the `.dmg` for a manual drag; on Linux the package
+  is handed over instead.
 
 ## Third-party licenses
 

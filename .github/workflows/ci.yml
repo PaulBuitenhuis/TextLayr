@@ -19,7 +19,40 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         run: cargo clippy --locked --all-targets --no-deps -- -D warnings
+      # The harness end-to-end test needs a real ffmpeg; install it if the image
+      # doesn't already ship one, so the export path cannot silently skip.
+      - name: ensure ffmpeg (harness end-to-end test)
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
       # whisper.cpp builds through cmake + clang, both present on the runner.
+      - name: cargo test
+        run: cargo test --locked --all-targets
+
+  test-linux:
+    name: build + test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # egui/eframe link against X11/Wayland on Linux; the runner image does not
+      # ship the development headers.
+      - name: GUI dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
+            libxcursor-dev libxrandr-dev libxinerama-dev
+      # Linux is the development platform, and its `cfg(target_os = "linux")`
+      # branches (VAAPI, PATH lookup) are not compiled by the macOS job — so
+      # clippy runs here too.
+      - name: clippy
+        run: cargo clippy --locked --all-targets --no-deps -- -D warnings
+      # The harness drives a real ffmpeg end-to-end (probe → render → encode)
+      # via `--transcript`, which is why no whisper model is needed here.
+      - name: install ffmpeg
+        run: sudo apt-get install -y --no-install-recommends ffmpeg
       - name: cargo test
         run: cargo test --locked --all-targets
 

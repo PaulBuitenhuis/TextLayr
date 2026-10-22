@@ -6,6 +6,8 @@ Produces:
   assets/icon-mark.png  1024x1024 "T" monogram, for places too small to read
                         the wordmark (favicons, site header/footer)
   assets/AppIcon.icns macOS bundle icon (referenced by Info.plist)
+  assets/icons/hicolor/<N>x<N>/apps/textlayr.png
+                        Linux icon-theme PNGs (16…256px)
   assets/banner-{dark,light}.png  transparent wordmark lockup for the app
                                    header and the README (white ink for dark
                                    backgrounds, dark ink for light ones)
@@ -222,6 +224,17 @@ def write_icns(wordmark: Image.Image, small: Image.Image) -> None:
     shutil.rmtree(iconset)
 
 
+def write_hicolor(wordmark: Image.Image, small: Image.Image) -> None:
+    """Linux icon-theme (hicolor) PNG set; tiny sizes use the monogram."""
+    base = ASSETS / "icons" / "hicolor"
+    for px in (16, 32, 48, 64, 128, 256):
+        src = small if px <= 32 else wordmark
+        out_dir = base / f"{px}x{px}" / "apps"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        src.resize((px, px), Image.LANCZOS).save(out_dir / "textlayr.png")
+    print(f"wrote {base.relative_to(ROOT)}/{{16,32,48,64,128,256}}x.../apps/textlayr.png")
+
+
 def main() -> int:
     ASSETS.mkdir(exist_ok=True)
     wordmark = build()
@@ -241,6 +254,9 @@ def main() -> int:
         out = ASSETS / name
         build_banner(fg).save(out)
         print(f"wrote {out.relative_to(ROOT)} ({out.stat().st_size // 1024} KiB)")
+
+    # Linux icon-theme set (platform-independent; no macOS tooling needed).
+    write_hicolor(wordmark, small)
 
     if shutil.which("iconutil") is None:
         print("iconutil not found — skipping .icns (macOS only)", file=sys.stderr)

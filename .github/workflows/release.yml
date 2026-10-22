@@ -7,57 +7,142 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  macos:
-    name: build TextLayr.app + attach to release
-    runs-on: macos-14
+  # One build per platform; each uploads its artifacts for the publish job.
+  build:
+    name: build (${{ matrix.slug }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            slug: macos-arm64
+          # 22.04 keeps the glibc floor low enough for older distros.
+          - os: ubuntu-22.04
+            slug: linux-x86_64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # `git describe` needs tags/history for the build stamp
+          fetch-depth: 0 # `git describe` feeds the build stamp
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - name: Linux GUI dev libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
+            libxcursor-dev libxrandr-dev libxinerama-dev
+
+      - name: Install appimagetool
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$HOME/bin/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$HOME/bin/appimagetool"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Derive version from the tag
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        env:
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
+        run: scripts/package_macos.sh
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        env:
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
+        run: scripts/package_linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.slug }}
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.tar.xz
+            dist/*.AppImage
+          if-no-files-found: error
+
+  # Single publish job: gather every platform's artifacts, write SHA256SUMS and
+  # the combined latest.json (legacy macOS top-level + a platforms{} map), then
+  # attach them all to one GitHub Release.
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Derive version from the tag
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Package (app + zip + dmg)
-        env:
-          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
-        run: scripts/package_macos.sh
-
       - name: Checksums + update manifest
         working-directory: dist
         env:
           VERSION: ${{ steps.version.outputs.value }}
-        # SHA256SUMS is for humans/other tooling; latest.json is what the in-app
-        # updater reads (via releases/latest/download/latest.json).
         run: |
           set -euo pipefail
-          shasum -a 256 TextLayr-*.zip TextLayr-*.dmg > SHA256SUMS
+          V="$VERSION"
 
-          zip_name=$(basename "$(ls TextLayr-*.zip | head -1)")
-          zip_sha=$(shasum -a 256 "$zip_name" | awk '{print $1}')
-          zip_size=$(stat -f%z "$zip_name")
-          dmg_name=$(basename "$(ls TextLayr-*.dmg | head -1)")
-          dmg_sha=$(shasum -a 256 "$dmg_name" | awk '{print $1}')
-          dmg_size=$(stat -f%z "$dmg_name")
+          mac_zip="TextLayr-${V}.zip"
+          mac_dmg="TextLayr-${V}.dmg"
+          lin_tar="TextLayr-${V}-linux-x86_64.tar.xz"
+          lin_app="TextLayr-${V}-linux-x86_64.AppImage"
 
+          for f in "$mac_zip" "$mac_dmg" "$lin_tar"; do
+            [ -f "$f" ] || { echo "missing release artifact: $f" >&2; exit 1; }
+          done
+
+          sha()   { sha256sum "$1" | awk '{print $1}'; }
+          size()  { stat -c%s "$1"; }
+          asset() { printf '{"name":"%s","sha256":"%s","size":%s}' "$1" "$(sha "$1")" "$(size "$1")"; }
+
+          sha256sum "$mac_zip" "$mac_dmg" "$lin_tar" > SHA256SUMS
+          # The AppImage is best-effort (needs appimagetool); the .tar.xz is the fallback.
+          if [ -f "$lin_app" ]; then sha256sum "$lin_app" >> SHA256SUMS; fi
+
+          lin_assets="\"tar\": $(asset "$lin_tar")"
+          if [ -f "$lin_app" ]; then
+            lin_assets="${lin_assets}, \"appimage\": $(asset "$lin_app")"
+          fi
+
+          # `zip`/`dmg` at the top level stay for backward compatibility; the app
+          # reads `platforms{}` (keyed by platform::slug()).
           cat > latest.json <<EOF
           {
-            "version": "$VERSION",
-            "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v$VERSION",
-            "zip": { "name": "$zip_name", "sha256": "$zip_sha", "size": $zip_size },
-            "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size }
+            "version": "${V}",
+            "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v${V}",
+            "zip": $(asset "$mac_zip"),
+            "dmg": $(asset "$mac_dmg"),
+            "platforms": {
+              "macos-arm64": { "zip": $(asset "$mac_zip"), "dmg": $(asset "$mac_dmg") },
+              "linux-x86_64": { ${lin_assets} }
+            }
           }
           EOF
 
-          # Version-agnostic aliases so the website can link to a URL that never
-          # changes: releases/latest/download/TextLayr.dmg. Copied after
-          # SHA256SUMS so only the versioned files appear in the checksums.
-          cp "$dmg_name" TextLayr.dmg
-          cp "$zip_name" TextLayr.zip
+          python3 -c "import json; json.load(open('latest.json')); print('latest.json is valid JSON')"
+
+          # Version-agnostic aliases for the website (after SHA256SUMS, so the
+          # checksums only name the versioned files).
+          cp "$mac_dmg" TextLayr.dmg
+          cp "$mac_zip" TextLayr.zip
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
@@ -66,6 +151,8 @@ jobs:
           files: |
             dist/TextLayr-*.dmg
             dist/TextLayr-*.zip
+            dist/TextLayr-*.tar.xz
+            dist/TextLayr-*.AppImage
             dist/TextLayr.dmg
             dist/TextLayr.zip
             dist/SHA256SUMS

@@ -51,8 +51,9 @@
 
 ## Requirements
 
-- **macOS 13 (Ventura) or later on Apple Silicon (arm64).** (The code also runs on
-  Linux for development; release builds target macOS.)
+- **macOS 13 (Ventura) or later on Apple Silicon (arm64)**, or **Linux on
+  x86_64**. Linux releases ship as a portable `.tar.xz` and an AppImage; you can
+  also build one with `scripts/package_linux.sh`.
 - **No extra installs.** `ffmpeg` + `ffprobe` and a whisper model are fetched on
   first run (~190 MB, or ~530 MB if you pick the larger `small.en` model). If you
   already have ffmpeg on your `PATH` (e.g. from Homebrew), TextLayr uses it
@@ -138,6 +139,17 @@ TextLayr downloaded (it also removes your preferences):
 ```sh
 curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
 ```
+
+### Linux
+
+Download `TextLayr-<version>-linux-x86_64.tar.xz` (or the `.AppImage`) from
+[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), unpack it and run
+`./textlayr`. Nothing else is needed: the first launch downloads a static
+`ffmpeg` build and a whisper model into `~/.local/share/textlayr/`. An `ffmpeg`
+already on your `PATH` is used instead of downloading one.
+
+The in-app updater finds new versions but hands the Linux package over for you to
+install rather than replacing the running binary.
 
 ### Uninstall
 
