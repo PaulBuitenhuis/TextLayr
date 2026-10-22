@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::paths;
+use crate::platform;
 use crate::source::Source;
 
 /// Where we found ffmpeg/ffprobe. Populated once at startup.
@@ -62,8 +63,8 @@ fn locate(exe: &Path, env_dir: Option<&Path>) -> Result<Fftools> {
     let mut ffmpeg: Option<(PathBuf, Source)> = None;
     let mut ffprobe: Option<(PathBuf, Source)> = None;
     for (d, source) in &dirs {
-        let f = d.join("ffmpeg");
-        let p = d.join("ffprobe");
+        let f = d.join(platform::exe_name("ffmpeg"));
+        let p = d.join(platform::exe_name("ffprobe"));
         if ffmpeg.is_none() && f.is_file() {
             ffmpeg = Some((f, *source));
         }
@@ -75,21 +76,21 @@ fn locate(exe: &Path, env_dir: Option<&Path>) -> Result<Fftools> {
         }
     }
 
-    let platform = platform_name();
+    let vendor = platform::vendor_slug();
 
     // Fall back to PATH (system-provided).
     if ffmpeg.is_none() {
-        ffmpeg = which("ffmpeg").map(|p| (p, Source::System));
+        ffmpeg = platform::which(&platform::exe_name("ffmpeg")).map(|p| (p, Source::System));
     }
     if ffprobe.is_none() {
-        ffprobe = which("ffprobe").map(|p| (p, Source::System));
+        ffprobe = platform::which(&platform::exe_name("ffprobe")).map(|p| (p, Source::System));
     }
 
     let (Some((ffmpeg, ffmpeg_src)), Some((ffprobe, ffprobe_src))) = (ffmpeg, ffprobe) else {
         bail!(
             "ffmpeg/ffprobe not found. Bundle them in the app's Resources/bin, \
              point $TEXTLAYR_FFTOOLS at a directory holding both, place them in \
-             vendor/{platform}/, install them on your PATH, or use the Setup \
+             vendor/{vendor}/, install them on your PATH, or use the Setup \
              screen to download them."
         );
     };
@@ -105,46 +106,29 @@ fn locate(exe: &Path, env_dir: Option<&Path>) -> Result<Fftools> {
     })
 }
 
-fn platform_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        "unknown"
-    }
-}
-
 /// Candidate directories, most specific first, each tagged with where it came
 /// from.
 fn candidate_dirs(exe: &Path, env_dir: Option<&Path>) -> Vec<(PathBuf, Source)> {
-    let exe_dir = exe.parent().unwrap_or(Path::new("."));
-
     let mut dirs: Vec<(PathBuf, Source)> = Vec::new();
     // Explicit test/dev override wins over everything, so a fixture directory
     // can stand in for the real tools.
     if let Some(dir) = env_dir {
         dirs.push((dir.to_path_buf(), Source::Env));
     }
-    // Bundled .app: Contents/Resources/bin (exe lives in Contents/MacOS).
-    if let Some(resources) = exe_dir.parent().map(|d| d.join("Resources").join("bin")) {
-        dirs.push((resources, Source::Bundled));
+    // Bundled with the app (the bundle layout differs per OS).
+    for (root, source) in platform::bundle_roots_for(Some(exe)) {
+        dirs.push((root.join("bin"), source));
     }
     // Downloaded by TextLayr on first run.
     if let Some(bin) = paths::bin_dir() {
         dirs.push((bin, Source::Downloaded));
     }
-    // Repo layout: <crate>/vendor/<platform>
-    let platform = platform_name();
-    // Walk up from the exe dir looking for a vendor folder (handles target/debug).
-    let mut cur = exe_dir.to_path_buf();
-    for _ in 0..5 {
-        dirs.push((cur.join("vendor").join(platform), Source::Dev));
-        if let Some(parent) = cur.parent() {
-            cur = parent.to_path_buf();
-        } else {
-            break;
-        }
+    // Repo layout: <crate>/vendor/<platform> (dev), walking up from the
+    // executable and the current directory.
+    let vendor = platform::vendor_slug();
+    let cwd = std::env::current_dir().ok();
+    for (root, source) in platform::dev_roots_for(Some(exe), cwd.as_deref()) {
+        dirs.push((root.join("vendor").join(vendor), source));
     }
     dirs
 }
@@ -165,21 +149,6 @@ fn weaker(a: Source, b: Source) -> Source {
     } else {
         b
     }
-}
-
-fn which(bin: &str) -> Option<PathBuf> {
-    let out = Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {}", bin))
-        .output()
-        .ok()?;
-    if out.status.success() {
-        let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !p.is_empty() {
-            return Some(PathBuf::from(p));
-        }
-    }
-    None
 }
 
 /// Probe a video file with ffprobe and return display-oriented properties.

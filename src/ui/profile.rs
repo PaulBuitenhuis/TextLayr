@@ -470,7 +470,7 @@ impl ProfileUi {
         if theme::button(ui, "Reveal folder").clicked() {
             if let Some(dir) = store.dir() {
                 let _ = std::fs::create_dir_all(dir);
-                reveal_path(dir);
+                let _ = crate::platform::reveal_in_file_manager(dir);
             }
         }
     }
@@ -632,19 +632,6 @@ fn join(a: Action, b: Action) -> Action {
         (Seek, _) | (_, Seek) => Seek,
         _ => None,
     }
-}
-
-fn reveal_path(path: &std::path::Path) {
-    #[cfg(target_os = "macos")]
-    let cmd = "open";
-    #[cfg(target_os = "linux")]
-    let cmd = "xdg-open";
-    #[cfg(target_os = "windows")]
-    let cmd = "explorer";
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    let cmd = "true";
-
-    let _ = std::process::Command::new(cmd).arg(path).spawn();
 }
 
 #[cfg(test)]

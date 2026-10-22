@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::model::Model;
-use crate::paths;
+use crate::platform;
 use crate::source::Source;
 
 /// Straight (non-premultiplied) RGBA color.
@@ -560,9 +560,8 @@ impl Default for MotionStyle {
 
 /// Locate the bundled `assets/fonts` directory, and where it came from.
 ///
-/// Order: `$TEXTLAYR_FONTS` → bundled `Contents/Resources/assets/fonts` →
-/// `assets/fonts` next to / above the executable (dev) → under the current
-/// directory (dev).
+/// Order: `$TEXTLAYR_FONTS` → the app's bundled resource root(s) → a source
+/// checkout, walking up from the executable and the current directory.
 pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
     let mut candidates: Vec<(PathBuf, Source)> = Vec::new();
 
@@ -570,32 +569,12 @@ pub fn find_fonts_dir() -> Result<(PathBuf, Source)> {
         candidates.push((PathBuf::from(env), Source::Env));
     }
 
-    if let Some(exe) = paths::current_exe() {
-        // .app bundle: the exe lives in Contents/MacOS, fonts are copied to
-        // Contents/Resources/assets/fonts by scripts/package_macos.sh.
-        if let Some(dir) = exe.parent() {
-            if let Some(res) = dir.parent() {
-                candidates.push((
-                    res.join("Resources").join("assets").join("fonts"),
-                    Source::Bundled,
-                ));
-            }
-        }
-        let mut cur = exe.parent().map(|p| p.to_path_buf());
-        for _ in 0..6 {
-            let Some(dir) = cur else { break };
-            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
-            cur = dir.parent().map(|p| p.to_path_buf());
-        }
+    let fonts = |root: PathBuf| root.join("assets").join("fonts");
+    for (root, source) in platform::bundle_roots() {
+        candidates.push((fonts(root), source));
     }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut cur = Some(cwd);
-        for _ in 0..6 {
-            let Some(dir) = cur else { break };
-            candidates.push((dir.join("assets").join("fonts"), Source::Dev));
-            cur = dir.parent().map(|p| p.to_path_buf());
-        }
+    for (root, source) in platform::dev_roots() {
+        candidates.push((fonts(root), source));
     }
 
     for (c, source) in &candidates {

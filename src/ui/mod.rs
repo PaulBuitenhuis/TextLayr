@@ -2627,28 +2627,26 @@ fn file_label(path: &Path) -> String {
 
 /// Open `path` in the OS default application (e.g. the video's player).
 fn open_file(path: &Path) -> Result<()> {
-    let mut cmd = std::process::Command::new(if cfg!(target_os = "macos") {
-        "open"
+    let mut cmd = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
     } else {
-        "xdg-open"
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg("--");
+        c
+    };
+    cmd.arg(path);
+    let mut child = cmd.spawn()?;
+    // Reap on a detached thread: the launcher exits immediately, and leaving it
+    // unreaped holds a zombie for the rest of the session.
+    std::thread::spawn(move || {
+        let _ = child.wait();
     });
-    cmd.arg(path).spawn()?;
     Ok(())
 }
 
 /// Open the folder containing `path` in the file manager.
 fn reveal(path: &Path) -> Result<()> {
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut cmd = std::process::Command::new(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    cmd.arg(dir).spawn()?;
-    Ok(())
+    crate::platform::reveal_in_file_manager(path)
 }
 
 #[cfg(test)]

@@ -598,7 +598,7 @@ fn open_installer(
             .spawn()
             .context("failed to open the disk image")?;
     } else {
-        reveal(&dest);
+        let _ = crate::platform::reveal_in_file_manager(&dest);
     }
     Ok(InstallOutcome::OpenedDmg)
 }
@@ -797,14 +797,6 @@ fn strip_quarantine(path: &Path) {
         .arg("com.apple.quarantine")
         .arg(path)
         .status();
-}
-
-fn reveal(path: &Path) {
-    if cfg!(target_os = "macos") {
-        let _ = Command::new(OPEN).arg("-R").arg(path).spawn();
-    } else if let Some(dir) = path.parent() {
-        let _ = Command::new("xdg-open").arg(dir).spawn();
-    }
 }
 
 /// A path in `dir` for `name` that doesn't already exist ("name (1).zip").
