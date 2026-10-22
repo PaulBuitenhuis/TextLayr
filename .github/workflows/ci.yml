@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -55,6 +56,19 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends ffmpeg
       - name: cargo test
         run: cargo test --locked --all-targets
+      # Build the shippable tarball so the packaging script is exercised on every
+      # run and a build can be downloaded for a real-machine smoke test. CI skips
+      # the AppImage (needs appimagetool); releases still produce it.
+      - name: package (Linux tarball)
+        env:
+          TEXTLAYR_VERSION: 0.0.0-ci.${{ github.run_number }}
+          SKIP_APPIMAGE: "1"
+        run: scripts/package_linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: textlayr-linux-x86_64
+          path: dist/TextLayr-*-linux-x86_64.tar.xz
+          if-no-files-found: error
 
   audit:
     name: cargo audit (dependencies)
