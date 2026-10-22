@@ -1,8 +1,15 @@
 //! Pixel-regression matrix for the renderer and the motion compositor.
 //!
-//! Hashes are intentionally platform-independent: fonts are bundled and both
-//! fontdue and tiny-skia are pure Rust. Run with `TEXTLAYR_PRINT_GOLDEN=1` to
-//! print fresh tuples after an intentional visual change.
+//! Fonts are bundled and both fontdue and tiny-skia are pure Rust, so the
+//! *layout* is identical everywhere. Pixel hashes are only asserted on the
+//! macOS arm64 reference platform: the rasteriser and the outline/shadow/glow
+//! passes accumulate `f32`, and an effect-heavy style differs in the low bit
+//! between arm64 and x86_64 (verified: same canvas, same box geometry, different
+//! hash). Dimensions and box geometry are still asserted on every platform, so
+//! layout regressions stay covered.
+//!
+//! Run with `TEXTLAYR_PRINT_GOLDEN=1` to print fresh tuples after an intentional
+//! visual change.
 
 use textlayr::config::{Color, Easing, Fit, MotionStyle, PopupEffect, Style};
 use textlayr::export::caption_y;
@@ -267,6 +274,10 @@ const GOLDEN: &[(&str, u64, u32, u32, u32, u32)] = &[
     ),
 ];
 
+/// Pixel hashes are compared only on the reference platform (see the module
+/// docs); layout is compared everywhere.
+const PIXEL_HASH_REFERENCE: bool = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+
 #[test]
 fn built_in_styles_and_layouts_render_consistently() {
     let print = std::env::var_os("TEXTLAYR_PRINT_GOLDEN").is_some();
@@ -285,11 +296,22 @@ fn built_in_styles_and_layouts_render_consistently() {
             .find(|g| g.0 == c.name)
             .unwrap_or_else(|| panic!("no golden entry for {}", c.name));
         assert_eq!(
-            (got.0, got.1, got.2, got.3, got.4),
-            (expected.1, expected.2, expected.3, expected.4, expected.5),
-            "golden mismatch for {}",
-            c.name
+            (got.1, got.2, got.3, got.4),
+            (expected.2, expected.3, expected.4, expected.5),
+            "layout changed for {} (canvas {}x{}, box_top {}, box_h {})",
+            c.name,
+            got.1,
+            got.2,
+            got.3,
+            got.4
         );
+        if PIXEL_HASH_REFERENCE {
+            assert_eq!(
+                got.0, expected.1,
+                "pixel hash changed for {}: got 0x{:016x}, expected 0x{:016x}",
+                c.name, got.0, expected.1
+            );
+        }
     }
     if !print {
         assert_eq!(cases.len(), GOLDEN.len(), "golden table is stale");
