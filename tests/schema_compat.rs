@@ -15,7 +15,13 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn load_profile(name: &str) -> textlayr::profile::Profile {
-    let store = ProfileStore::new();
+    // A store rooted at the fixtures, so nothing here reads the real user
+    // config dir; `find` also accepts the explicit path.
+    let store = ProfileStore::with_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures"),
+    );
     store
         .find(&fixture(name).to_string_lossy())
         .unwrap_or_else(|| panic!("fixture {name} did not load"))

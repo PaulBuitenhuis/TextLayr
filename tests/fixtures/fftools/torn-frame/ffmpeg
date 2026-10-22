@@ -1,0 +1,6 @@
+#!/bin/sh
+# Harness fixture: claims success but writes only part of a frame, the way a
+# decoder killed mid-stream would. 100 bytes is deliberately not a whole
+# 320x568 RGBA frame (728_320 bytes).
+dd if=/dev/zero bs=100 count=1 2>/dev/null || exit 1
+exit 0

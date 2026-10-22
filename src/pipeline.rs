@@ -49,6 +49,7 @@ pub enum IngestProgress {
 pub type Progress = Box<dyn FnMut(IngestProgress) + Send>;
 
 /// Everything the review screen needs after a successful ingest.
+#[derive(Debug)]
 pub struct Ingest {
     pub tools: Fftools,
     pub info: VideoInfo,
@@ -56,6 +57,29 @@ pub struct Ingest {
     pub from_cache: bool,
     /// The model that produced these words (or that a cache hit came from).
     pub model: Model,
+}
+
+/// Probe the input and report the steps shared by every ingest path.
+fn open_input(
+    input: &Path,
+    model: Option<Model>,
+    report: &dyn Fn(IngestProgress),
+) -> Result<(Fftools, VideoInfo)> {
+    let tools = probe::find_ffmpeg().context("ffmpeg discovery failed")?;
+    report(IngestProgress::Tools(tools.clone()));
+    if let Some(model) = model {
+        report(IngestProgress::Model(model));
+    }
+    report(IngestProgress::Probing);
+    let info = probe::probe(&tools, input).context("probe failed")?;
+    if !info.has_audio {
+        bail!(
+            "this video has no audio track, so there's nothing to transcribe. \
+             Karaoke captions need a voiceover."
+        );
+    }
+    report(IngestProgress::Probed(info.clone()));
+    Ok((tools, info))
 }
 
 /// Probe the input, then produce word-level timings — from cache when the
@@ -75,18 +99,7 @@ pub fn ingest(
         }
     };
 
-    let tools = probe::find_ffmpeg().context("ffmpeg discovery failed")?;
-    report(IngestProgress::Tools(tools.clone()));
-    report(IngestProgress::Model(model.model));
-    report(IngestProgress::Probing);
-    let info = probe::probe(&tools, input).context("probe failed")?;
-    if !info.has_audio {
-        bail!(
-            "this video has no audio track, so there's nothing to transcribe. \
-             Karaoke captions need a voiceover."
-        );
-    }
-    report(IngestProgress::Probed(info.clone()));
+    let (tools, info) = open_input(input, Some(model.model), &report)?;
 
     if !no_cache {
         if let Some(cached) = transcribe::load_cached(input, model.model) {
@@ -139,6 +152,33 @@ pub fn ingest(
         words,
         from_cache: false,
         model: kind,
+    })
+}
+
+/// [`ingest`] with word timings read from `transcript` instead of whisper.
+///
+/// Backs the `--transcript` flag: probing, chunking, rendering and exporting are
+/// the real code paths, so a style or export change can be exercised without a
+/// model or a multi-minute transcription. Nothing is written to the cache.
+pub fn ingest_from_file(input: &Path, transcript: &Path, progress: Progress) -> Result<Ingest> {
+    let progress = Arc::new(std::sync::Mutex::new(progress));
+    let report = |ev: IngestProgress| {
+        if let Ok(mut f) = progress.lock() {
+            f(ev);
+        }
+    };
+
+    // Read (and validate) the transcript first: a typo'd path should fail
+    // before we spend time probing, and it makes the error the useful one.
+    let words = transcribe::read_words(transcript).context("transcript file")?;
+    let (tools, info) = open_input(input, None, &report)?;
+
+    Ok(Ingest {
+        tools,
+        info,
+        words,
+        from_cache: false,
+        model: Model::default(),
     })
 }
 
@@ -323,5 +363,21 @@ mod tests {
             ExportProgress::new(ExportPhase::Rendering, -1.0).overall,
             0.0
         );
+    }
+
+    /// A `--transcript` path that cannot be read fails on the transcript, not
+    /// on a probe, and does it before any ffmpeg work.
+    #[test]
+    fn a_missing_transcript_fails_before_probing() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = ingest_from_file(
+            Path::new("/nonexistent/video.mp4"),
+            &dir.path().join("nope.json"),
+            Box::new(|_| {}),
+        )
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("transcript file"), "{msg}");
+        assert!(msg.contains("nope.json"), "{msg}");
     }
 }

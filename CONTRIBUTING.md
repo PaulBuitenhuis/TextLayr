@@ -99,6 +99,26 @@ parity, dependency reporting, model metadata, the updater's manifest/version
 parsing, and the licenses splitter. It does not download anything or require a
 model.
 
+### Test harness
+
+`tests/harness.rs` exercises the real render → encode path without whisper:
+
+- **`--transcript <json>`** feeds a fixed word list
+  (`tests/fixtures/transcript-2s.json`) straight into the pipeline, so probing,
+  chunking, rendering and encoding all run with no model.
+- **`$TEXTLAYR_FFTOOLS`** points ffmpeg/ffprobe discovery (and therefore the
+  whole app) at a directory of fixture scripts. `tests/fixtures/fftools/` has
+  `hang`, `fail`, `torn-frame` and a `pass` wrapper that delegates to the real
+  binaries; the end-to-end test synthesizes its 2 s clip with `lavfi`.
+- The suite asserts the fixtures themselves behave (a hang really hangs, a
+  failure exits 3, a torn frame is short), so a later red test is the code's
+  fault and not the harness's.
+- Anything requiring a real ffmpeg skips with a printed reason when none is
+  found. CI installs ffmpeg on both macOS and Linux, so it runs there.
+
+Neither switch is used in normal operation: `$TEXTLAYR_FFTOOLS` is a development
+override, and `--transcript` is documented under testing in `--help`.
+
 ## Architecture notes
 
 - **Vendored `whisper-rs-sys` patch.** Upstream `whisper-rs-sys` regenerates

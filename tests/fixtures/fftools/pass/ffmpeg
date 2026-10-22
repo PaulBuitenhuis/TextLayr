@@ -1,0 +1,16 @@
+#!/bin/sh
+# Harness fixture: delegate to the real ffmpeg.
+#
+# A fixture directory is never on PATH, so the fallback `command -v ffmpeg`
+# resolves the genuine binary rather than recursing into this script.
+if [ -n "${TEXTLAYR_FFTOOLS_LOG:-}" ]; then
+    printf 'ffmpeg %s\n' "$*" >> "$TEXTLAYR_FFTOOLS_LOG"
+fi
+if [ -n "${TEXTLAYR_REAL_FFMPEG:-}" ]; then
+    exec "$TEXTLAYR_REAL_FFMPEG" "$@"
+fi
+real=$(command -v ffmpeg) || {
+    echo "textlayr-fixture: no real ffmpeg on PATH" >&2
+    exit 127
+}
+exec "$real" "$@"

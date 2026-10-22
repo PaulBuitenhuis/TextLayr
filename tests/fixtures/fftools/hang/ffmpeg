@@ -1,0 +1,5 @@
+#!/bin/sh
+# Harness fixture: a tool that never finishes.
+# Exit code 124 is what coreutils `timeout` uses; a test that kills this should
+# see it. Nothing here depends on the real ffmpeg.
+exec /bin/sleep 120

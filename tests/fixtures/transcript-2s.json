@@ -1,0 +1,6 @@
+[
+  {"text": "Make", "start_secs": 0.20, "end_secs": 0.60},
+  {"text": "every", "start_secs": 0.60, "end_secs": 1.00},
+  {"text": "word", "start_secs": 1.00, "end_secs": 1.40},
+  {"text": "count", "start_secs": 1.40, "end_secs": 1.80}
+]

@@ -244,10 +244,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn required_jobs_is_total_for_every_model() {
-        // We can't guarantee what's on disk in a dev checkout, so just assert
-        // the planner returns without panicking for each model.
-        let _ = required_jobs(Model::BaseEn);
-        let _ = required_jobs(Model::SmallEn);
+    fn required_jobs_is_total_and_plans_a_model_when_it_is_missing() {
+        // We can't guarantee what's on disk in a dev checkout, so the planner
+        // must be total; when a model is absent its job must be planned.
+        for model in Model::ALL {
+            let jobs = required_jobs(model)
+                .unwrap_or_else(|e| panic!("planning {} failed: {e:#}", model.id()));
+            if crate::model::locate(model).is_none() {
+                assert!(
+                    jobs.iter()
+                        .any(|j| matches!(&j.action, Action::Model(m) if *m == model)),
+                    "{} is not installed but no download was planned",
+                    model.id()
+                );
+            }
+            assert!(
+                jobs.iter().all(|j| !j.label.trim().is_empty()),
+                "every job needs a progress label"
+            );
+        }
     }
 }

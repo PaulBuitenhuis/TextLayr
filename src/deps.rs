@@ -51,6 +51,12 @@ impl Check {
 
     /// Actionable descriptions of what is missing (empty when [`Check::ok`]).
     pub fn problems(&self) -> Vec<Problem> {
+        self.problems_with(true)
+    }
+
+    /// [`Self::problems`], optionally ignoring a missing model. `--transcript`
+    /// supplies its own word timings, so the model is not a requirement there.
+    fn problems_with(&self, include_model: bool) -> Vec<Problem> {
         let mut out = Vec::new();
         if self.fftools.is_none() {
             out.push(Problem {
@@ -59,7 +65,7 @@ impl Check {
                 installable: true,
             });
         }
-        if self.model.is_none() {
+        if include_model && self.model.is_none() {
             out.push(Problem {
                 what: "whisper model".to_string(),
                 how: "Click Install to download it.".to_string(),
@@ -85,7 +91,17 @@ impl Check {
 
     /// A single multi-line message for the CLI, or `None` when all is well.
     pub fn error_message(&self) -> Option<String> {
-        let problems = self.problems();
+        self.error_message_impl(true)
+    }
+
+    /// [`Self::error_message`] ignoring a missing whisper model, for a run that
+    /// supplies its own transcript (`--transcript`).
+    pub fn error_message_sans_model(&self) -> Option<String> {
+        self.error_message_impl(false)
+    }
+
+    fn error_message_impl(&self, include_model: bool) -> Option<String> {
+        let problems = self.problems_with(include_model);
         if problems.is_empty() {
             return None;
         }
@@ -154,5 +170,28 @@ mod tests {
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].what, "whisper model");
         assert!(problems[0].installable);
+    }
+
+    #[test]
+    fn a_transcript_run_does_not_need_a_model() {
+        let only_model_missing = Check {
+            fftools: Some(Fftools {
+                ffmpeg: PathBuf::from("/bin/true"),
+                ffprobe: PathBuf::from("/bin/true"),
+                source: Source::System,
+            }),
+            model: None,
+            fonts: Some((PathBuf::from("/fonts"), Source::Bundled)),
+        };
+        assert!(only_model_missing.error_message().is_some());
+        assert_eq!(only_model_missing.error_message_sans_model(), None);
+
+        // Everything missing: the transcript form still names the real
+        // blockers (ffmpeg, fonts) but not the model.
+        let empty = Check::default();
+        let msg = empty.error_message_sans_model().unwrap();
+        assert!(msg.contains("ffmpeg"), "{msg}");
+        assert!(msg.contains("caption fonts"), "{msg}");
+        assert!(!msg.contains("whisper model"), "{msg}");
     }
 }

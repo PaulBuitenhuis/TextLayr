@@ -280,6 +280,7 @@ textlayr --version                          # version + build hash
 | `-o, --output <path>` | Output path (default `<input>_textlayr.mp4`) |
 | `--model <base.en\|small.en>` | Whisper model to use |
 | `--png-dir <dir>` | Render caption states + filter script, skip encoding |
+| `--transcript <json>` | Skip whisper: read `{text,start_secs,end_secs}` word timings from a file (testing/CI) |
 | `--font <family>` | `Libre Baskerville` (default) · `Inter` · `Nunito` |
 | `--font-size <pct>` | Glyph size as % of frame height (default 3.4) |
 | `--position <pct>` | Caption box centre as % of frame height (default 72) |

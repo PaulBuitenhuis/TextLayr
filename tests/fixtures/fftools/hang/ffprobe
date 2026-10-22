@@ -1,0 +1,3 @@
+#!/bin/sh
+# Harness fixture: see ./ffmpeg.
+exec /bin/sleep 120

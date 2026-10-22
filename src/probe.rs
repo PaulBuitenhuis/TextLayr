@@ -38,40 +38,26 @@ pub struct VideoInfo {
     pub color_transfer: String,
 }
 
-/// Locate ffmpeg and ffprobe. Order: bundled Resources/bin -> downloaded
-/// (app data dir) -> vendor/<platform> (dev) -> PATH.
+/// Locate ffmpeg and ffprobe. Order: `$TEXTLAYR_FFTOOLS` -> bundled Resources/bin
+/// -> downloaded (app data dir) -> vendor/<platform> (dev) -> PATH.
+///
+/// `$TEXTLAYR_FFTOOLS` names a *directory* laid out like the bundled
+/// `Resources/bin` (an `ffmpeg` and `ffprobe` inside). It exists so the test
+/// harness can point the app at fixture scripts; nothing else sets it.
 pub fn find_ffmpeg() -> Result<Fftools> {
     let exe = paths::current_exe().context("cannot locate current executable")?;
-    let exe_dir = exe.parent().unwrap_or(Path::new("."));
+    let env_dir = std::env::var("TEXTLAYR_FFTOOLS")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    locate(&exe, env_dir.as_deref())
+}
 
-    // Candidate dirs, most specific first, each tagged with where it came from.
-    let mut dirs: Vec<(PathBuf, Source)> = Vec::new();
-    // Bundled .app: Contents/Resources/bin (exe lives in Contents/MacOS).
-    if let Some(resources) = exe_dir.parent().map(|d| d.join("Resources").join("bin")) {
-        dirs.push((resources, Source::Bundled));
-    }
-    // Downloaded by TextLayr on first run.
-    if let Some(bin) = paths::bin_dir() {
-        dirs.push((bin, Source::Downloaded));
-    }
-    // Repo layout: <crate>/vendor/<platform>
-    let platform = if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        "unknown"
-    };
-    // Walk up from the exe dir looking for a vendor folder (handles target/debug).
-    let mut cur = exe_dir.to_path_buf();
-    for _ in 0..5 {
-        dirs.push((cur.join("vendor").join(platform), Source::Dev));
-        if let Some(parent) = cur.parent() {
-            cur = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
+/// [`find_ffmpeg`] with the executable path and the override injected, so the
+/// precedence rules are testable without mutating the process environment.
+fn locate(exe: &Path, env_dir: Option<&Path>) -> Result<Fftools> {
+    let dirs = candidate_dirs(exe, env_dir);
 
     let mut ffmpeg: Option<(PathBuf, Source)> = None;
     let mut ffprobe: Option<(PathBuf, Source)> = None;
@@ -89,6 +75,8 @@ pub fn find_ffmpeg() -> Result<Fftools> {
         }
     }
 
+    let platform = platform_name();
+
     // Fall back to PATH (system-provided).
     if ffmpeg.is_none() {
         ffmpeg = which("ffmpeg").map(|p| (p, Source::System));
@@ -100,9 +88,9 @@ pub fn find_ffmpeg() -> Result<Fftools> {
     let (Some((ffmpeg, ffmpeg_src)), Some((ffprobe, ffprobe_src))) = (ffmpeg, ffprobe) else {
         bail!(
             "ffmpeg/ffprobe not found. Bundle them in the app's Resources/bin, \
-             place them in vendor/{}/, install them on your PATH, or use the \
-             Setup screen to download them.",
-            platform
+             point $TEXTLAYR_FFTOOLS at a directory holding both, place them in \
+             vendor/{platform}/, install them on your PATH, or use the Setup \
+             screen to download them."
         );
     };
 
@@ -115,6 +103,50 @@ pub fn find_ffmpeg() -> Result<Fftools> {
         ffprobe,
         source,
     })
+}
+
+fn platform_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "unknown"
+    }
+}
+
+/// Candidate directories, most specific first, each tagged with where it came
+/// from.
+fn candidate_dirs(exe: &Path, env_dir: Option<&Path>) -> Vec<(PathBuf, Source)> {
+    let exe_dir = exe.parent().unwrap_or(Path::new("."));
+
+    let mut dirs: Vec<(PathBuf, Source)> = Vec::new();
+    // Explicit test/dev override wins over everything, so a fixture directory
+    // can stand in for the real tools.
+    if let Some(dir) = env_dir {
+        dirs.push((dir.to_path_buf(), Source::Env));
+    }
+    // Bundled .app: Contents/Resources/bin (exe lives in Contents/MacOS).
+    if let Some(resources) = exe_dir.parent().map(|d| d.join("Resources").join("bin")) {
+        dirs.push((resources, Source::Bundled));
+    }
+    // Downloaded by TextLayr on first run.
+    if let Some(bin) = paths::bin_dir() {
+        dirs.push((bin, Source::Downloaded));
+    }
+    // Repo layout: <crate>/vendor/<platform>
+    let platform = platform_name();
+    // Walk up from the exe dir looking for a vendor folder (handles target/debug).
+    let mut cur = exe_dir.to_path_buf();
+    for _ in 0..5 {
+        dirs.push((cur.join("vendor").join(platform), Source::Dev));
+        if let Some(parent) = cur.parent() {
+            cur = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    dirs
 }
 
 /// Rank provenance so a mixed pair reports the least self-contained source.
@@ -308,5 +340,58 @@ pub(crate) fn parse_rate(s: &str) -> Option<f64> {
         Some(n / d)
     } else {
         s.parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_test_override_is_the_first_candidate() {
+        let exe = Path::new("/Applications/TextLayr.app/Contents/MacOS/TextLayr");
+        let dirs = candidate_dirs(exe, Some(Path::new("/fixtures/fftools")));
+        assert_eq!(
+            dirs.first(),
+            Some(&(PathBuf::from("/fixtures/fftools"), Source::Env)),
+            "the override must win over the bundle"
+        );
+        // The bundle is still the next place we look.
+        assert_eq!(dirs.get(1).map(|(_, s)| *s), Some(Source::Bundled));
+    }
+
+    #[test]
+    fn locate_uses_the_override_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let ffmpeg = dir.path().join("ffmpeg");
+        let ffprobe = dir.path().join("ffprobe");
+        std::fs::write(&ffmpeg, b"#!/bin/sh\n").unwrap();
+        std::fs::write(&ffprobe, b"#!/bin/sh\n").unwrap();
+
+        let tools = locate(Path::new("/nonexistent/bin/textlayr"), Some(dir.path())).unwrap();
+        assert_eq!(tools.ffmpeg, ffmpeg);
+        assert_eq!(tools.ffprobe, ffprobe);
+        assert_eq!(tools.source, Source::Env);
+    }
+
+    #[test]
+    fn a_mixed_pair_reports_the_least_self_contained_source() {
+        // Bundled ffmpeg + a PATH ffprobe must read as "system (PATH)".
+        assert_eq!(weaker(Source::Bundled, Source::System), Source::System);
+        assert_eq!(weaker(Source::System, Source::Bundled), Source::System);
+        assert_eq!(weaker(Source::Env, Source::Downloaded), Source::Env);
+        assert_eq!(weaker(Source::Bundled, Source::Bundled), Source::Bundled);
+    }
+
+    #[test]
+    fn rates_parse_or_decline() {
+        assert_eq!(parse_rate("30/1"), Some(30.0));
+        assert_eq!(parse_rate("0/0"), None);
+        assert_eq!(
+            parse_rate("30000/1001").map(|f| (f * 1000.0).round()),
+            Some(29970.0)
+        );
+        assert_eq!(parse_rate("29.97"), Some(29.97));
+        assert_eq!(parse_rate("nope"), None);
     }
 }

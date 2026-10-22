@@ -1,0 +1,4 @@
+#!/bin/sh
+# Harness fixture: fails immediately with a recognisable line on stderr.
+echo "textlayr-fixture: simulated ffmpeg failure" >&2
+exit 3

@@ -6,6 +6,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`--transcript <file>`** (headless) reads word timings from JSON instead of
+  running whisper, so the render → export path can be run without a model.
+  Intended for tests, CI and debugging a style change; it is the same
+  `{text, start_secs, end_secs}` shape as the transcript cache.
+
 ## [0.2.3] - 2026-10-20
 
 ### Added

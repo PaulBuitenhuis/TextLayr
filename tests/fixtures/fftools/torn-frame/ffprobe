@@ -1,0 +1,4 @@
+#!/bin/sh
+# Harness fixture: probing is never expected to succeed here.
+echo "textlayr-fixture: simulated ffprobe failure" >&2
+exit 3

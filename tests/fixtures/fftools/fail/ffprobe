@@ -1,0 +1,4 @@
+#!/bin/sh
+# Harness fixture: see ./ffmpeg.
+echo "textlayr-fixture: simulated ffprobe failure" >&2
+exit 3

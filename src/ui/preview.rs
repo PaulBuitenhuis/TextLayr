@@ -417,17 +417,6 @@ mod tests {
             preview_w < 0.5,
             "caption stretched to full width: {preview_w:.3}"
         );
-
-        let dir = std::path::Path::new("/tmp/textlayr_diag");
-        std::fs::create_dir_all(dir).unwrap();
-        image::RgbaImage::from_raw(src_w, src_h, full)
-            .unwrap()
-            .save(dir.join("export_1080.png"))
-            .unwrap();
-        image::RgbaImage::from_raw(pw, ph, data)
-            .unwrap()
-            .save(dir.join("preview_actual.png"))
-            .unwrap();
     }
 
     #[test]

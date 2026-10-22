@@ -38,8 +38,11 @@ struct Args {
     output: Option<PathBuf>,
     /// Render states + filter script into this directory instead of encoding.
     png_dir: Option<PathBuf>,
-    /// Milestone 2 backend: encode via the N-stage overlay filter graph.
+    /// Legacy overlay-graph encode: render states + encode via the N-stage graph.
     graph: bool,
+    /// Read word timings from this JSON file instead of running whisper
+    /// (headless only; for tests, CI and debugging the render/export path).
+    transcript: Option<PathBuf>,
     /// Hardware/software encoder for the default pipe export.
     encoder: Option<export::Encoder>,
     /// Whisper model to use (base.en/small.en); defaults to the fastest.
@@ -87,6 +90,9 @@ fn usage() -> ! {
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_textlayr.mp4)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
+    eprintln!(
+        "  --transcript <json> Skip whisper: read (word, start, end) timings from JSON (testing)"
+    );
     eprintln!(
         "  --encoder <name>    auto (default) | vaapi | videotoolbox | x264 — pipe export encoder"
     );
@@ -143,6 +149,9 @@ fn parse_args() -> Args {
             "--no-cache" => args.no_cache = true,
             "-o" | "--output" => args.output = Some(PathBuf::from(need_value(&mut it, "--output"))),
             "--png-dir" => args.png_dir = Some(PathBuf::from(need_value(&mut it, "--png-dir"))),
+            "--transcript" => {
+                args.transcript = Some(PathBuf::from(need_value(&mut it, "--transcript")))
+            }
             "--graph" => args.graph = true,
             "--model" => {
                 let v = need_value(&mut it, "--model");
@@ -228,6 +237,13 @@ fn main() {
 
     let args = parse_args();
 
+    // `--transcript` replaces the whisper stage, which only the headless
+    // pipeline runs; with `--gui` it would be silently ignored.
+    if args.gui && args.transcript.is_some() {
+        eprintln!("error: --transcript is headless-only; drop --gui");
+        std::process::exit(2);
+    }
+
     // `--check-updates` is its own mode: ask GitHub, report, then exit.
     if args.check_updates {
         run_check_updates();
@@ -261,6 +277,7 @@ fn main() {
             || args.encoder.is_some()
             || args.model.is_some()
             || args.profile.is_some()
+            || args.transcript.is_some()
             || args.style_overrides.any());
 
     let result = if headless {
@@ -349,17 +366,24 @@ fn run_cli(args: &Args) -> Result<()> {
     };
 
     // Resolve the model first: whether it's present decides the dependency
-    // check.
+    // check. `--transcript` supplies the words itself, so a missing model is
+    // fine there.
     let preferred = args.model.unwrap_or_default();
+    let need_model = args.transcript.is_none();
 
     // Fail fast with one actionable message instead of discovering each
     // missing dependency (ffmpeg, model, fonts) partway through the pipeline.
     let check = deps::Check::run(preferred);
-    if let Some(msg) = check.error_message() {
+    let problem = if need_model {
+        check.error_message()
+    } else {
+        check.error_message_sans_model()
+    };
+    if let Some(msg) = problem {
         bail!("{msg}");
     }
-    let found_model = check.model.clone().context("model discovery failed")?;
-    let model_kind = found_model.model;
+    let found_model = check.model.clone();
+    let model_kind = found_model.as_ref().map(|m| m.model).unwrap_or_default();
 
     let mut style = Style::default();
     let mut grouping = Grouping::default();
@@ -422,8 +446,18 @@ fn run_cli(args: &Args) -> Result<()> {
         } => eprintln!("      {words} words in {secs:.1}s  ({realtime_x:.1}x realtime)"),
     });
 
-    let ing =
-        pipeline::ingest(&input, args.no_cache, &found_model, progress).context("ingest failed")?;
+    let ing = match &args.transcript {
+        Some(path) => {
+            pipeline::ingest_from_file(&input, path, progress).context("ingest failed")?
+        }
+        None => pipeline::ingest(
+            &input,
+            args.no_cache,
+            found_model.as_ref().context("model discovery failed")?,
+            progress,
+        )
+        .context("ingest failed")?,
+    };
     let tools = ing.tools;
     let info = ing.info;
     let words = ing.words;

@@ -258,3 +258,129 @@ pub fn save_cache(input: &Path, kind: Model, words: &[Word]) -> Result<()> {
     std::fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }
+
+/// Read word timings from a JSON file, in the same shape the cache uses:
+/// `[{"text": "…", "start_secs": 0.0, "end_secs": 0.5}, …]`.
+///
+/// This backs the `--transcript` CLI flag, which skips whisper so the
+/// render/export path can be exercised without a model (tests, CI, debugging a
+/// styling change). The input is validated here so a hand-written file fails
+/// with a useful message instead of corrupting chunking downstream.
+pub fn read_words(path: &Path) -> Result<Vec<Word>> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let words: Vec<Word> = serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "{} is not a transcript: expected a JSON array of \
+             {{\"text\", \"start_secs\", \"end_secs\"}}",
+            path.display()
+        )
+    })?;
+    validate_words(&words).with_context(|| format!("invalid transcript {}", path.display()))?;
+    Ok(words)
+}
+
+fn validate_words(words: &[Word]) -> Result<()> {
+    if words.is_empty() {
+        bail!("the transcript has no words");
+    }
+    let mut previous_start = 0.0f64;
+    for (i, w) in words.iter().enumerate() {
+        let n = i + 1;
+        if w.text.trim().is_empty() {
+            bail!("word {n} has no text");
+        }
+        if !w.start_secs.is_finite() || !w.end_secs.is_finite() {
+            bail!("word {n} ({:?}) has a non-finite timestamp", w.text);
+        }
+        if w.start_secs < 0.0 {
+            bail!(
+                "word {n} ({:?}) starts before zero: {}",
+                w.text,
+                w.start_secs
+            );
+        }
+        if w.end_secs < w.start_secs {
+            bail!(
+                "word {n} ({:?}) ends before it starts: {} < {}",
+                w.text,
+                w.end_secs,
+                w.start_secs
+            );
+        }
+        if w.start_secs < previous_start {
+            bail!(
+                "word {n} ({:?}) is out of order: starts at {} after {}",
+                w.text,
+                w.start_secs,
+                previous_start
+            );
+        }
+        previous_start = w.start_secs;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_json(dir: &std::path::Path, body: &str) -> PathBuf {
+        let path = dir.join("words.json");
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_valid_transcript_loads_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_json(
+            dir.path(),
+            r#"[{"text":"Make","start_secs":0.2,"end_secs":0.6},
+                {"text":"every","start_secs":0.6,"end_secs":1.0}]"#,
+        );
+        let words = read_words(&path).unwrap();
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0].text, "Make");
+        assert_eq!(words[1].end_secs, 1.0);
+    }
+
+    #[test]
+    fn malformed_transcripts_are_rejected_with_the_word_number() {
+        let dir = tempfile::tempdir().unwrap();
+        let cases = [
+            ("[]", "no words"),
+            (r#"[{"text":"","start_secs":0.0,"end_secs":1.0}]"#, "word 1"),
+            // End before start.
+            (
+                r#"[{"text":"a","start_secs":1.0,"end_secs":0.5}]"#,
+                "ends before",
+            ),
+            // Out of order.
+            (
+                r#"[{"text":"a","start_secs":1.0,"end_secs":1.5},
+                    {"text":"b","start_secs":0.5,"end_secs":0.9}]"#,
+                "word 2",
+            ),
+            // Negative start.
+            (
+                r#"[{"text":"a","start_secs":-1.0,"end_secs":0.5}]"#,
+                "before zero",
+            ),
+        ];
+        for (body, needle) in cases {
+            let path = write_json(dir.path(), body);
+            let err = read_words(&path).unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(msg.contains(needle), "{body} -> {msg}");
+        }
+    }
+
+    #[test]
+    fn a_non_transcript_file_says_what_was_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_json(dir.path(), r#"{"words":[]}"#);
+        let msg = format!("{:#}", read_words(&path).unwrap_err());
+        assert!(msg.contains("JSON array"), "{msg}");
+    }
+}
