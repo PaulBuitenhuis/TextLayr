@@ -31,18 +31,25 @@ jobs:
   test-linux:
     name: build + test (Linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # apt must never wait on a debconf/restart prompt in a headless runner.
+      DEBIAN_FRONTEND: noninteractive
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # egui/eframe link against X11/Wayland on Linux; the runner image does not
-      # ship the development headers.
-      - name: GUI dev libraries
+      # Everything apt is installed in one step: egui/eframe need the X11 and
+      # Wayland headers, and the harness drives a real ffmpeg end-to-end
+      # (probe → render → encode) via `--transcript`, so no whisper model is
+      # needed. A second `apt-get` here once hung for 19 minutes on a prompt.
+      - name: Linux dependencies (GUI headers + ffmpeg)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
             libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
             libxcursor-dev libxrandr-dev libxinerama-dev
       # Linux is the development platform, and its `cfg(target_os = "linux")`
@@ -50,10 +57,6 @@ jobs:
       # clippy runs here too.
       - name: clippy
         run: cargo clippy --locked --all-targets --no-deps -- -D warnings
-      # The harness drives a real ffmpeg end-to-end (probe → render → encode)
-      # via `--transcript`, which is why no whisper model is needed here.
-      - name: install ffmpeg
-        run: sudo apt-get install -y --no-install-recommends ffmpeg
       - name: cargo test
         run: cargo test --locked --all-targets
       # Build the shippable tarball so the packaging script is exercised on every
