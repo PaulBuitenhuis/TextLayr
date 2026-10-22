@@ -32,6 +32,7 @@ use serde::Deserialize;
 
 use crate::download;
 use crate::paths;
+use crate::platform::{self, Os};
 
 /// Default source of update information: a tiny manifest attached to the
 /// newest GitHub release. The URL is version-independent — GitHub redirects
@@ -90,17 +91,35 @@ pub struct Asset {
     pub sha256: Option<String>,
 }
 
-/// The newest published release.
+/// How the platform's primary artifact is installed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtifactKind {
+    /// A `.zip` holding `TextLayr.app` — swapped in place on macOS.
+    MacApp,
+    /// A `.tar.*` holding the `textlayr` binary — handed over on Linux.
+    UnixBinaryTar,
+    /// An `.AppImage` — handed over on Linux.
+    UnixAppImage,
+}
+
+/// The platform's primary installable artifact.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Artifact {
+    pub asset: Asset,
+    pub kind: ArtifactKind,
+}
+
+/// The newest published release, resolved for the running platform.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Release {
     /// Version with any leading `v` removed, e.g. `0.3.0`.
     pub version: String,
     /// Link to the release notes.
     pub notes_url: String,
-    /// The macOS app archive (`TextLayr-<version>.zip`).
-    pub zip: Asset,
-    /// The drag-to-Applications disk image, if published.
-    pub dmg: Option<Asset>,
+    /// What this platform installs from, when the manifest has an entry for it.
+    pub primary: Option<Artifact>,
+    /// A manual hand-off artifact (the macOS `.dmg`), when published.
+    pub fallback: Option<Asset>,
 }
 
 // ── manifest (as written by .github/workflows/release.yml) ─────────────────
@@ -110,12 +129,31 @@ struct Manifest {
     version: String,
     #[serde(default)]
     notes_url: Option<String>,
-    zip: ManifestAsset,
+    /// Legacy top-level macOS app archive (manifests written before `platforms`).
+    #[serde(default)]
+    zip: Option<ManifestAsset>,
+    /// Legacy top-level macOS disk image.
     #[serde(default)]
     dmg: Option<ManifestAsset>,
+    /// Per-platform assets, keyed by `platform::slug()` (`macos-arm64`, …).
+    #[serde(default)]
+    platforms: std::collections::HashMap<String, PlatformAssets>,
 }
 
-#[derive(Debug, Deserialize)]
+/// The assets published for one platform.
+#[derive(Debug, Clone, Default, Deserialize)]
+struct PlatformAssets {
+    #[serde(default)]
+    zip: Option<ManifestAsset>,
+    #[serde(default)]
+    dmg: Option<ManifestAsset>,
+    #[serde(default)]
+    tar: Option<ManifestAsset>,
+    #[serde(default)]
+    appimage: Option<ManifestAsset>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct ManifestAsset {
     name: String,
     #[serde(default)]
@@ -131,19 +169,68 @@ impl Release {
             bail!("the update manifest has no version");
         }
 
-        let zip = asset_from(m.zip, source);
-        let dmg = m.dmg.map(|d| asset_from(d, source));
         let notes_url = m
             .notes_url
+            .clone()
             .filter(|u| !u.trim().is_empty())
             .unwrap_or_else(|| RELEASES_URL.to_string());
+
+        let selected = select_platform_assets(&m);
+        let (primary, fallback) = build_artifact(&selected, source);
 
         Ok(Release {
             version,
             notes_url,
-            zip,
-            dmg,
+            primary,
+            fallback,
         })
+    }
+}
+
+/// Choose the asset set for the running platform: the matching `platforms`
+/// entry, or — for manifests written before `platforms` existed — the legacy
+/// top-level macOS assets when running on macOS.
+fn select_platform_assets(m: &Manifest) -> PlatformAssets {
+    if let Some(entry) = m.platforms.get(platform::slug()) {
+        return entry.clone();
+    }
+    if platform::os() == Os::Macos {
+        return PlatformAssets {
+            zip: m.zip.clone(),
+            dmg: m.dmg.clone(),
+            ..PlatformAssets::default()
+        };
+    }
+    PlatformAssets::default()
+}
+
+/// Turn the selected assets into this platform's primary artifact and optional
+/// manual fallback.
+fn build_artifact(sel: &PlatformAssets, source: &str) -> (Option<Artifact>, Option<Asset>) {
+    let art = |a: &ManifestAsset, kind: ArtifactKind| {
+        Some(Artifact {
+            asset: asset_from(a.clone(), source),
+            kind,
+        })
+    };
+    match platform::os() {
+        Os::Macos => (
+            sel.zip.as_ref().and_then(|a| art(a, ArtifactKind::MacApp)),
+            sel.dmg.as_ref().map(|a| asset_from(a.clone(), source)),
+        ),
+        Os::Linux => (
+            sel.appimage
+                .as_ref()
+                .and_then(|a| art(a, ArtifactKind::UnixAppImage))
+                .or_else(|| {
+                    sel.tar
+                        .as_ref()
+                        .and_then(|a| art(a, ArtifactKind::UnixBinaryTar))
+                }),
+            None,
+        ),
+        // Windows packaging ships with the Windows item.
+        Os::Windows => (None, None),
     }
 }
 
@@ -310,37 +397,46 @@ fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
         })
         .collect();
 
-    let zip_idx = assets
-        .iter()
-        .position(|a| is_app_asset(&a.name, ".zip"))
-        .context("the newest GitHub release has no .zip asset")?;
+    let zip_idx = assets.iter().position(|a| is_app_asset(&a.name, ".zip"));
     let dmg_idx = assets.iter().position(|a| is_app_asset(&a.name, ".dmg"));
 
     // Older releases may predate GitHub's per-asset `digest`; fill the hash from
     // a published SHA256SUMS when we can (best effort — the manual-install path
     // tolerates a missing checksum).
-    if assets[zip_idx].sha256.is_none() {
-        if let Some(url) = sums_url.as_deref() {
-            if let Ok(text) = fetch_bytes(url, cancel, false) {
-                if let Ok(text) = String::from_utf8(text) {
-                    assets[zip_idx].sha256 = parse_sums(&text, &assets[zip_idx].name);
+    if let Some(i) = zip_idx {
+        if assets[i].sha256.is_none() {
+            if let Some(url) = sums_url.as_deref() {
+                if let Ok(text) = fetch_bytes(url, cancel, false) {
+                    if let Ok(text) = String::from_utf8(text) {
+                        assets[i].sha256 = parse_sums(&text, &assets[i].name);
+                    }
                 }
             }
         }
     }
 
-    let zip = assets[zip_idx].clone();
-    let dmg = dmg_idx.map(|i| assets[i].clone());
     let notes_url = if gh.html_url.trim().is_empty() {
         RELEASES_URL.to_string()
     } else {
         gh.html_url
     };
+
+    // The REST fallback only understands the legacy macOS layout; on other
+    // platforms it can still report a version, just with nothing to install.
+    let primary = if platform::os() == Os::Macos {
+        zip_idx.map(|i| Artifact {
+            asset: assets[i].clone(),
+            kind: ArtifactKind::MacApp,
+        })
+    } else {
+        None
+    };
+    let fallback = dmg_idx.map(|i| assets[i].clone());
     Ok(Release {
         version,
         notes_url,
-        zip,
-        dmg,
+        primary,
+        fallback,
     })
 }
 
@@ -466,7 +562,12 @@ pub fn install(
     }
     let target = target.expect("checked above");
 
-    let zip = &release.zip;
+    let art = release
+        .primary
+        .as_ref()
+        .filter(|a| a.kind == ArtifactKind::MacApp)
+        .context("this release has no macOS app archive")?;
+    let zip = &art.asset;
     let sha = zip
         .sha256
         .clone()
@@ -530,8 +631,17 @@ fn open_installer(
     sink: &mut InstallSink,
 ) -> Result<InstallOutcome> {
     sink(InstallProgress::OpeningDmg);
-    let asset = release.dmg.clone().unwrap_or_else(|| release.zip.clone());
-    let is_dmg = release.dmg.is_some();
+    // Prefer the manual fallback (the macOS `.dmg`); otherwise hand over this
+    // platform's primary artifact. Linux never self-replaces yet, so a `.tar.*`
+    // or AppImage lands next to the user for them to install.
+    let (asset, is_dmg) = match (&release.fallback, &release.primary) {
+        (Some(fallback), _) => (
+            fallback.clone(),
+            fallback.name.to_ascii_lowercase().ends_with(".dmg"),
+        ),
+        (None, Some(primary)) => (primary.asset.clone(), false),
+        (None, None) => bail!("this release has nothing to download for your platform"),
+    };
 
     let dest_dir = dirs::download_dir()
         .filter(|d| d.is_dir())
@@ -798,82 +908,118 @@ fn is_sha256_hex(s: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn manifest_json(version: &str, zip: &str, sha: &str, dmg: Option<(&str, &str)>) -> String {
-        let dmg = match dmg {
-            Some((name, sha)) => {
-                format!(r#","dmg":{{"name":"{name}","sha256":"{sha}","size":10}}"#)
-            }
-            None => String::new(),
-        };
-        format!(
-            r#"{{"version":"{version}","notes_url":"https://example/notes",
-                 "zip":{{"name":"{zip}","sha256":"{sha}","size":20}}{dmg}}}"#
-        )
+    fn asset(name: &str, sha: &str, size: u64) -> serde_json::Value {
+        serde_json::json!({"name": name, "sha256": sha, "size": size})
     }
 
+    #[cfg(not(windows))]
     #[test]
-    fn manifest_parses_and_resolves_asset_siblings() {
+    fn the_platforms_entry_is_selected_and_resolved_as_a_sibling() {
         let sha = "d".repeat(64);
-        let json = manifest_json(
-            "v0.3.0",
-            "TextLayr-0.3.0.zip",
-            &sha,
-            Some(("TextLayr-0.3.0.dmg", &sha)),
-        );
-        let manifest: Manifest = serde_json::from_str(&json).unwrap();
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "version": "v0.3.0",
+            "notes_url": "https://example/notes",
+            "platforms": {
+                platform::slug(): {
+                    "zip": asset("TextLayr-0.3.0.zip", &sha, 20),
+                    "dmg": asset("TextLayr-0.3.0.dmg", &sha, 30),
+                    "tar": asset("TextLayr-0.3.0-linux.tar.xz", &sha, 40),
+                    "appimage": asset("TextLayr-0.3.0.AppImage", &sha, 50),
+                }
+            }
+        }))
+        .unwrap();
+
         let release = Release::from_manifest(
             manifest,
             "https://github.com/o/r/releases/latest/download/latest.json",
         )
         .unwrap();
         assert_eq!(release.version, "0.3.0");
-        assert_eq!(
-            release.zip.url,
-            "https://github.com/o/r/releases/latest/download/TextLayr-0.3.0.zip"
-        );
-        assert_eq!(release.zip.sha256.as_deref(), Some(sha.as_str()));
-        assert_eq!(release.zip.size, Some(20));
-        assert_eq!(
-            release.dmg.as_ref().unwrap().url,
-            "https://github.com/o/r/releases/latest/download/TextLayr-0.3.0.dmg"
-        );
         assert_eq!(release.notes_url, "https://example/notes");
+
+        let primary = release.primary.expect("the host platform has an artifact");
+        let expected = match platform::os() {
+            Os::Macos => ArtifactKind::MacApp,
+            _ => ArtifactKind::UnixAppImage,
+        };
+        assert_eq!(primary.kind, expected);
+        assert_eq!(
+            primary.asset.url,
+            format!(
+                "https://github.com/o/r/releases/latest/download/{}",
+                primary.asset.name
+            )
+        );
+        assert_eq!(primary.asset.sha256.as_deref(), Some(sha.as_str()));
+        // Only macOS publishes a manual fallback (the .dmg).
+        assert_eq!(release.fallback.is_some(), platform::os() == Os::Macos);
     }
 
     #[test]
-    fn manifest_without_a_dmg_is_fine() {
+    fn a_legacy_manifest_only_serves_macos() {
         let sha = "e".repeat(64);
-        let json = manifest_json("0.3.0", "TextLayr-0.3.0.zip", &sha, None);
-        let manifest: Manifest = serde_json::from_str(&json).unwrap();
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "version": "0.3.0",
+            "notes_url": "https://example/notes",
+            "zip": asset("TextLayr-0.3.0.zip", &sha, 20),
+            "dmg": asset("TextLayr-0.3.0.dmg", &sha, 30),
+        }))
+        .unwrap();
         let release = Release::from_manifest(manifest, "https://h/d/latest.json").unwrap();
-        assert!(release.dmg.is_none());
         assert_eq!(release.notes_url, "https://example/notes");
+        if platform::os() == Os::Macos {
+            assert_eq!(release.primary.unwrap().kind, ArtifactKind::MacApp);
+            assert!(release.fallback.is_some());
+        } else {
+            assert!(release.primary.is_none(), "legacy assets are macOS-only");
+            assert!(release.fallback.is_none());
+        }
     }
 
     #[test]
     fn manifest_without_notes_url_falls_back_to_the_releases_page() {
-        let sha = "f".repeat(64);
-        let json = format!(
-            r#"{{"version":"0.3.0","zip":{{"name":"TextLayr-0.3.0.zip","sha256":"{sha}"}}}}"#
-        );
-        let manifest: Manifest = serde_json::from_str(&json).unwrap();
+        let manifest: Manifest =
+            serde_json::from_value(serde_json::json!({"version": "0.3.0"})).unwrap();
         let release = Release::from_manifest(manifest, "https://h/d/latest.json").unwrap();
         assert_eq!(release.notes_url, RELEASES_URL);
     }
 
     #[test]
     fn manifest_without_a_version_is_rejected() {
-        let m = Manifest {
-            version: "  ".into(),
-            notes_url: None,
-            zip: ManifestAsset {
-                name: "TextLayr-1.0.0.zip".into(),
-                sha256: None,
-                size: None,
-            },
-            dmg: None,
-        };
+        let m: Manifest = serde_json::from_value(serde_json::json!({"version": "  "})).unwrap();
         assert!(Release::from_manifest(m, "https://h/latest.json").is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_prefers_the_appimage_then_the_tarball() {
+        let sha = "c".repeat(64);
+        let appimage = ManifestAsset {
+            name: "TextLayr-0.3.0.AppImage".into(),
+            sha256: Some(sha.clone()),
+            size: Some(50),
+        };
+        let tar = ManifestAsset {
+            name: "TextLayr-0.3.0-linux.tar.xz".into(),
+            sha256: Some(sha),
+            size: Some(40),
+        };
+        let both = PlatformAssets {
+            appimage: Some(appimage),
+            tar: Some(tar.clone()),
+            ..PlatformAssets::default()
+        };
+        let (primary, fallback) = build_artifact(&both, "https://h/latest.json");
+        assert_eq!(primary.unwrap().kind, ArtifactKind::UnixAppImage);
+        assert!(fallback.is_none());
+
+        let only_tar = PlatformAssets {
+            tar: Some(tar),
+            ..PlatformAssets::default()
+        };
+        let (primary, _) = build_artifact(&only_tar, "https://h/latest.json");
+        assert_eq!(primary.unwrap().kind, ArtifactKind::UnixBinaryTar);
     }
 
     #[test]
