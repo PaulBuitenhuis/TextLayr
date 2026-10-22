@@ -1,16 +1,16 @@
 //! First-run installation: fetch the pieces TextLayr needs but doesn't bundle.
 //!
 //! TextLayr ships only its own binary and fonts. On first run the setup screen can
-//! download `ffmpeg`/`ffprobe` and the chosen whisper model into
-//! `~/Library/Application Support/textlayr/`, where discovery looks for them
-//! afterwards. Everything is checksum-pinned (see [`crate::download`]).
+//! download `ffmpeg`/`ffprobe` and the chosen whisper model into the platform
+//! data directory, where discovery looks for them afterwards. Everything is
+//! checksum-pinned (see [`crate::download`]).
 //!
 //! `ffmpeg`/`ffprobe` are **not** redistributed by TextLayr: they are downloaded
-//! straight from osxexperts.net by the user's machine. Those builds are GPL
-//! (they include x264/x265); TextLayr merely invokes them as separate programs, so
-//! this has no bearing on TextLayr's own MIT license.
+//! straight from a public build host by the user's machine, into the platform
+//! data directory. Those builds are GPL (they include x264/x265); TextLayr merely
+//! invokes them as separate programs, so this has no bearing on TextLayr's own MIT
+//! license. Which host and archive depends on the platform (see [`tools_archives`]).
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -20,16 +20,26 @@ use crate::config;
 use crate::download;
 use crate::model::{self, Model};
 use crate::paths;
+use crate::platform::{self, Os};
 use crate::probe;
 
-// macOS arm64 static builds from osxexperts.net (the hashes are the ones the
-// site publishes for the *unzipped* binaries). If osxexperts rolls a new
-// version these URLs will 404 or the hashes will mismatch — a loud failure we
-// fix by bumping the constants, never a silent bad download.
-const FFMPEG_ZIP: &str = "https://www.osxexperts.net/ffmpeg9arm.zip";
-const FFMPEG_SHA: &str = "591260c945d0eef150e3bf82b0ef988bd36a9cecc18ff05d6679617159f0a95e";
-const FFPROBE_ZIP: &str = "https://www.osxexperts.net/ffprobe9arm.zip";
-const FFPROBE_SHA: &str = "e11c17e8200b3ee4c4c186d245e2b4053f01d56957336c1817fca0b997469106";
+// ── macOS (Apple Silicon): static arm64 builds from osxexperts.net ──────────
+// The site publishes the SHA-256 of the *unzipped* binaries, so these are pinned
+// as per-binary checksums. If osxexperts rolls a new version these URLs will 404
+// or the hashes will mismatch — a loud failure we fix by bumping the constants,
+// never a silent bad download.
+const MACOS_FFMPEG_ZIP: &str = "https://www.osxexperts.net/ffmpeg9arm.zip";
+const MACOS_FFMPEG_SHA: &str = "591260c945d0eef150e3bf82b0ef988bd36a9cecc18ff05d6679617159f0a95e";
+const MACOS_FFPROBE_ZIP: &str = "https://www.osxexperts.net/ffprobe9arm.zip";
+const MACOS_FFPROBE_SHA: &str = "e11c17e8200b3ee4c4c186d245e2b4053f01d56957336c1817fca0b997469106";
+
+// ── Linux: a BtbN/FFmpeg-Builds static GPL build ────────────────────────────
+// Pinned to a *dated* autobuild tag so both the URL and GitHub's published
+// archive digest are immutable. To bump ffmpeg: pick a newer dated tag and update
+// the URL, the tag embedded in the URL, and the SHA-256 (from GitHub's release
+// API `digest` field for that asset).
+const BTBN_LINUX_URL: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-16-13-04/ffmpeg-N-127579-g5cb9fcd211-linux64-gpl.tar.xz";
+const BTBN_LINUX_SHA: &str = "3d994f31aa9ee78ef56eab530a86d50d8307200cb9d1788be36c1ea9410e605c";
 
 /// One step of the install, for progress display.
 #[derive(Debug, Clone)]
@@ -61,15 +71,50 @@ pub enum InstallProgress {
 /// Progress sink for [`install`].
 pub type InstallSink = Box<dyn FnMut(InstallProgress) + Send>;
 
+/// An upstream archive of external tools plus the binaries it provides.
+struct ToolsArchive {
+    url: &'static str,
+    checksum: download::Checksum<'static>,
+    format: download::ArchiveFormat,
+    /// Binary base names inside the archive (without any `.exe`).
+    binaries: &'static [&'static str],
+}
+
+/// The archive(s) that provide `ffmpeg`/`ffprobe`, for the current platform.
+///
+/// macOS ships the two tools as separate zips; Linux gets a single `.tar.xz`
+/// containing both. Windows packaging is part of the separate Windows item, so
+/// it deliberately has no entry yet.
+fn tools_archives() -> Vec<ToolsArchive> {
+    match platform::os() {
+        Os::Macos => vec![
+            ToolsArchive {
+                url: MACOS_FFMPEG_ZIP,
+                checksum: download::Checksum::Binary(MACOS_FFMPEG_SHA),
+                format: download::ArchiveFormat::Zip,
+                binaries: &["ffmpeg"],
+            },
+            ToolsArchive {
+                url: MACOS_FFPROBE_ZIP,
+                checksum: download::Checksum::Binary(MACOS_FFPROBE_SHA),
+                format: download::ArchiveFormat::Zip,
+                binaries: &["ffprobe"],
+            },
+        ],
+        Os::Linux => vec![ToolsArchive {
+            url: BTBN_LINUX_URL,
+            checksum: download::Checksum::Archive(BTBN_LINUX_SHA),
+            format: download::ArchiveFormat::TarXz,
+            binaries: &["ffmpeg", "ffprobe"],
+        }],
+        Os::Windows => Vec::new(),
+    }
+}
+
 /// What a single job does.
 enum Action {
-    /// Download a zip and extract the named binary to `dest`.
-    Binary {
-        url: &'static str,
-        sha: &'static str,
-        bin: &'static str,
-        dest: PathBuf,
-    },
+    /// Download an archive and install its binaries into the app's bin dir.
+    Tools(ToolsArchive),
     /// Download a whisper model into the models directory.
     Model(Model),
 }
@@ -79,31 +124,21 @@ struct Job {
     action: Action,
 }
 
-/// The jobs needed to make `preferred` runnable: ffmpeg/ffprobe if no tools are
-/// found, and the model if the preferred one isn't installed.
+/// The jobs needed to make `preferred` runnable: the platform's ffmpeg/ffprobe
+/// archive(s) if no tools are found, and the model if the preferred one isn't
+/// installed.
 fn required_jobs(preferred: Model) -> Result<Vec<Job>> {
     let mut jobs: Vec<Job> = Vec::new();
 
     if probe::find_ffmpeg().is_err() {
-        let bin = paths::bin_dir().context("no application data directory for downloads")?;
-        jobs.push(Job {
-            label: "ffmpeg".to_string(),
-            action: Action::Binary {
-                url: FFMPEG_ZIP,
-                sha: FFMPEG_SHA,
-                bin: "ffmpeg",
-                dest: bin.join("ffmpeg"),
-            },
-        });
-        jobs.push(Job {
-            label: "ffprobe".to_string(),
-            action: Action::Binary {
-                url: FFPROBE_ZIP,
-                sha: FFPROBE_SHA,
-                bin: "ffprobe",
-                dest: bin.join("ffprobe"),
-            },
-        });
+        // Fail fast if there's nowhere to put the tools.
+        paths::bin_dir().context("no application data directory for downloads")?;
+        for archive in tools_archives() {
+            jobs.push(Job {
+                label: archive.binaries.join(" + "),
+                action: Action::Tools(archive),
+            });
+        }
     }
 
     if model::locate(preferred).is_none() {
@@ -137,12 +172,9 @@ pub fn install(preferred: Model, mut sink: InstallSink, cancel: Arc<AtomicBool>)
         });
 
         match &job.action {
-            Action::Binary {
-                url,
-                sha,
-                bin,
-                dest,
-            } => {
+            Action::Tools(archive) => {
+                let bin_dir =
+                    paths::bin_dir().context("no application data directory for downloads")?;
                 let mut on = |got, expected| {
                     sink(InstallProgress::Bytes {
                         index,
@@ -152,14 +184,23 @@ pub fn install(preferred: Model, mut sink: InstallSink, cancel: Arc<AtomicBool>)
                         expected,
                     })
                 };
-                download::fetch_zip_binary_verified(url, bin, dest, sha, &cancel, &mut on)
-                    .with_context(|| {
-                        format!(
-                            "couldn't download {} — you can install it yourself instead \
-                             (e.g. `brew install ffmpeg`) and then click Re-check",
-                            job.label
-                        )
-                    })?;
+                download::fetch_archive_binaries_verified(
+                    archive.url,
+                    archive.format,
+                    archive.binaries,
+                    &bin_dir,
+                    archive.checksum,
+                    &cancel,
+                    &mut on,
+                )
+                .with_context(|| {
+                    format!(
+                        "couldn't download {} — you can install it yourself instead \
+                         (e.g. `brew install ffmpeg` or your package manager) and then \
+                         click Re-check",
+                        job.label
+                    )
+                })?;
             }
             Action::Model(m) => {
                 let dir = paths::models_dir().context("no application data directory")?;
@@ -263,5 +304,50 @@ mod tests {
                 "every job needs a progress label"
             );
         }
+    }
+
+    #[test]
+    fn tools_archives_are_pinned_and_well_formed() {
+        let archives = tools_archives();
+        assert!(!archives.is_empty(), "the host platform needs tools");
+        for archive in &archives {
+            assert!(archive.url.starts_with("https://"), "{}", archive.url);
+            assert!(!archive.binaries.is_empty());
+            assert!(
+                archive.binaries.iter().all(|b| !b.contains('.')),
+                "binary names are base names; the extension is platform-specific"
+            );
+            let sha = match archive.checksum {
+                download::Checksum::Archive(s) | download::Checksum::Binary(s) => s,
+            };
+            assert_eq!(sha.len(), 64, "{} needs a full SHA-256", archive.url);
+            assert!(
+                sha.bytes().all(|b| b.is_ascii_hexdigit()),
+                "{} has a non-hex checksum",
+                archive.url
+            );
+        }
+    }
+
+    /// A Linux build must never fetch the macOS (arm64) binaries, and vice versa.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_uses_the_btbn_tarball_only() {
+        let archives = tools_archives();
+        assert_eq!(archives.len(), 1);
+        assert_eq!(archives[0].url, BTBN_LINUX_URL);
+        assert_eq!(archives[0].format, download::ArchiveFormat::TarXz);
+        assert!(!archives[0].url.contains("osxexperts"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_uses_the_osxexperts_zips_only() {
+        let archives = tools_archives();
+        assert_eq!(archives.len(), 2);
+        assert!(archives.iter().all(|a| a.url.contains("osxexperts.net")));
+        assert!(archives
+            .iter()
+            .all(|a| a.format == download::ArchiveFormat::Zip));
     }
 }

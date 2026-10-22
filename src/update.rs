@@ -20,8 +20,8 @@
 //! `$TEXTLAYR_UPDATE_URL` points at an alternate manifest (a URL, a `file://`
 //! URL, or a local path — sibling files are resolved next to it), and
 //! `$TEXTLAYR_UPDATE_FORCE` bypasses the "is it newer?" gate. Transport is the
-//! system `curl`, matching [`crate::download`], to keep the dependency tree
-//! small.
+//! shared pure-Rust downloader in [`crate::download`], so no system `curl` is
+//! involved.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -44,7 +44,6 @@ const API_LATEST: &str = "https://api.github.com/repos/PaulBuitenhuis/TextLayr/r
 /// Human-facing releases page, used when the manifest gives no notes URL.
 const RELEASES_URL: &str = "https://github.com/PaulBuitenhuis/TextLayr/releases/latest";
 
-const CURL: &str = "/usr/bin/curl";
 const DITTO: &str = "/usr/bin/ditto";
 const XATTR: &str = "/usr/bin/xattr";
 const CODESIGN: &str = "/usr/bin/codesign";
@@ -206,13 +205,13 @@ fn resolve_source(override_val: Option<&str>) -> String {
     }
 }
 
-/// Read the manifest bytes: from disk for a local path/`file://`, else via curl.
+/// Fetch a manifest bytes: from disk for a local path/`file://`, else over HTTP.
 fn read_source(source: &str, cancel: &AtomicBool) -> Result<Vec<u8>> {
     if let Some(path) = local_path(source) {
         return std::fs::read(&path)
             .with_context(|| format!("failed to read update manifest {}", path.display()));
     }
-    curl_get(source, cancel, false)
+    fetch_bytes(source, cancel, false)
 }
 
 /// A local filesystem path for `source`, or `None` for an http(s) URL.
@@ -238,7 +237,7 @@ fn resolve_asset_url(source: &str, name: &str) -> String {
         } else {
             std::env::current_dir().unwrap_or_default().join(joined)
         };
-        // A `file://` URL so the shared curl downloader can read it.
+        // A `file://` URL so the shared downloader can read it.
         return format!("file://{}", abs.to_string_lossy());
     }
     match source.rfind('/') {
@@ -247,44 +246,11 @@ fn resolve_asset_url(source: &str, name: &str) -> String {
     }
 }
 
-fn curl_get(url: &str, cancel: &AtomicBool, api: bool) -> Result<Vec<u8>> {
-    if cancel.load(Ordering::Relaxed) {
-        bail!("cancelled");
-    }
-    let mut cmd = Command::new(CURL);
-    cmd.args([
-        "-sSL",
-        "--fail",
-        "--location",
-        "--retry",
-        "3",
-        "--max-time",
-        "60",
-    ])
-    .arg("-A")
-    .arg(concat!("textlayr/", env!("CARGO_PKG_VERSION")));
-    if api {
-        // The REST API asks for an explicit media type and rejects some UAs.
-        cmd.arg("-H").arg("Accept: application/vnd.github+json");
-    }
-    let out = cmd
-        .arg(url)
-        .output()
-        .with_context(|| format!("failed to run {CURL}"))?;
-    if !out.status.success() {
-        let detail = String::from_utf8_lossy(&out.stderr);
-        let detail = detail.trim();
-        bail!(
-            "could not fetch update information ({}){}",
-            out.status,
-            if detail.is_empty() {
-                String::new()
-            } else {
-                format!(": {detail}")
-            }
-        );
-    }
-    Ok(out.stdout)
+/// Fetch a manifest or GitHub API response through the shared downloader, so
+/// the updater and the installer speak one transport and neither shells out.
+fn fetch_bytes(url: &str, cancel: &AtomicBool, api: bool) -> Result<Vec<u8>> {
+    let accept = api.then_some("application/vnd.github+json");
+    download::get_bytes(url, cancel, accept)
 }
 
 // ── GitHub API fallback ────────────────────────────────────────────────────
@@ -315,7 +281,7 @@ struct GhAsset {
 /// Build a [`Release`] from the GitHub REST API. Used only when the manifest is
 /// unavailable (e.g. the newest release predates it).
 fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
-    let raw = curl_get(API_LATEST, cancel, true)?;
+    let raw = fetch_bytes(API_LATEST, cancel, true)?;
     let gh: GhRelease =
         serde_json::from_slice(&raw).context("unexpected response from GitHub (not a release)")?;
     if gh.draft || gh.prerelease {
@@ -355,7 +321,7 @@ fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
     // tolerates a missing checksum).
     if assets[zip_idx].sha256.is_none() {
         if let Some(url) = sums_url.as_deref() {
-            if let Ok(text) = curl_get(url, cancel, false) {
+            if let Ok(text) = fetch_bytes(url, cancel, false) {
                 if let Ok(text) = String::from_utf8(text) {
                     assets[zip_idx].sha256 = parse_sums(&text, &assets[zip_idx].name);
                 }
@@ -525,7 +491,8 @@ pub fn install(
     }
 
     // Unpack with `ditto`, which round-trips the bundle (resource forks, code
-    // signature) faithfully — the same tool `install.rs` uses.
+    // signature) faithfully. macOS only: a Linux/Windows run takes the
+    // open-the-installer path above instead.
     sink(InstallProgress::Extracting);
     let extracted = staging.join("extracted");
     std::fs::create_dir_all(&extracted)?;
