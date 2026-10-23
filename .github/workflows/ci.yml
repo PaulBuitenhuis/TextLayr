@@ -45,12 +45,22 @@ jobs:
       # Wayland headers, egui 0.37 finds system fonts through fontique, which
       # pkg-configs libfontconfig at build time, and the harness drives a real
       # ffmpeg end-to-end (probe → render → encode) via `--transcript`, so no
-      # whisper model is needed. A second `apt-get` here once hung for 19
-      # minutes on a prompt.
+      # whisper model is needed.
+      #
+      # A runner's unattended-upgrades can hold the dpkg lock for a long time,
+      # and a slow mirror can stall a fetch. Bound every wait so this fails in
+      # minutes instead of silently holding the job (seen twice: 19 and 16 min).
       - name: Linux dependencies (GUI headers + fonts + ffmpeg)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo systemctl stop unattended-upgrades.service || true
+          apt() {
+            sudo apt-get -o DPkg::Lock::Timeout=300 \
+                         -o Acquire::Retries=3 \
+                         -o Acquire::http::Timeout=30 \
+                         -o Acquire::https::Timeout=30 "$@"
+          }
+          apt update
+          apt install -y --no-install-recommends \
             ffmpeg libfontconfig1-dev \
             libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
             libxcursor-dev libxrandr-dev libxinerama-dev
