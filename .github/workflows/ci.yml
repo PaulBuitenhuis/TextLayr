@@ -42,14 +42,16 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       # Everything apt is installed in one step: egui/eframe need the X11 and
-      # Wayland headers, and the harness drives a real ffmpeg end-to-end
-      # (probe → render → encode) via `--transcript`, so no whisper model is
-      # needed. A second `apt-get` here once hung for 19 minutes on a prompt.
-      - name: Linux dependencies (GUI headers + ffmpeg)
+      # Wayland headers, egui 0.37 finds system fonts through fontique, which
+      # pkg-configs libfontconfig at build time, and the harness drives a real
+      # ffmpeg end-to-end (probe → render → encode) via `--transcript`, so no
+      # whisper model is needed. A second `apt-get` here once hung for 19
+      # minutes on a prompt.
+      - name: Linux dependencies (GUI headers + fonts + ffmpeg)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg \
+            ffmpeg libfontconfig1-dev \
             libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
             libxcursor-dev libxrandr-dev libxinerama-dev
       # Linux is the development platform, and its `cfg(target_os = "linux")`

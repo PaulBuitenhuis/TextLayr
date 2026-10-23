@@ -9,6 +9,19 @@ updates:
     commit-message:
       prefix: "cargo"
     groups:
+      # egui and eframe must always move together (see the comment on those
+      # lines in Cargo.toml). Separate PRs leave two egui crates in the graph,
+      # so every `eframe::egui` type boundary fails to compile. The group has no
+      # `update-types`, so it also captures the 0.x "major" bumps that used to
+      # arrive as two red PRs, and it is listed first so it wins over
+      # minor-and-patch.
+      egui:
+        patterns:
+          - "egui*"
+          - "eframe"
+          - "epaint"
+          - "emath"
+          - "ecolor"
       # Batch routine bumps so Dependabot isn't noisy.
       minor-and-patch:
         update-types: ["minor", "patch"]

@@ -43,8 +43,10 @@ tiny-skia = "0.12"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Native GUI (Milestone 3): pure-Rust egui, glow backend (Wayland/X11 via winit).
-eframe = "0.36"
-egui = "0.36"
+# Keep these two in lockstep: eframe re-exports its own egui, so a split bump
+# puts two egui crates in the graph and every `eframe::egui` type mismatches.
+eframe = "0.37"
+egui = "0.37"
 
 [profile.release]
 opt-level = 3

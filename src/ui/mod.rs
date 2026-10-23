@@ -2432,7 +2432,7 @@ fn human_bytes(n: u64) -> String {
 /// Returns `true` when the user clicked Dismiss.
 fn banner(ui: &mut egui::Ui, id: &str, color: egui::Color32, text: &str) -> bool {
     let mut dismissed = false;
-    egui::Panel::bottom(egui::Id::new(id)).show(ui, |ui| {
+    egui::Panel::bottom(egui::IdSalt::new(id)).show(ui, |ui| {
         ui.add_space(3.0);
         // Dismiss is added first (right-to-left) so it always keeps its space;
         // the message then wraps into whatever is left.

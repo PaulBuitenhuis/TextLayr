@@ -82,7 +82,8 @@ open dist/TextLayr.app
 # Linux: portable tarball, plus an AppImage when `appimagetool` is on PATH.
 # egui/winit need their dev headers first, e.g. on Debian/Ubuntu:
 #   sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
-#                    libxcursor-dev libxrandr-dev libxinerama-dev
+#                    libxcursor-dev libxrandr-dev libxinerama-dev \
+#                    libfontconfig1-dev
 scripts/package_linux.sh
 ./dist/TextLayr-<version>-linux-x86_64/textlayr
 

@@ -21,6 +21,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the running binary. First-run downloads and updates no longer shell out to
   `curl` or `ditto`.
 
+### Changed
+
+- **Newer window toolkit (egui/eframe 0.37).** Controls are a little roomier and
+  the UI can fall back to system fonts for glyphs the bundled fonts lack.
+  Workflow and output are unchanged.
+
 ## [0.2.3] - 2026-10-20
 
 ### Added

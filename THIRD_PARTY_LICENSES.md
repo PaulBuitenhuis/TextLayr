@@ -145,21 +145,20 @@ SOFTWARE.
 
 `ffmpeg` and `ffprobe` are **not** distributed with TextLayr. They are either found on your `PATH`, installed via Homebrew, or downloaded by you on first run. The whisper model (`ggml-*.bin`) is likewise downloaded on demand. Those components carry their own licenses, which you accept when you obtain them; TextLayr merely invokes them as separate programs.
 
-## Dependency inventory (450 crates)
+## Dependency inventory (466 crates)
 
 | Crate | Version | License (SPDX) |
 |---|---|---|
 | ab_glyph | 0.2.32 | Apache-2.0 |
 | ab_glyph_rasterizer | 0.1.10 | Apache-2.0 |
-| accesskit | 0.24.1 | MIT OR Apache-2.0 |
-| accesskit_atspi_common | 0.18.1 | MIT OR Apache-2.0 |
-| accesskit_consumer | 0.35.0 | MIT OR Apache-2.0 |
-| accesskit_consumer | 0.36.0 | MIT OR Apache-2.0 |
-| accesskit_consumer | 0.38.0 | MIT OR Apache-2.0 |
-| accesskit_macos | 0.26.3 | MIT OR Apache-2.0 |
-| accesskit_unix | 0.21.1 | MIT OR Apache-2.0 |
-| accesskit_windows | 0.32.1 | MIT OR Apache-2.0 |
-| accesskit_winit | 0.32.2 | Apache-2.0 |
+| accesskit | 0.25.1 | MIT OR Apache-2.0 |
+| accesskit_atspi_common | 0.21.0 | MIT OR Apache-2.0 |
+| accesskit_consumer | 0.39.1 | MIT OR Apache-2.0 |
+| accesskit_ios | 0.2.1 | MIT OR Apache-2.0 |
+| accesskit_macos | 0.27.1 | MIT OR Apache-2.0 |
+| accesskit_unix | 0.24.0 | MIT OR Apache-2.0 |
+| accesskit_windows | 0.35.1 | MIT OR Apache-2.0 |
+| accesskit_winit | 0.34.1 | Apache-2.0 |
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | ahash | 0.8.12 | MIT OR Apache-2.0 |
 | allocator-api2 | 0.2.21 | MIT OR Apache-2.0 |
@@ -233,19 +232,20 @@ SOFTWARE.
 | document-features | 0.2.12 | MIT OR Apache-2.0 |
 | downcast-rs | 1.2.1 | MIT/Apache-2.0 |
 | dpi | 0.1.2 | Apache-2.0 AND MIT |
-| ecolor | 0.36.2 | MIT OR Apache-2.0 |
-| eframe | 0.36.2 | MIT OR Apache-2.0 |
-| egui | 0.36.2 | MIT OR Apache-2.0 |
-| egui-wgpu | 0.36.2 | MIT OR Apache-2.0 |
-| egui-winit | 0.36.2 | MIT OR Apache-2.0 |
-| egui_glow | 0.36.2 | MIT OR Apache-2.0 |
+| ecolor | 0.37.0 | MIT OR Apache-2.0 |
+| eframe | 0.37.0 | MIT OR Apache-2.0 |
+| egui | 0.37.0 | MIT OR Apache-2.0 |
+| egui-wgpu | 0.37.0 | MIT OR Apache-2.0 |
+| egui-winit | 0.37.0 | MIT OR Apache-2.0 |
+| egui_glow | 0.37.0 | MIT OR Apache-2.0 |
+| egui_system_font_provider | 0.37.0 | MIT OR Apache-2.0 |
 | either | 1.19.0 | MIT OR Apache-2.0 |
-| emath | 0.36.2 | MIT OR Apache-2.0 |
+| emath | 0.37.0 | MIT OR Apache-2.0 |
 | endi | 1.1.1 | MIT |
 | enumflags2 | 0.7.12 | MIT OR Apache-2.0 |
 | enumflags2_derive | 0.7.12 | MIT OR Apache-2.0 |
-| epaint | 0.36.2 | MIT OR Apache-2.0 |
-| epaint_default_fonts | 0.36.2 | (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0 |
+| epaint | 0.37.0 | MIT OR Apache-2.0 |
+| epaint_default_fonts | 0.37.0 | (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0 |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT |
 | errno | 0.3.14 | MIT OR Apache-2.0 |
 | error-code | 3.4.0 | BSL-1.0 |
@@ -257,11 +257,13 @@ SOFTWARE.
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 |
 | fearless_simd | 0.4.1 | Apache-2.0 OR MIT |
 | filetime | 0.2.29 | MIT/Apache-2.0 |
+| fixedbitset | 0.5.7 | MIT OR Apache-2.0 |
 | flate2 | 1.1.10 | MIT OR Apache-2.0 |
 | foldhash | 0.1.5 | Zlib |
 | foldhash | 0.2.0 | Zlib |
 | font-types | 0.12.6 | MIT OR Apache-2.0 |
-| fontdue | 0.9.4 | MIT OR Apache-2.0 OR Zlib |
+| fontdue | 0.9.5 | MIT OR Apache-2.0 OR Zlib |
+| fontique | 0.11.1 | Apache-2.0 OR MIT |
 | foreign-types | 0.5.0 | MIT/Apache-2.0 |
 | foreign-types-macros | 0.2.4 | MIT/Apache-2.0 |
 | foreign-types-shared | 0.3.1 | MIT/Apache-2.0 |
@@ -276,7 +278,7 @@ SOFTWARE.
 | getrandom | 0.2.17 | MIT OR Apache-2.0 |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
-| glifo | 0.2.0 | Apache-2.0 OR MIT |
+| glifo | 0.3.0 | Apache-2.0 OR MIT |
 | glow | 0.17.0 | MIT OR Apache-2.0 OR Zlib |
 | glutin | 0.32.3 | Apache-2.0 |
 | glutin-winit | 0.5.0 | MIT |
@@ -341,6 +343,7 @@ SOFTWARE.
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 |
 | nix | 0.31.3 | MIT |
 | nohash-hasher | 0.2.0 | Apache-2.0 OR MIT |
+| nom | 8.0.0 | MIT |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
@@ -356,6 +359,7 @@ SOFTWARE.
 | objc2-core-graphics | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-core-image | 0.2.2 | MIT |
 | objc2-core-location | 0.2.2 | MIT |
+| objc2-core-text | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-encode | 4.1.0 | MIT |
 | objc2-foundation | 0.2.2 | MIT |
 | objc2-foundation | 0.3.2 | MIT |
@@ -375,22 +379,26 @@ SOFTWARE.
 | orbclient | 0.3.55 | MIT |
 | ordered-float | 5.5.0 | MIT |
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 |
+| os_pipe | 1.2.3 | MIT |
 | owned_ttf_parser | 0.25.1 | Apache-2.0 |
 | parking | 2.2.1 | Apache-2.0 OR MIT |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
+| parlance | 0.1.1 | Apache-2.0 OR MIT |
 | peniko | 0.6.1 | Apache-2.0 OR MIT |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
-| phf | 0.13.1 | MIT |
-| phf_generator | 0.13.1 | MIT |
-| phf_macros | 0.13.1 | MIT |
-| phf_shared | 0.13.1 | MIT |
+| petgraph | 0.8.3 | MIT OR Apache-2.0 |
+| phf | 0.14.0 | MIT |
+| phf_generator | 0.14.0 | MIT |
+| phf_macros | 0.14.0 | MIT |
+| phf_shared | 0.14.0 | MIT |
 | pin-project | 1.1.13 | Apache-2.0 OR MIT |
 | pin-project-internal | 1.1.13 | Apache-2.0 OR MIT |
 | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT |
 | piper | 0.2.5 | MIT OR Apache-2.0 |
 | plain | 0.2.3 | MIT/Apache-2.0 |
 | png | 0.18.1 | MIT OR Apache-2.0 |
+| poll-promise | 0.3.0 | MIT OR Apache-2.0 |
 | polling | 3.11.0 | Apache-2.0 OR MIT |
 | pollster | 1.0.1 | Apache-2.0/MIT |
 | polycool | 0.4.0 | MIT OR Apache-2.0 |
@@ -417,6 +425,7 @@ SOFTWARE.
 | redox_users | 0.5.3 | MIT |
 | renderdoc-sys | 1.1.0 | MIT OR Apache-2.0 |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
+| roxmltree | 0.21.1 | MIT OR Apache-2.0 |
 | rustc-hash | 1.1.0 | Apache-2.0/MIT |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
 | rustix | 0.38.44 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -429,6 +438,7 @@ SOFTWARE.
 | scopeguard | 1.2.0 | MIT OR Apache-2.0 |
 | sctk-adwaita | 0.10.1 | MIT |
 | self_cell | 1.3.0 | Apache-2.0 OR GPL-2.0-only |
+| send_wrapper | 0.6.0 | MIT/Apache-2.0 |
 | serde | 1.0.229 | MIT OR Apache-2.0 |
 | serde_core | 1.0.229 | MIT OR Apache-2.0 |
 | serde_derive | 1.0.229 | MIT OR Apache-2.0 |
@@ -456,6 +466,7 @@ SOFTWARE.
 | syn | 2.0.119 | MIT OR Apache-2.0 |
 | syn | 3.0.9 | MIT OR Apache-2.0 |
 | synstructure | 0.14.0 | MIT |
+| sys-locale | 0.3.2 | MIT OR Apache-2.0 |
 | tar | 0.4.46 | MIT OR Apache-2.0 |
 | tempfile | 3.27.0 | MIT OR Apache-2.0 |
 | termcolor | 1.4.1 | Unlicense OR MIT |
@@ -476,6 +487,7 @@ SOFTWARE.
 | tracing | 0.1.44 | MIT |
 | tracing-attributes | 0.1.31 | MIT |
 | tracing-core | 0.1.36 | MIT |
+| tree_magic_mini | 3.2.2 | MIT |
 | ttf-parser | 0.25.1 | MIT OR Apache-2.0 |
 | type-map | 0.5.1 | MIT/Apache-2.0 |
 | typed-path | 0.12.4 | MIT OR Apache-2.0 |
@@ -483,6 +495,8 @@ SOFTWARE.
 | uds_windows | 1.2.1 | MIT |
 | unicode-general-category | 1.1.0 | Apache-2.0 |
 | unicode-ident | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| unicode-properties | 0.1.4 | MIT/Apache-2.0 |
+| unicode-script | 0.5.8 | MIT OR Apache-2.0 |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 |
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 |
 | untrusted | 0.9.0 | ISC |
@@ -492,8 +506,8 @@ SOFTWARE.
 | utf8-zero | 0.8.1 | MIT OR Apache-2.0 |
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT |
 | uuid | 1.28.0 | Apache-2.0 OR MIT |
-| vello_common | 0.1.0 | Apache-2.0 OR MIT |
-| vello_cpu | 0.1.0 | Apache-2.0 OR MIT |
+| vello_common | 0.2.0 | Apache-2.0 OR MIT |
+| vello_cpu | 0.2.0 | Apache-2.0 OR MIT |
 | wasi | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | wasip2 | 1.0.4+wasi-0.2.12 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | wasm-bindgen | 0.2.129 | MIT OR Apache-2.0 |
@@ -565,6 +579,7 @@ SOFTWARE.
 | winit | 0.30.13 | Apache-2.0 |
 | winnow | 1.0.4 | MIT |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| wl-clipboard-rs | 0.9.4 | MIT OR Apache-2.0 |
 | writeable | 0.6.4 | Unicode-3.0 |
 | x11-dl | 2.21.0 | MIT |
 | x11rb | 0.13.2 | MIT OR Apache-2.0 |
@@ -573,6 +588,7 @@ SOFTWARE.
 | xkbcommon-dl | 0.4.2 | MIT |
 | xkeysym | 0.2.1 | MIT OR Apache-2.0 OR Zlib |
 | xz2 | 0.1.7 | MIT/Apache-2.0 |
+| yeslogic-fontconfig-sys | 6.0.1 | MIT |
 | yoke | 0.8.3 | Unicode-3.0 |
 | yoke-derive | 0.8.4 | Unicode-3.0 |
 | zbus | 5.19.0 | MIT |
@@ -600,7 +616,7 @@ SOFTWARE.
 | zvariant_derive | 5.15.0 | MIT |
 | zvariant_utils | 4.2.0 | MIT |
 
-## License texts (225 distinct)
+## License texts (237 distinct)
 
 ### 1. Applies to 35 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.md, LICENSE-APACHE.txt, LICENSE-Apache, LICENSE.APACHE`
 
@@ -611,7 +627,7 @@ SOFTWARE.
 - color 0.3.3
 - fdeflate 0.3.7
 - fearless_simd 0.4.1
-- fontdue 0.9.4
+- fontdue 0.9.5
 - half 2.7.1
 - image 0.25.10
 - linebender_resource_handle 0.1.1
@@ -628,8 +644,8 @@ SOFTWARE.
 - range-alloc 0.1.5
 - raw-window-handle 0.6.2
 - simdutf8 0.1.5
-- vello_common 0.1.0
-- vello_cpu 0.1.0
+- vello_common 0.2.0
+- vello_cpu 0.2.0
 - wgpu 30.0.1
 - wgpu-core 30.0.1
 - wgpu-core-deps-apple 30.0.1
@@ -1047,7 +1063,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 4. Applies to 71 crate(s) — `LICENSE, LICENSE-MIT`
+### 4. Applies to 72 crate(s) — `LICENSE, LICENSE-MIT, LICENSE-MIT.txt`
 
 - adler2 2.0.1
 - allocator-api2 0.2.21
@@ -1096,6 +1112,7 @@ limitations under the License.
 - rustix 0.38.44
 - rustix 1.1.5
 - rustversion 1.0.23
+- send_wrapper 0.6.0
 - serde 1.0.229
 - serde_core 1.0.229
 - serde_derive 1.0.229
@@ -1147,7 +1164,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 5. Applies to 96 crate(s) — `LICENSE, LICENSE-APACHE`
+### 5. Applies to 104 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.txt`
 
 - ahash 0.8.12
 - arrayvec 0.7.8
@@ -1182,7 +1199,9 @@ DEALINGS IN THE SOFTWARE.
 - event-listener-strategy 0.5.4
 - fastrand 2.5.0
 - filetime 0.2.29
+- fixedbitset 0.5.7
 - flate2 1.1.10
+- fontique 0.11.1
 - form_urlencoded 1.2.2
 - futures-lite 2.6.1
 - gethostname 1.1.0
@@ -1209,19 +1228,23 @@ DEALINGS IN THE SOFTWARE.
 - parking 2.2.1
 - parking_lot 0.12.5
 - parking_lot_core 0.9.12
+- parlance 0.1.1
 - percent-encoding 2.3.2
+- petgraph 0.8.3
 - piper 0.2.5
 - plain 0.2.3
 - png 0.18.1
 - polling 3.11.0
 - pollster 1.0.1
 - renderdoc-sys 1.1.0
+- roxmltree 0.21.1
 - rustc-hash 1.1.0
 - rustix 0.38.44
 - rustix 1.1.5
 - rustls 0.23.46
 - scoped-tls 1.0.1
 - scopeguard 1.2.0
+- send_wrapper 0.6.0
 - signal-hook-registry 1.4.8
 - simd_cesu8 1.2.0
 - smallvec 1.16.3
@@ -1230,6 +1253,7 @@ DEALINGS IN THE SOFTWARE.
 - tar 0.4.46
 - tempfile 3.27.0
 - ttf-parser 0.25.1
+- unicode-properties 0.1.4
 - unicode-segmentation 1.13.3
 - unicode-width 0.2.2
 - url 2.5.8
@@ -1244,6 +1268,7 @@ DEALINGS IN THE SOFTWARE.
 - web-sys 0.3.106
 - weezl 0.1.12
 - wit-bindgen 0.57.1
+- wl-clipboard-rs 0.9.4
 - xz2 0.1.7
 
 ```text
@@ -1487,7 +1512,7 @@ DEALINGS IN THE SOFTWARE.
 - allocator-api2 0.2.21
 - anyhow 1.0.104
 - async-trait 0.1.92
-- glifo 0.2.0
+- glifo 0.3.0
 - itoa 1.0.18
 - libc 0.2.190
 - litrs 1.0.1
@@ -1920,7 +1945,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 16. Applies to 21 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.txt, LICENSE-APACHE2.txt`
+### 16. Applies to 22 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.txt, LICENSE-APACHE2.txt`
 
 - as-raw-xcb-connection 1.0.1
 - atspi 0.29.0
@@ -1935,6 +1960,7 @@ DEALINGS IN THE SOFTWARE.
 - self_cell 1.3.0
 - siphasher 1.0.4
 - static_assertions 1.1.0
+- sys-locale 0.3.2
 - ureq 3.5.0
 - ureq-proto 0.6.5
 - utf8_iter 1.0.4
@@ -2620,11 +2646,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 25. Applies to 4 crate(s) — `LICENSE-APACHE`
+### 25. Applies to 5 crate(s) — `LICENSE-APACHE`
 
 - bit-set 0.10.0
 - bit-vec 0.9.1
 - downcast-rs 1.2.1
+- poll-promise 0.3.0
 - presser 0.3.1
 
 ```text
@@ -4703,10 +4730,11 @@ have been licensed under extremely permissive terms.
 ------------------------------------------------------------------------------
 ```
 
-### 62. Applies to 2 crate(s) — `LICENSE-MIT`
+### 62. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - either 1.19.0
 - itertools 0.15.0
+- petgraph 0.8.3
 
 ```text
 Copyright (c) 2015
@@ -5128,6 +5156,38 @@ DEALINGS IN THE SOFTWARE.
 
 ### 73. Applies to 1 crate(s) — `LICENSE-MIT`
 
+- fixedbitset 0.5.7
+
+```text
+Copyright (c) 2015-2017
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 74. Applies to 1 crate(s) — `LICENSE-MIT`
+
 - flate2 1.1.10
 
 ```text
@@ -5158,7 +5218,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 74. Applies to 2 crate(s) — `LICENSE`
+### 75. Applies to 2 crate(s) — `LICENSE`
 
 - foldhash 0.1.5
 - foldhash 0.2.0
@@ -5185,7 +5245,7 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 75. Applies to 3 crate(s) — `LICENSE-APACHE`
+### 76. Applies to 3 crate(s) — `LICENSE-APACHE`
 
 - font-types 0.12.6
 - read-fonts 0.41.0
@@ -5261,7 +5321,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 76. Applies to 3 crate(s) — `LICENSE-MIT`
+### 77. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - font-types 0.12.6
 - read-fonts 0.41.0
@@ -5295,9 +5355,9 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 77. Applies to 1 crate(s) — `LICENSE-MIT`
+### 78. Applies to 1 crate(s) — `LICENSE-MIT`
 
-- fontdue 0.9.4
+- fontdue 0.9.5
 
 ```text
 MIT License
@@ -5323,9 +5383,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 78. Applies to 1 crate(s) — `LICENSE-ZLIB`
+### 79. Applies to 1 crate(s) — `LICENSE-ZLIB`
 
-- fontdue 0.9.4
+- fontdue 0.9.5
 
 ```text
 Zlib License
@@ -5351,7 +5411,39 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 79. Applies to 3 crate(s) — `LICENSE-MIT`
+### 80. Applies to 1 crate(s) — `LICENSE-MIT`
+
+- fontique 0.11.1
+
+```text
+Copyright 2024 the Parley Authors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 81. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - foreign-types 0.5.0
 - foreign-types-macros 0.2.4
@@ -5379,7 +5471,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 80. Applies to 1 crate(s) — `LICENSE-MIT`
+### 82. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - form_urlencoded 1.2.2
 
@@ -5411,7 +5503,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 81. Applies to 5 crate(s) — `LICENSE-APACHE`
+### 83. Applies to 5 crate(s) — `LICENSE-APACHE`
 
 - futures-core 0.3.34
 - futures-io 0.3.34
@@ -5624,7 +5716,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 82. Applies to 5 crate(s) — `LICENSE-MIT`
+### 84. Applies to 5 crate(s) — `LICENSE-MIT`
 
 - futures-core 0.3.34
 - futures-io 0.3.34
@@ -5661,7 +5753,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 83. Applies to 3 crate(s) — `LICENSE-APACHE`
+### 85. Applies to 3 crate(s) — `LICENSE-APACHE`
 
 - getrandom 0.2.17
 - getrandom 0.3.4
@@ -5871,7 +5963,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 84. Applies to 1 crate(s) — `LICENSE-MIT`
+### 86. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - getrandom 0.2.17
 
@@ -5904,7 +5996,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 85. Applies to 1 crate(s) — `LICENSE-MIT`
+### 87. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - getrandom 0.3.4
 
@@ -5937,7 +6029,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 86. Applies to 1 crate(s) — `LICENSE-MIT`
+### 88. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - getrandom 0.4.3
 
@@ -5970,9 +6062,9 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 87. Applies to 1 crate(s) — `LICENSE-MIT`
+### 89. Applies to 1 crate(s) — `LICENSE-MIT`
 
-- glifo 0.2.0
+- glifo 0.3.0
 
 ```text
 Copyright 2025 the Vello Authors
@@ -6002,7 +6094,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 88. Applies to 1 crate(s) — `LICENSE-ZLIB`
+### 90. Applies to 1 crate(s) — `LICENSE-ZLIB`
 
 - glow 0.17.0
 
@@ -6024,7 +6116,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 89. Applies to 4 crate(s) — `LICENSE`
+### 91. Applies to 4 crate(s) — `LICENSE`
 
 - glutin 0.32.3
 - glutin_egl_sys 0.7.1
@@ -6235,7 +6327,7 @@ Apache License
    limitations under the License.
 ```
 
-### 90. Applies to 1 crate(s) — `LICENSE`
+### 92. Applies to 1 crate(s) — `LICENSE`
 
 - glutin-winit 0.5.0
 
@@ -6261,7 +6353,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 91. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 93. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - gpu-allocator 0.28.0
 
@@ -6469,7 +6561,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 92. Applies to 1 crate(s) — `LICENSE-MIT`
+### 94. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - gpu-allocator 0.28.0
 
@@ -6483,7 +6575,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 93. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 95. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - guillotiere 0.7.0
 
@@ -6503,7 +6595,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 94. Applies to 1 crate(s) — `LICENSE-MIT`
+### 96. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - guillotiere 0.7.0
 
@@ -6530,7 +6622,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 95. Applies to 1 crate(s) — `LICENSE`
+### 97. Applies to 1 crate(s) — `LICENSE`
 
 - harfrust 0.12.0
 
@@ -6559,7 +6651,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 96. Applies to 3 crate(s) — `LICENSE-MIT`
+### 98. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - hashbrown 0.15.5
 - hashbrown 0.16.1
@@ -6593,7 +6685,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 97. Applies to 1 crate(s) — `LICENSE-MIT`
+### 99. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - hex 0.4.3
 
@@ -6620,7 +6712,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 98. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 100. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - http 1.5.0
 
@@ -6828,7 +6920,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 99. Applies to 1 crate(s) — `LICENSE-MIT`
+### 101. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - http 1.5.0
 
@@ -6860,7 +6952,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 100. Applies to 1 crate(s) — `LICENSE-MIT`
+### 102. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - httparse 1.10.1
 
@@ -6886,7 +6978,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 101. Applies to 1 crate(s) — `LICENSE-MIT`
+### 103. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - hybrid-array 0.4.15
 
@@ -6918,7 +7010,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 102. Applies to 18 crate(s) — `LICENSE`
+### 104. Applies to 18 crate(s) — `LICENSE`
 
 - icu_collections 2.3.0
 - icu_locale_core 2.3.0
@@ -6988,7 +7080,7 @@ Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
 ```
 
-### 103. Applies to 3 crate(s) — `LICENSE-MIT`
+### 105. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - idna 1.1.0
 - percent-encoding 2.3.2
@@ -7022,7 +7114,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 104. Applies to 1 crate(s) — `LICENSE-MIT`
+### 106. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - idna_adapter 1.2.2
 
@@ -7054,7 +7146,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 105. Applies to 1 crate(s) — `LICENSE-MIT`
+### 107. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - indexmap 2.14.2
 
@@ -7086,7 +7178,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 106. Applies to 2 crate(s) — `LICENSE-MIT`
+### 108. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - jni-sys 0.3.1
 - jni-sys 0.4.1
@@ -7113,7 +7205,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 107. Applies to 1 crate(s) — `LICENSE-MIT`
+### 109. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - libc 0.2.190
 
@@ -7145,7 +7237,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 108. Applies to 1 crate(s) — `LICENSE`
+### 110. Applies to 1 crate(s) — `LICENSE`
 
 - libloading 0.8.9
 
@@ -7164,7 +7256,7 @@ NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE US
 THIS SOFTWARE.
 ```
 
-### 109. Applies to 1 crate(s) — `LICENSE.txt`
+### 111. Applies to 1 crate(s) — `LICENSE.txt`
 
 - libm 0.2.16
 
@@ -7429,7 +7521,7 @@ have been licensed under extremely permissive terms.
 Copyright notices are retained in src/* files where relevant.
 ```
 
-### 110. Applies to 1 crate(s) — `LICENSE`
+### 112. Applies to 1 crate(s) — `LICENSE`
 
 - libredox 0.1.25
 
@@ -7457,7 +7549,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 111. Applies to 2 crate(s) — `COPYRIGHT`
+### 113. Applies to 2 crate(s) — `COPYRIGHT`
 
 - linux-raw-sys 0.12.1
 - linux-raw-sys 0.4.15
@@ -7494,7 +7586,7 @@ is licensed under:
 at your option.
 ```
 
-### 112. Applies to 7 crate(s) — `LICENSE-Apache-2.0_WITH_LLVM-exception`
+### 114. Applies to 7 crate(s) — `LICENSE-Apache-2.0_WITH_LLVM-exception`
 
 - linux-raw-sys 0.12.1
 - linux-raw-sys 0.4.15
@@ -7725,7 +7817,7 @@ the License, but only in their entirety and only with respect to the Combined
 Software.
 ```
 
-### 113. Applies to 1 crate(s) — `LICENSE-MIT`
+### 115. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - litrs 1.0.1
 
@@ -7757,7 +7849,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 114. Applies to 3 crate(s) — `LICENSE-MIT`
+### 116. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - lock_api 0.4.14
 - parking_lot 0.12.5
@@ -7791,7 +7883,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 115. Applies to 2 crate(s) — `LICENSE-MIT`
+### 117. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - lzma-sys 0.1.20
 - xz2 0.1.7
@@ -7824,7 +7916,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 116. Applies to 3 crate(s) — `COPYING`
+### 118. Applies to 3 crate(s) — `COPYING`
 
 - memchr 2.8.3
 - termcolor 1.4.1
@@ -7836,7 +7928,7 @@ This project is dual-licensed under the Unlicense and MIT licenses.
 You may use this code under the terms of either license.
 ```
 
-### 117. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 119. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - memmap2 0.9.11
 
@@ -8044,7 +8136,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 118. Applies to 1 crate(s) — `LICENSE-MIT`
+### 120. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - memmap2 0.9.11
 
@@ -8077,7 +8169,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 119. Applies to 1 crate(s) — `LICENSE`
+### 121. Applies to 1 crate(s) — `LICENSE`
 
 - memoffset 0.9.1
 
@@ -8103,7 +8195,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 120. Applies to 2 crate(s) — `LICENSE`
+### 122. Applies to 2 crate(s) — `LICENSE`
 
 - miniz_oxide 0.8.9
 - miniz_oxide 0.9.1
@@ -8136,7 +8228,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 121. Applies to 2 crate(s) — `LICENSE-MIT.md`
+### 123. Applies to 2 crate(s) — `LICENSE-MIT.md`
 
 - miniz_oxide 0.8.9
 - miniz_oxide 0.9.1
@@ -8168,7 +8260,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 122. Applies to 2 crate(s) — `LICENSE-ZLIB.md`
+### 124. Applies to 2 crate(s) — `LICENSE-ZLIB.md`
 
 - miniz_oxide 0.8.9
 - miniz_oxide 0.9.1
@@ -8190,7 +8282,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 123. Applies to 2 crate(s) — `LICENSE-APACHE.md`
+### 125. Applies to 2 crate(s) — `LICENSE-APACHE.md`
 
 - moxcms 0.8.1
 - pxfm 0.1.30
@@ -8399,7 +8491,7 @@ Apache License
    limitations under the License.
 ```
 
-### 124. Applies to 2 crate(s) — `LICENSE.md`
+### 126. Applies to 2 crate(s) — `LICENSE.md`
 
 - moxcms 0.8.1
 - pxfm 0.1.30
@@ -8433,7 +8525,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 125. Applies to 11 crate(s) — `LICENSE.MIT`
+### 127. Applies to 11 crate(s) — `LICENSE.MIT`
 
 - naga 30.0.1
 - naga-types 30.0.1
@@ -8471,7 +8563,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 126. Applies to 1 crate(s) — `LICENSE`
+### 128. Applies to 1 crate(s) — `LICENSE`
 
 - nix 0.31.3
 
@@ -8499,7 +8591,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 127. Applies to 1 crate(s) — `LICENSE-MIT`
+### 129. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - nohash-hasher 0.2.0
 
@@ -8524,7 +8616,34 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 128. Applies to 2 crate(s) — `LICENSE-BSD`
+### 130. Applies to 1 crate(s) — `LICENSE`
+
+- nom 8.0.0
+
+```text
+Copyright (c) 2014-2019 Geoffroy Couprie
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### 131. Applies to 2 crate(s) — `LICENSE-BSD`
 
 - num_enum 0.7.6
 - num_enum_derive 0.7.6
@@ -8559,7 +8678,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 129. Applies to 1 crate(s) — `LICENSE.txt`
+### 132. Applies to 1 crate(s) — `LICENSE.txt`
 
 - option-ext 0.2.0
 
@@ -8939,7 +9058,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### 130. Applies to 1 crate(s) — `LICENSE`
+### 133. Applies to 1 crate(s) — `LICENSE`
 
 - orbclient 0.3.55
 
@@ -8967,7 +9086,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 131. Applies to 1 crate(s) — `LICENSE-MIT`
+### 134. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - ordered-float 5.5.0
 
@@ -8999,7 +9118,33 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 132. Applies to 1 crate(s) — `LICENSE-THIRD-PARTY`
+### 135. Applies to 1 crate(s) — `LICENSE`
+
+- os_pipe 1.2.3
+
+```text
+The MIT License (MIT)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+### 136. Applies to 1 crate(s) — `LICENSE-THIRD-PARTY`
 
 - parking 2.2.1
 
@@ -9015,12 +9160,44 @@ option. All files in the project carrying such notice may not be
 copied, modified, or distributed except according to those terms.
 ```
 
-### 133. Applies to 4 crate(s) — `LICENSE`
+### 137. Applies to 1 crate(s) — `LICENSE-MIT`
 
-- phf 0.13.1
-- phf_generator 0.13.1
-- phf_macros 0.13.1
-- phf_shared 0.13.1
+- parlance 0.1.1
+
+```text
+Copyright 2020 the Parley Authors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 138. Applies to 4 crate(s) — `LICENSE`
+
+- phf 0.14.0
+- phf_generator 0.14.0
+- phf_macros 0.14.0
+- phf_shared 0.14.0
 
 ```text
 The MIT License (MIT)
@@ -9045,7 +9222,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 134. Applies to 1 crate(s) — `LICENSE-MIT`
+### 139. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - plain 0.2.3
 
@@ -9077,7 +9254,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 135. Applies to 1 crate(s) — `LICENSE-MIT`
+### 140. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - png 0.18.1
 
@@ -9109,7 +9286,40 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 136. Applies to 1 crate(s) — `LICENSE-MIT`
+### 141. Applies to 2 crate(s) — `LICENSE-MIT`
+
+- poll-promise 0.3.0
+- presser 0.3.1
+
+```text
+Copyright (c) 2019 Embark Studios
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 142. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - pollster 1.0.1
 
@@ -9141,39 +9351,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 137. Applies to 1 crate(s) — `LICENSE-MIT`
-
-- presser 0.3.1
-
-```text
-Copyright (c) 2019 Embark Studios
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### 138. Applies to 1 crate(s) — `LICENSE-MIT`
+### 143. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - quick-error 2.0.1
 
@@ -9199,7 +9377,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 139. Applies to 1 crate(s) — `LICENSE-MIT.md`
+### 144. Applies to 1 crate(s) — `LICENSE-MIT.md`
 
 - quick-xml 0.41.0
 
@@ -9229,7 +9407,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 140. Applies to 1 crate(s) — `LICENSE.MIT`
+### 145. Applies to 1 crate(s) — `LICENSE.MIT`
 
 - range-alloc 0.1.5
 
@@ -9257,7 +9435,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 141. Applies to 1 crate(s) — `LICENSE-MIT.md`
+### 146. Applies to 1 crate(s) — `LICENSE-MIT.md`
 
 - raw-window-handle 0.6.2
 
@@ -9285,7 +9463,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 142. Applies to 1 crate(s) — `LICENSE-ZLIB.md`
+### 147. Applies to 1 crate(s) — `LICENSE-ZLIB.md`
 
 - raw-window-handle 0.6.2
 
@@ -9303,7 +9481,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 143. Applies to 2 crate(s) — `LICENSE-MIT`
+### 148. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - raw-window-metal 1.1.0
 - siphasher 1.0.4
@@ -9328,7 +9506,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 144. Applies to 3 crate(s) — `LICENSE`
+### 149. Applies to 3 crate(s) — `LICENSE`
 
 - redox_syscall 0.4.1
 - redox_syscall 0.5.18
@@ -9359,7 +9537,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 145. Applies to 1 crate(s) — `LICENSE`
+### 150. Applies to 1 crate(s) — `LICENSE`
 
 - redox_users 0.5.3
 
@@ -9387,7 +9565,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 146. Applies to 1 crate(s) — `LICENSE-MIT`
+### 151. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - renderdoc-sys 1.1.0
 
@@ -9419,7 +9597,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 147. Applies to 1 crate(s) — `LICENSE`
+### 152. Applies to 1 crate(s) — `LICENSE`
 
 - ring 0.17.14
 
@@ -9435,7 +9613,7 @@ See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
 for the license to code that was sourced from the once_cell project.
 ```
 
-### 148. Applies to 1 crate(s) — `LICENSE-BoringSSL`
+### 153. Applies to 1 crate(s) — `LICENSE-BoringSSL`
 
 - ring 0.17.14
 
@@ -9713,7 +9891,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 149. Applies to 1 crate(s) — `LICENSE-other-bits`
+### 154. Applies to 1 crate(s) — `LICENSE-other-bits`
 
 - ring 0.17.14
 
@@ -9733,7 +9911,35 @@ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### 150. Applies to 2 crate(s) — `COPYRIGHT`
+### 155. Applies to 1 crate(s) — `LICENSE-MIT`
+
+- roxmltree 0.21.1
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2018 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### 156. Applies to 2 crate(s) — `COPYRIGHT`
 
 - rustix 0.38.44
 - rustix 1.1.5
@@ -9770,7 +9976,7 @@ is licensed under:
 at your option.
 ```
 
-### 151. Applies to 1 crate(s) — `LICENSE-ISC`
+### 157. Applies to 1 crate(s) — `LICENSE-ISC`
 
 - rustls 0.23.46
 
@@ -9792,7 +9998,7 @@ ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### 152. Applies to 1 crate(s) — `LICENSE-MIT`
+### 158. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - rustls 0.23.46
 
@@ -9824,7 +10030,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 153. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 159. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - rustls-pki-types 1.15.1
 
@@ -10032,7 +10238,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 154. Applies to 1 crate(s) — `LICENSE-MIT`
+### 160. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - rustls-pki-types 1.15.1
 
@@ -10064,7 +10270,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 155. Applies to 1 crate(s) — `LICENSE`
+### 161. Applies to 1 crate(s) — `LICENSE`
 
 - rustls-webpki 0.103.16
 
@@ -10090,7 +10296,7 @@ The files under third-party/chromium are licensed as described in
 third-party/chromium/LICENSE.
 ```
 
-### 156. Applies to 1 crate(s) — `LICENSE-MIT`
+### 162. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - scopeguard 1.2.0
 
@@ -10122,7 +10328,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 157. Applies to 1 crate(s) — `LICENSE`
+### 163. Applies to 1 crate(s) — `LICENSE`
 
 - sctk-adwaita 0.10.1
 
@@ -10150,7 +10356,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 158. Applies to 1 crate(s) — `LICENSE-GPLv2`
+### 164. Applies to 1 crate(s) — `LICENSE-GPLv2`
 
 - self_cell 1.3.0
 
@@ -10496,7 +10702,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 ```
 
-### 159. Applies to 1 crate(s) — `LICENSE-MIT`
+### 165. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - sha2 0.11.1
 
@@ -10531,7 +10737,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 160. Applies to 1 crate(s) — `LICENSE-MIT`
+### 166. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - signal-hook-registry 1.4.8
 
@@ -10563,7 +10769,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 161. Applies to 1 crate(s) — `LICENSE.md`
+### 167. Applies to 1 crate(s) — `LICENSE.md`
 
 - simd-adler32 0.3.10
 
@@ -10591,7 +10797,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 162. Applies to 1 crate(s) — `COPYING`
+### 168. Applies to 1 crate(s) — `COPYING`
 
 - siphasher 1.0.4
 
@@ -10605,7 +10811,7 @@ http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 option.
 ```
 
-### 163. Applies to 1 crate(s) — `LICENSE`
+### 169. Applies to 1 crate(s) — `LICENSE`
 
 - slab 0.4.12
 
@@ -10637,7 +10843,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 164. Applies to 1 crate(s) — `LICENSE`
+### 170. Applies to 1 crate(s) — `LICENSE`
 
 - slotmap 1.1.1
 
@@ -10663,7 +10869,7 @@ the following restrictions:
  3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 165. Applies to 1 crate(s) — `LICENSE-MIT`
+### 171. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - smallvec 1.16.3
 
@@ -10695,7 +10901,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 166. Applies to 1 crate(s) — `LICENSE`
+### 172. Applies to 1 crate(s) — `LICENSE`
 
 - smithay-clipboard 0.7.3
 
@@ -10721,7 +10927,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 167. Applies to 1 crate(s) — `LICENSE-MIT`
+### 173. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - stable_deref_trait 1.2.1
 
@@ -10753,7 +10959,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 168. Applies to 1 crate(s) — `LICENSE-MIT`
+### 174. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - static_assertions 1.1.0
 
@@ -10781,7 +10987,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 169. Applies to 1 crate(s) — `LICENSE`
+### 175. Applies to 1 crate(s) — `LICENSE`
 
 - strict-num 0.1.1
 
@@ -10807,7 +11013,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 170. Applies to 1 crate(s) — `LICENSE`
+### 176. Applies to 1 crate(s) — `LICENSE`
 
 - subtle 2.6.1
 
@@ -10843,7 +11049,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 171. Applies to 1 crate(s) — `LICENSE`
+### 177. Applies to 1 crate(s) — `LICENSE`
 
 - synstructure 0.14.0
 
@@ -10857,7 +11063,35 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 172. Applies to 1 crate(s) — `LICENSE-MIT`
+### 178. Applies to 1 crate(s) — `LICENSE-MIT`
+
+- sys-locale 0.3.2
+
+```text
+MIT License
+
+Copyright (c) 2021 1Password
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### 179. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - tar 0.4.46
 
@@ -10889,7 +11123,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 173. Applies to 1 crate(s) — `LICENSE-MIT`
+### 180. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - tempfile 3.27.0
 
@@ -10921,7 +11155,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 174. Applies to 1 crate(s) — `LICENSE`
+### 181. Applies to 1 crate(s) — `LICENSE`
 
 - tiff 0.11.3
 
@@ -10949,7 +11183,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 175. Applies to 4 crate(s) — `LICENSE`
+### 182. Applies to 4 crate(s) — `LICENSE`
 
 - tiny-skia 0.11.4
 - tiny-skia 0.12.0
@@ -10989,7 +11223,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 176. Applies to 1 crate(s) — `LICENSE`
+### 183. Applies to 1 crate(s) — `LICENSE`
 
 - tokio 1.53.3
 
@@ -11017,7 +11251,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 177. Applies to 3 crate(s) — `LICENSE-APACHE`
+### 184. Applies to 3 crate(s) — `LICENSE-APACHE`
 
 - toml_datetime 1.1.2+spec-1.1.0
 - toml_edit 0.25.17+spec-1.1.0
@@ -11227,7 +11461,7 @@ Apache License
    limitations under the License.
 ```
 
-### 178. Applies to 3 crate(s) — `LICENSE-MIT`
+### 185. Applies to 3 crate(s) — `LICENSE-MIT`
 
 - toml_datetime 1.1.2+spec-1.1.0
 - toml_edit 0.25.17+spec-1.1.0
@@ -11255,7 +11489,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 179. Applies to 3 crate(s) — `LICENSE`
+### 186. Applies to 3 crate(s) — `LICENSE`
 
 - tracing 0.1.44
 - tracing-attributes 0.1.31
@@ -11289,7 +11523,35 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 180. Applies to 1 crate(s) — `LICENSE-MIT`
+### 187. Applies to 1 crate(s) — `LICENSE`
+
+- tree_magic_mini 3.2.2
+
+```text
+MIT License
+
+Copyright (c) 2017 Aaron Hancock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### 188. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - ttf-parser 0.25.1
 
@@ -11315,7 +11577,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 181. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 189. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - type-map 0.5.1
 
@@ -11727,7 +11989,7 @@ limitations under the License.
    limitations under the License.
 ```
 
-### 182. Applies to 1 crate(s) — `LICENSE-MIT`
+### 190. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - type-map 0.5.1
 
@@ -11813,7 +12075,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 183. Applies to 1 crate(s) — `LICENSE`
+### 191. Applies to 1 crate(s) — `LICENSE`
 
 - typenum 1.20.1
 
@@ -11821,7 +12083,7 @@ DEALINGS IN THE SOFTWARE.
 MIT OR Apache-2.0
 ```
 
-### 184. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 192. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - typenum 1.20.1
 
@@ -12029,7 +12291,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 185. Applies to 1 crate(s) — `LICENSE-MIT`
+### 193. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - typenum 1.20.1
 
@@ -12057,7 +12319,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 186. Applies to 1 crate(s) — `LICENSE`
+### 194. Applies to 1 crate(s) — `LICENSE`
 
 - uds_windows 1.2.1
 
@@ -12085,7 +12347,7 @@ MIT License
     SOFTWARE
 ```
 
-### 187. Applies to 1 crate(s) — `LICENSE-UNICODE`
+### 195. Applies to 1 crate(s) — `LICENSE-UNICODE`
 
 - unicode-ident 1.0.27
 
@@ -12131,8 +12393,9 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 ```
 
-### 188. Applies to 2 crate(s) — `COPYRIGHT`
+### 196. Applies to 3 crate(s) — `COPYRIGHT`
 
+- unicode-properties 0.1.4
 - unicode-segmentation 1.13.3
 - unicode-width 0.2.2
 
@@ -12146,8 +12409,9 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 ```
 
-### 189. Applies to 2 crate(s) — `LICENSE-MIT`
+### 197. Applies to 3 crate(s) — `LICENSE-MIT`
 
+- unicode-properties 0.1.4
 - unicode-segmentation 1.13.3
 - unicode-width 0.2.2
 
@@ -12179,7 +12443,249 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 190. Applies to 1 crate(s) — `LICENSE.txt`
+### 198. Applies to 1 crate(s) — `LICENSE-APACHE`
+
+- unicode-script 0.5.8
+
+```text
+Apache License
+                        Version 2.0, January 2004
+                     http://www.apache.org/licenses/
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+   "License" shall mean the terms and conditions for use, reproduction,
+   and distribution as defined by Sections 1 through 9 of this document.
+
+   "Licensor" shall mean the copyright owner or entity authorized by
+   the copyright owner that is granting the License.
+
+   "Legal Entity" shall mean the union of the acting entity and all
+   other entities that control, are controlled by, or are under common
+   control with that entity. For the purposes of this definition,
+   "control" means (i) the power, direct or indirect, to cause the
+   direction or management of such entity, whether by contract or
+   otherwise, or (ii) ownership of fifty percent (50%) or more of the
+   outstanding shares, or (iii) beneficial ownership of such entity.
+
+   "You" (or "Your") shall mean an individual or Legal Entity
+   exercising permissions granted by this License.
+
+   "Source" form shall mean the preferred form for making modifications,
+   including but not limited to software source code, documentation
+   source, and configuration files.
+
+   "Object" form shall mean any form resulting from mechanical
+   transformation or translation of a Source form, including but
+   not limited to compiled object code, generated documentation,
+   and conversions to other media types.
+
+   "Work" shall mean the work of authorship, whether in Source or
+   Object form, made available under the License, as indicated by a
+   copyright notice that is included in or attached to the work
+   (an example is provided in the Appendix below).
+
+   "Derivative Works" shall mean any work, whether in Source or Object
+   form, that is based on (or derived from) the Work and for which the
+   editorial revisions, annotations, elaborations, or other modifications
+   represent, as a whole, an original work of authorship. For the purposes
+   of this License, Derivative Works shall not include works that remain
+   separable from, or merely link (or bind by name) to the interfaces of,
+   the Work and Derivative Works thereof.
+
+   "Contribution" shall mean any work of authorship, including
+   the original version of the Work and any modifications or additions
+   to that Work or Derivative Works thereof, that is intentionally
+   submitted to Licensor for inclusion in the Work by the copyright owner
+   or by an individual or Legal Entity authorized to submit on behalf of
+   the copyright owner. For the purposes of this definition, "submitted"
+   means any form of electronic, verbal, or written communication sent
+   to the Licensor or its representatives, including but not limited to
+   communication on electronic mailing lists, source code control systems,
+   and issue tracking systems that are managed by, or on behalf of, the
+   Licensor for the purpose of discussing and improving the Work, but
+   excluding communication that is conspicuously marked or otherwise
+   designated in writing by the copyright owner as "Not a Contribution."
+
+   "Contributor" shall mean Licensor and any individual or Legal Entity
+   on behalf of whom a Contribution has been received by Licensor and
+   subsequently incorporated within the Work.
+
+2. Grant of Copyright License. Subject to the terms and conditions of
+   this License, each Contributor hereby grants to You a perpetual,
+   worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+   copyright license to reproduce, prepare Derivative Works of,
+   publicly display, publicly perform, sublicense, and distribute the
+   Work and such Derivative Works in Source or Object form.
+
+3. Grant of Patent License. Subject to the terms and conditions of
+   this License, each Contributor hereby grants to You a perpetual,
+   worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+   (except as stated in this section) patent license to make, have made,
+   use, offer to sell, sell, import, and otherwise transfer the Work,
+   where such license applies only to those patent claims licensable
+   by such Contributor that are necessarily infringed by their
+   Contribution(s) alone or by combination of their Contribution(s)
+   with the Work to which such Contribution(s) was submitted. If You
+   institute patent litigation against any entity (including a
+   cross-claim or counterclaim in a lawsuit) alleging that the Work
+   or a Contribution incorporated within the Work constitutes direct
+   or contributory patent infringement, then any patent licenses
+   granted to You under this License for that Work shall terminate
+   as of the date such litigation is filed.
+
+4. Redistribution. You may reproduce and distribute copies of the
+   Work or Derivative Works thereof in any medium, with or without
+   modifications, and in Source or Object form, provided that You
+   meet the following conditions:
+
+   (a) You must give any other recipients of the Work or
+       Derivative Works a copy of this License; and
+
+   (b) You must cause any modified files to carry prominent notices
+       stating that You changed the files; and
+
+   (c) You must retain, in the Source form of any Derivative Works
+       that You distribute, all copyright, patent, trademark, and
+       attribution notices from the Source form of the Work,
+       excluding those notices that do not pertain to any part of
+       the Derivative Works; and
+
+   (d) If the Work includes a "NOTICE" text file as part of its
+       distribution, then any Derivative Works that You distribute must
+       include a readable copy of the attribution notices contained
+       within such NOTICE file, excluding those notices that do not
+       pertain to any part of the Derivative Works, in at least one
+       of the following places: within a NOTICE text file distributed
+       as part of the Derivative Works; within the Source form or
+       documentation, if provided along with the Derivative Works; or,
+       within a display generated by the Derivative Works, if and
+       wherever such third-party notices normally appear. The contents
+       of the NOTICE file are for informational purposes only and
+       do not modify the License. You may add Your own attribution
+       notices within Derivative Works that You distribute, alongside
+       or as an addendum to the NOTICE text from the Work, provided
+       that such additional attribution notices cannot be construed
+       as modifying the License.
+
+   You may add Your own copyright statement to Your modifications and
+   may provide additional or different license terms and conditions
+   for use, reproduction, or distribution of Your modifications, or
+   for any such Derivative Works as a whole, provided Your use,
+   reproduction, and distribution of the Work otherwise complies with
+   the conditions stated in this License.
+
+5. Submission of Contributions. Unless You explicitly state otherwise,
+   any Contribution intentionally submitted for inclusion in the Work
+   by You to the Licensor shall be under the terms and conditions of
+   this License, without any additional terms or conditions.
+   Notwithstanding the above, nothing herein shall supersede or modify
+   the terms of any separate license agreement you may have executed
+   with Licensor regarding such Contributions.
+
+6. Trademarks. This License does not grant permission to use the trade
+   names, trademarks, service marks, or product names of the Licensor,
+   except as required for reasonable and customary use in describing the
+   origin of the Work and reproducing the content of the NOTICE file.
+
+7. Disclaimer of Warranty. Unless required by applicable law or
+   agreed to in writing, Licensor provides the Work (and each
+   Contributor provides its Contributions) on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+   implied, including, without limitation, any warranties or conditions
+   of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+   PARTICULAR PURPOSE. You are solely responsible for determining the
+   appropriateness of using or redistributing the Work and assume any
+   risks associated with Your exercise of permissions under this License.
+
+8. Limitation of Liability. In no event and under no legal theory,
+   whether in tort (including negligence), contract, or otherwise,
+   unless required by applicable law (such as deliberate and grossly
+   negligent acts) or agreed to in writing, shall any Contributor be
+   liable to You for damages, including any direct, indirect, special,
+   incidental, or consequential damages of any character arising as a
+   result of this License or out of the use or inability to use the
+   Work (including but not limited to damages for loss of goodwill,
+   work stoppage, computer failure or malfunction, or any and all
+   other commercial damages or losses), even if such Contributor
+   has been advised of the possibility of such damages.
+
+9. Accepting Warranty or Additional Liability. While redistributing
+   the Work or Derivative Works thereof, You may choose to offer,
+   and charge a fee for, acceptance of support, warranty, indemnity,
+   or other liability obligations and/or rights consistent with this
+   License. However, in accepting such obligations, You may act only
+   on Your own behalf and on Your sole responsibility, not on behalf
+   of any other Contributor, and only if You agree to indemnify,
+   defend, and hold each Contributor harmless for any liability
+   incurred by, or claims asserted against, such Contributor by reason
+   of your accepting any such warranty or additional liability.
+
+END OF TERMS AND CONDITIONS
+
+APPENDIX: How to apply the Apache License to your work.
+
+   To apply the Apache License to your work, attach the following
+   boilerplate notice, with the fields enclosed by brackets "[]"
+   replaced with your own identifying information. (Don't include
+   the brackets!)  The text should be enclosed in the appropriate
+   comment syntax for the file format. We also recommend that a
+   file or class name and description of purpose be included on the
+   same "printed page" as the copyright notice for easier
+   identification within third-party archives.
+
+Copyright 2021 The Unicode-rs Developers
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### 199. Applies to 1 crate(s) — `LICENSE-MIT`
+
+- unicode-script 0.5.8
+
+```text
+MIT License
+
+Copyright (c) 2019 Manish Goregaokar
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 200. Applies to 1 crate(s) — `LICENSE.txt`
 
 - untrusted 0.9.0
 
@@ -12199,7 +12705,7 @@ DEALINGS IN THE SOFTWARE.
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### 191. Applies to 1 crate(s) — `LICENSE-MIT`
+### 201. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - ureq 3.5.0
 
@@ -12227,7 +12733,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 192. Applies to 1 crate(s) — `LICENSE-MIT.txt`
+### 202. Applies to 1 crate(s) — `LICENSE-MIT.txt`
 
 - ureq-proto 0.6.5
 
@@ -12241,7 +12747,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 193. Applies to 1 crate(s) — `COPYRIGHT`
+### 203. Applies to 1 crate(s) — `COPYRIGHT`
 
 - utf8_iter 1.0.4
 
@@ -12290,7 +12796,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 ```
 
-### 194. Applies to 1 crate(s) — `LICENSE-MIT`
+### 204. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - utf8_iter 1.0.4
 
@@ -12322,7 +12828,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 195. Applies to 1 crate(s) — `LICENSE-MIT`
+### 205. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - uuid 1.28.0
 
@@ -12355,10 +12861,10 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 196. Applies to 2 crate(s) — `LICENSE-MIT`
+### 206. Applies to 2 crate(s) — `LICENSE-MIT`
 
-- vello_common 0.1.0
-- vello_cpu 0.1.0
+- vello_common 0.2.0
+- vello_cpu 0.2.0
 
 ```text
 Copyright 2020 the Vello Authors
@@ -12388,7 +12894,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 197. Applies to 10 crate(s) — `LICENSE.txt`
+### 207. Applies to 10 crate(s) — `LICENSE.txt`
 
 - wayland-backend 0.3.17
 - wayland-client 0.31.15
@@ -12423,7 +12929,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 198. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 208. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - web-time 1.1.0
 
@@ -12631,7 +13137,7 @@ Apache License
    limitations under the License.
 ```
 
-### 199. Applies to 1 crate(s) — `LICENSE-MIT`
+### 209. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - web-time 1.1.0
 
@@ -12659,7 +13165,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 200. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 210. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - webbrowser 1.2.4
 
@@ -12856,7 +13362,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 201. Applies to 1 crate(s) — `LICENSE-MIT`
+### 211. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - webbrowser 1.2.4
 
@@ -12890,7 +13396,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 202. Applies to 1 crate(s) — `LICENSE`
+### 212. Applies to 1 crate(s) — `LICENSE`
 
 - webpki-roots 1.0.10
 
@@ -12958,7 +13464,7 @@ of Data, including for example machine learning models and models'
 insights.
 ```
 
-### 203. Applies to 1 crate(s) — `LICENSE-MIT`
+### 213. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - weezl 0.1.12
 
@@ -12986,7 +13492,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 204. Applies to 1 crate(s) — `LICENSE`
+### 214. Applies to 1 crate(s) — `LICENSE`
 
 - whisper-rs 0.16.0
 
@@ -13017,7 +13523,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <https://unlicense.org>
 ```
 
-### 205. Applies to 1 crate(s) — `LICENSE-MIT`
+### 215. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - winapi-util 0.1.11
 
@@ -13045,7 +13551,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### 206. Applies to 33 crate(s) — `license-apache-2.0`
+### 216. Applies to 33 crate(s) — `license-apache-2.0`
 
 - windows 0.62.2
 - windows-collections 0.3.2
@@ -13285,7 +13791,7 @@ Apache License
    limitations under the License.
 ```
 
-### 207. Applies to 33 crate(s) — `license-mit`
+### 217. Applies to 33 crate(s) — `license-mit`
 
 - windows 0.62.2
 - windows-collections 0.3.2
@@ -13345,7 +13851,7 @@ MIT License
     SOFTWARE
 ```
 
-### 208. Applies to 1 crate(s) — `LICENSE-MIT`
+### 218. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - winnow 1.0.4
 
@@ -13370,7 +13876,39 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### 209. Applies to 2 crate(s) — `LICENSE-MIT`
+### 219. Applies to 1 crate(s) — `LICENSE-MIT`
+
+- wl-clipboard-rs 0.9.4
+
+```text
+Copyright (c) 2019 Ivan Molodetskikh
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 220. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - x11rb 0.13.2
 - x11rb-protocol 0.13.2
@@ -13403,7 +13941,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 210. Applies to 1 crate(s) — `LICENSE`
+### 221. Applies to 1 crate(s) — `LICENSE`
 
 - xcursor 0.3.11
 
@@ -13431,7 +13969,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 211. Applies to 1 crate(s) — `LICENSE`
+### 222. Applies to 1 crate(s) — `LICENSE`
 
 - xkbcommon-dl 0.4.2
 
@@ -13459,7 +13997,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 212. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 223. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - xkeysym 0.2.1
 
@@ -13667,7 +14205,7 @@ Apache License
    limitations under the License.
 ```
 
-### 213. Applies to 1 crate(s) — `LICENSE-MIT`
+### 224. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - xkeysym 0.2.1
 
@@ -13693,7 +14231,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 214. Applies to 1 crate(s) — `LICENSE-ZLIB`
+### 225. Applies to 1 crate(s) — `LICENSE-ZLIB`
 
 - xkeysym 0.2.1
 
@@ -13711,7 +14249,38 @@ Permission is granted to anyone to use this software for any purpose, including 
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 215. Applies to 6 crate(s) — `LICENSE`
+### 226. Applies to 1 crate(s) — `LICENSE`
+
+- yeslogic-fontconfig-sys 6.0.1
+
+```text
+The MIT License (MIT)
+
+Copyright 2019 YesLogic Pty. Ltd.
+Copyright 2016 Manuel Reinhardt
+Copyright 2014 Austin Bonander
+Copyright 2013 The Servo Project Developers.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### 227. Applies to 6 crate(s) — `LICENSE`
 
 - zbus 5.19.0
 - zbus_macros 5.19.0
@@ -13748,7 +14317,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 216. Applies to 1 crate(s) — `LICENSE`
+### 228. Applies to 1 crate(s) — `LICENSE`
 
 - zcheapstr 1.1.0
 
@@ -13780,7 +14349,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 217. Applies to 2 crate(s) — `LICENSE-APACHE`
+### 229. Applies to 2 crate(s) — `LICENSE-APACHE`
 
 - zerocopy 0.8.63
 - zerocopy-derive 0.8.63
@@ -13989,7 +14558,7 @@ Apache License
    limitations under the License.
 ```
 
-### 218. Applies to 2 crate(s) — `LICENSE-BSD`
+### 230. Applies to 2 crate(s) — `LICENSE-BSD`
 
 - zerocopy 0.8.63
 - zerocopy-derive 0.8.63
@@ -14021,7 +14590,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 219. Applies to 2 crate(s) — `LICENSE-MIT`
+### 231. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - zerocopy 0.8.63
 - zerocopy-derive 0.8.63
@@ -14054,7 +14623,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 220. Applies to 1 crate(s) — `LICENSE-MIT`
+### 232. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - zeroize 1.9.1
 
@@ -14086,7 +14655,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 221. Applies to 1 crate(s) — `LICENSE`
+### 233. Applies to 1 crate(s) — `LICENSE`
 
 - zip 9.0.5
 
@@ -14114,7 +14683,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 222. Applies to 1 crate(s) — `LICENSE`
+### 234. Applies to 1 crate(s) — `LICENSE`
 
 - zlib-rs 0.6.8
 
@@ -14140,7 +14709,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### 223. Applies to 1 crate(s) — `COPYING`
+### 235. Applies to 1 crate(s) — `COPYING`
 
 - zopfli 0.8.4
 
@@ -14348,7 +14917,7 @@ Apache License
    limitations under the License.
 ```
 
-### 224. Applies to 2 crate(s) — `LICENSE-MIT`
+### 236. Applies to 2 crate(s) — `LICENSE-MIT`
 
 - zune-core 0.5.3
 - zune-jpeg 0.5.15
@@ -14377,7 +14946,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 225. Applies to 2 crate(s) — `LICENSE-ZLIB`
+### 237. Applies to 2 crate(s) — `LICENSE-ZLIB`
 
 - zune-core 0.5.3
 - zune-jpeg 0.5.15
