@@ -44,7 +44,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Native GUI (Milestone 3): pure-Rust egui, glow backend (Wayland/X11 via winit).
 eframe = "0.36"
-egui = "0.36"
+egui = "0.37"
 
 [profile.release]
 opt-level = 3
