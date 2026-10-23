@@ -21,6 +21,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the running binary. First-run downloads and updates no longer shell out to
   `curl` or `ditto`.
 
+### Fixed
+
+- **Dropping a video onto the Linux window did nothing.** The windowing layer
+  implements native file drop for X11 only, so a Wayland session silently
+  ignored drops. TextLayr now starts under XWayland when it is available, and
+  the drop screen has an **Open video…** picker that works on any session.
+
 ### Changed
 
 - **Newer window toolkit (egui/eframe 0.37).** Controls are a little roomier and

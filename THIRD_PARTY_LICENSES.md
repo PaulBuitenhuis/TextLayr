@@ -145,7 +145,7 @@ SOFTWARE.
 
 `ffmpeg` and `ffprobe` are **not** distributed with TextLayr. They are either found on your `PATH`, installed via Homebrew, or downloaded by you on first run. The whisper model (`ggml-*.bin`) is likewise downloaded on demand. Those components carry their own licenses, which you accept when you obtain them; TextLayr merely invokes them as separate programs.
 
-## Dependency inventory (466 crates)
+## Dependency inventory (468 crates)
 
 | Crate | Version | License (SPDX) |
 |---|---|---|
@@ -400,6 +400,7 @@ SOFTWARE.
 | png | 0.18.1 | MIT OR Apache-2.0 |
 | poll-promise | 0.3.0 | MIT OR Apache-2.0 |
 | polling | 3.11.0 | Apache-2.0 OR MIT |
+| pollster | 0.4.0 | Apache-2.0/MIT |
 | pollster | 1.0.1 | Apache-2.0/MIT |
 | polycool | 0.4.0 | MIT OR Apache-2.0 |
 | portable-atomic | 1.15.0 | Apache-2.0 OR MIT |
@@ -424,6 +425,7 @@ SOFTWARE.
 | redox_syscall | 0.9.4 | MIT |
 | redox_users | 0.5.3 | MIT |
 | renderdoc-sys | 1.1.0 | MIT OR Apache-2.0 |
+| rfd | 0.17.2 | MIT |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
 | roxmltree | 0.21.1 | MIT OR Apache-2.0 |
 | rustc-hash | 1.1.0 | Apache-2.0/MIT |
@@ -1164,7 +1166,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 5. Applies to 104 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.txt`
+### 5. Applies to 105 crate(s) — `LICENSE, LICENSE-APACHE, LICENSE-APACHE.txt`
 
 - ahash 0.8.12
 - arrayvec 0.7.8
@@ -1235,6 +1237,7 @@ DEALINGS IN THE SOFTWARE.
 - plain 0.2.3
 - png 0.18.1
 - polling 3.11.0
+- pollster 0.4.0
 - pollster 1.0.1
 - renderdoc-sys 1.1.0
 - roxmltree 0.21.1
@@ -9319,8 +9322,9 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 142. Applies to 1 crate(s) — `LICENSE-MIT`
+### 142. Applies to 2 crate(s) — `LICENSE-MIT`
 
+- pollster 0.4.0
 - pollster 1.0.1
 
 ```text
@@ -9597,7 +9601,36 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 152. Applies to 1 crate(s) — `LICENSE`
+### 152. Applies to 2 crate(s) — `LICENSE`
+
+- rfd 0.17.2
+- sctk-adwaita 0.10.1
+
+```text
+MIT License
+
+Copyright (c) 2022 Bartłomiej Maryńczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### 153. Applies to 1 crate(s) — `LICENSE`
 
 - ring 0.17.14
 
@@ -9613,7 +9646,7 @@ See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
 for the license to code that was sourced from the once_cell project.
 ```
 
-### 153. Applies to 1 crate(s) — `LICENSE-BoringSSL`
+### 154. Applies to 1 crate(s) — `LICENSE-BoringSSL`
 
 - ring 0.17.14
 
@@ -9891,7 +9924,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### 154. Applies to 1 crate(s) — `LICENSE-other-bits`
+### 155. Applies to 1 crate(s) — `LICENSE-other-bits`
 
 - ring 0.17.14
 
@@ -9911,7 +9944,7 @@ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### 155. Applies to 1 crate(s) — `LICENSE-MIT`
+### 156. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - roxmltree 0.21.1
 
@@ -9939,7 +9972,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 156. Applies to 2 crate(s) — `COPYRIGHT`
+### 157. Applies to 2 crate(s) — `COPYRIGHT`
 
 - rustix 0.38.44
 - rustix 1.1.5
@@ -9976,7 +10009,7 @@ is licensed under:
 at your option.
 ```
 
-### 157. Applies to 1 crate(s) — `LICENSE-ISC`
+### 158. Applies to 1 crate(s) — `LICENSE-ISC`
 
 - rustls 0.23.46
 
@@ -9998,7 +10031,7 @@ ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### 158. Applies to 1 crate(s) — `LICENSE-MIT`
+### 159. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - rustls 0.23.46
 
@@ -10030,7 +10063,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 159. Applies to 1 crate(s) — `LICENSE-APACHE`
+### 160. Applies to 1 crate(s) — `LICENSE-APACHE`
 
 - rustls-pki-types 1.15.1
 
@@ -10238,7 +10271,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### 160. Applies to 1 crate(s) — `LICENSE-MIT`
+### 161. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - rustls-pki-types 1.15.1
 
@@ -10270,7 +10303,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 161. Applies to 1 crate(s) — `LICENSE`
+### 162. Applies to 1 crate(s) — `LICENSE`
 
 - rustls-webpki 0.103.16
 
@@ -10296,7 +10329,7 @@ The files under third-party/chromium are licensed as described in
 third-party/chromium/LICENSE.
 ```
 
-### 162. Applies to 1 crate(s) — `LICENSE-MIT`
+### 163. Applies to 1 crate(s) — `LICENSE-MIT`
 
 - scopeguard 1.2.0
 
@@ -10326,34 +10359,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### 163. Applies to 1 crate(s) — `LICENSE`
-
-- sctk-adwaita 0.10.1
-
-```text
-MIT License
-
-Copyright (c) 2022 Bartłomiej Maryńczak
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ### 164. Applies to 1 crate(s) — `LICENSE-GPLv2`

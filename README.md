@@ -148,6 +148,10 @@ Download `TextLayr-<version>-linux-x86_64.tar.xz` (or the `.AppImage`) from
 `ffmpeg` build and a whisper model into `~/.local/share/textlayr/`. An `ffmpeg`
 already on your `PATH` is used instead of downloading one.
 
+Open a video with the **Open video…** button or by dragging it onto the window.
+On a Wayland session TextLayr starts under XWayland, because the windowing layer
+it uses implements drag-and-drop for X11 only; the picker works either way.
+
 The in-app updater finds new versions but hands the Linux package over for you to
 install rather than replacing the running binary.
 

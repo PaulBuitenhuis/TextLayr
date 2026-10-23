@@ -1209,6 +1209,27 @@ impl App {
             if clicked {
                 self.start_ingest(path);
             }
+        } else {
+            // The only way in on a Wayland session: winit implements native file
+            // drop for X11 only, so `DroppedFile` never arrives there.
+            let btn = egui::Rect::from_center_size(
+                egui::pos2(center.x, center.y + 92.0),
+                egui::vec2(180.0, theme::CONTROL_H),
+            );
+            let clicked = ui
+                .scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(btn)
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                    |ui| theme::primary_button(ui, true, "Open video\u{2026}"),
+                )
+                .inner
+                .clicked();
+            if clicked {
+                if let Some(path) = pick_video() {
+                    self.start_ingest(path);
+                }
+            }
         }
     }
 
@@ -2310,8 +2331,38 @@ impl eframe::App for App {
     }
 }
 
+/// Start under X11 when XWayland is available.
+///
+/// The windowing layer egui sits on implements native file drop only for X11 on
+/// Linux; on a Wayland session `DroppedFile` never arrives, so dragging a video
+/// does nothing. Starting under XWayland restores drag-and-drop. An explicit
+/// `WINIT_UNIX_BACKEND` always wins, and a Wayland-only session stays on
+/// Wayland — the drop screen offers a file picker either way.
+#[cfg(target_os = "linux")]
+fn prefer_x11_backend() {
+    if std::env::var_os("WINIT_UNIX_BACKEND").is_some() {
+        return;
+    }
+    let Ok(display) = std::env::var("DISPLAY") else {
+        return;
+    };
+    // `:0`, `:0.0`, `host:0` → find the local socket for that display number.
+    let number = display.rsplit(':').next().unwrap_or("");
+    let number = number.split('.').next().unwrap_or("");
+    if number.is_empty() {
+        return;
+    }
+    if Path::new(&format!("/tmp/.X11-unix/X{number}")).exists() {
+        std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prefer_x11_backend() {}
+
 /// Launch the GUI, optionally pre-loading a video.
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
+    prefer_x11_backend();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("TextLayr")
         .with_inner_size([1320.0, 840.0])
@@ -2623,6 +2674,14 @@ fn file_label(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Ask the user for a video with the OS file dialog.
+fn pick_video() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Choose a video")
+        .add_filter("Video", &["mp4", "m4v", "mov", "webm", "mkv", "avi"])
+        .pick_file()
 }
 
 /// Open `path` in the OS default application (e.g. the video's player).
