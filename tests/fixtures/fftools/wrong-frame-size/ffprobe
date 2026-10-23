@@ -1,0 +1,17 @@
+#!/bin/sh
+# Harness fixture: report a frame 2px larger than the real one in JSON probes.
+real="${TEXTLAYR_REAL_FFPROBE:-$(command -v ffprobe)}" || exit 127
+case " $* " in
+    *" -of json "*) ;;
+    *) exec "$real" "$@" ;;
+esac
+out=$("$real" "$@") || exit $?
+printf '%s' "$out" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+streams = d.get("streams") or []
+if streams and "width" in streams[0] and "height" in streams[0]:
+    streams[0]["width"] = int(streams[0]["width"]) + 2
+    streams[0]["height"] = int(streams[0]["height"]) + 2
+print(json.dumps(d))
+'

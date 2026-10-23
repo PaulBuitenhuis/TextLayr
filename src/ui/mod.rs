@@ -22,11 +22,12 @@ use crate::config::{self, Grouping, Style};
 use crate::deps;
 use crate::install::{self, InstallProgress};
 use crate::model::{FoundModel, Model};
+use crate::output;
 use crate::pipeline::{self, ExportPhase, ExportProgress, ExportSink, IngestProgress, Progress};
+use crate::probe::Fftools;
 use crate::profile::ProfileStore;
 use crate::source::Source;
 use crate::update;
-use preview::Frame;
 use profile::ProfileUi;
 use review::{Action, ReviewState};
 
@@ -126,6 +127,45 @@ struct DoneInfo {
     duration_secs: f64,
 }
 
+/// Everything an export needs, captured before the save dialog opens.
+///
+/// The dialog blocks the UI thread, so the review state cannot change while it
+/// is open; cloning here keeps the worker independent of `self`.
+struct ExportPlan {
+    input: PathBuf,
+    tools: crate::probe::Fftools,
+    info: crate::probe::VideoInfo,
+    chunks: Vec<crate::chunk::Chunk>,
+    style: Style,
+    states: usize,
+}
+
+/// A native picker to run after the current frame.
+///
+/// egui must not re-enter `self` (or run a nested modal loop) from inside a
+/// draw closure, so panels only record the request and [`App::service_pick`]
+/// opens the dialog once the frame is done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PickRequest {
+    OpenVideo,
+    SaveExport,
+}
+
+/// One background preview-frame request. `prefetch` requests are dropped in
+/// favour of a newer current request by the worker.
+#[derive(Clone)]
+struct PreviewJob {
+    generation: u64,
+    chunk: usize,
+    key: preview::FrameKey,
+    at: f64,
+    src_width: u32,
+    src_height: u32,
+    tools: Fftools,
+    input: PathBuf,
+    prefetch: bool,
+}
+
 /// Progress of a first-run install (ffmpeg/model downloads).
 struct InstallStatus {
     label: String,
@@ -158,9 +198,10 @@ enum Msg {
     Ingest(IngestProgress),
     IngestOk(Box<pipeline::Ingest>),
     IngestErr(String),
-    Frame {
-        token: u64,
-        image: Option<Frame>,
+    PreviewFrame {
+        generation: u64,
+        key: preview::FrameKey,
+        frame: Option<preview::Frame>,
     },
     Export(ExportProgress),
     ExportOk {
@@ -240,8 +281,21 @@ pub struct App {
     rx: Receiver<Msg>,
     /// Outstanding worker messages (drives the idle repoll).
     pending: usize,
-    /// Generation counter so stale frame extractions are dropped.
-    frame_token: u64,
+    /// Sends preview-frame requests to the single extraction worker.
+    preview_tx: Sender<PreviewJob>,
+    /// Bumped when the video changes, so old frames are discarded.
+    preview_generation: u64,
+    /// Recently extracted popup frames (bounded LRU).
+    frame_cache: preview::FrameCache,
+    /// The popup key whose frame is currently shown.
+    applied_frame: Option<preview::FrameKey>,
+    /// The popup key currently being extracted, if any.
+    requested_frame: Option<preview::FrameKey>,
+    /// A native picker the current frame asked for.
+    pending_pick: Option<PickRequest>,
+    /// A destination that already exists and needs an in-app confirmation
+    /// (always on Linux; on macOS when we changed the panel's chosen name).
+    pending_overwrite: Option<(ExportPlan, output::ExportTarget)>,
     /// The wordmark banner, shown in the header and the About window
     /// (None if it failed to decode).
     banner: Option<egui::TextureHandle>,
@@ -256,10 +310,74 @@ fn load_banner(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     Some(ctx.load_texture("wordmark", color, egui::TextureOptions::LINEAR))
 }
 
+/// One preview extraction worker.
+///
+/// Current requests take priority and coalesce to the latest; prefetches wait
+/// in a tiny queue. One ffmpeg process at a time keeps the UI and the export
+/// path responsive, and rapid clicks cannot fan out into a pile of decoders.
+fn preview_worker(rx: Receiver<PreviewJob>, messages: Sender<Msg>) {
+    let mut current: Option<PreviewJob> = None;
+    let mut prefetch: std::collections::VecDeque<PreviewJob> = std::collections::VecDeque::new();
+
+    loop {
+        if current.is_none() && prefetch.is_empty() {
+            match rx.recv() {
+                Ok(job) => {
+                    if job.prefetch {
+                        prefetch.push_back(job);
+                    } else {
+                        current = Some(job);
+                    }
+                }
+                Err(_) => return,
+            }
+        }
+        while let Ok(job) = rx.try_recv() {
+            if job.prefetch {
+                if !prefetch
+                    .iter()
+                    .any(|queued| queued.key == job.key && queued.generation == job.generation)
+                {
+                    prefetch.push_back(job);
+                    while prefetch.len() > 4 {
+                        prefetch.pop_front();
+                    }
+                }
+            } else {
+                current = Some(job);
+            }
+        }
+        let Some(job) = current.take().or_else(|| prefetch.pop_front()) else {
+            continue;
+        };
+        let frame = match preview::extract(
+            &job.tools,
+            &job.input,
+            job.at,
+            job.src_width,
+            job.src_height,
+        ) {
+            Ok(frame) => Some(frame),
+            Err(e) => {
+                eprintln!("      preview frame: {e:#}");
+                None
+            }
+        };
+        let _ = messages.send(Msg::PreviewFrame {
+            generation: job.generation,
+            key: job.key,
+            frame,
+        });
+    }
+}
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>, initial: Option<PathBuf>) -> Self {
         theme::apply(&cc.egui_ctx);
         let (tx, rx) = mpsc::channel();
+        let (preview_tx, preview_rx) = mpsc::channel::<PreviewJob>();
+        let preview_messages = tx.clone();
+        std::thread::spawn(move || preview_worker(preview_rx, preview_messages));
         let saved_prefs = config::load_prefs();
         let profiles = ProfileStore::new();
         let profile_ui = ProfileUi::new(saved_prefs.active_profile.clone(), &profiles);
@@ -305,7 +423,13 @@ impl App {
             tx,
             rx,
             pending: 0,
-            frame_token: 0,
+            preview_tx,
+            preview_generation: 0,
+            frame_cache: preview::FrameCache::new(8),
+            applied_frame: None,
+            requested_frame: None,
+            pending_pick: None,
+            pending_overwrite: None,
             banner: load_banner(&cc.egui_ctx),
         };
         if let Some(path) = initial {
@@ -419,6 +543,7 @@ impl App {
             model: self.model_pref,
             auto_check_updates: self.saved_prefs.auto_check_updates,
             last_update_check: self.saved_prefs.last_update_check,
+            last_export_dir: self.saved_prefs.last_export_dir.clone(),
         }
     }
 
@@ -624,37 +749,119 @@ impl App {
         });
     }
 
-    fn seek_preview(&mut self) {
-        let Some(r) = self.review.as_mut() else {
-            return;
-        };
-        r.preview.invalidate();
-        let key = (r.selected, r.active_word);
-        if r.frame_key == key {
-            return;
-        }
-        r.frame_key = key;
-        let at = r.preview_time();
-        let tools = r.tools.clone();
-        let input = r.input.clone();
-
-        // Bumped, not assigned: `reset_to_drop` parks this counter so that
-        // in-flight extractions fall on the floor, and a plain `+= 1` used to
-        // overflow the moment a second video was opened after an export.
-        // Bumped, not assigned: `reset_to_drop` parks this counter so that
-        // in-flight extractions fall on the floor, and a plain `+= 1` used to
-        // overflow the moment a second video was opened after an export.
-        self.frame_token = self.frame_token.wrapping_add(1);
-        let token = self.frame_token;
-        let tx = self.tx.clone();
-        self.pending += 1;
-        std::thread::spawn(move || {
-            let image = preview::extract(&tools, &input, at).ok();
-            let _ = tx.send(Msg::Frame { token, image });
-        });
+    /// Build the extraction request for the selected popup.
+    fn preview_target(&self) -> Option<PreviewJob> {
+        let r = self.review.as_ref()?;
+        let key = r.chunk_key(r.selected)?;
+        Some(PreviewJob {
+            generation: self.preview_generation,
+            chunk: r.selected,
+            key,
+            at: r
+                .popup_time(r.selected)
+                .min((r.info.duration_secs - 0.05).max(0.0)),
+            src_width: r.info.display_width,
+            src_height: r.info.display_height,
+            tools: r.tools.clone(),
+            input: r.input.clone(),
+            prefetch: false,
+        })
     }
 
-    fn start_export(&mut self) {
+    fn current_key(&self) -> Option<preview::FrameKey> {
+        let r = self.review.as_ref()?;
+        r.chunk_key(r.selected)
+    }
+
+    /// Show the selected popup's frame. The frame is fetched once per popup and
+    /// cached; moving between words only rebuilds the caption.
+    fn seek_preview(&mut self) {
+        let Some(target) = self.preview_target() else {
+            return;
+        };
+        let key = target.key;
+        let chunk = target.chunk;
+
+        // Same popup: the frame is already on screen; only the caption changed.
+        if self.applied_frame == Some(key) {
+            if let Some(r) = self.review.as_mut() {
+                r.preview.release_hold();
+                r.preview.invalidate();
+            }
+            return;
+        }
+
+        if let Some(frame) = self.frame_cache.get(key) {
+            if let Some(r) = self.review.as_mut() {
+                r.preview.set_frame(frame);
+            }
+            self.applied_frame = Some(key);
+            self.requested_frame = None;
+            self.prefetch_neighbours(chunk);
+            return;
+        }
+
+        // Already waiting for this popup: the request (and its prefetch) are
+        // in flight, and a newer click will coalesce at the worker.
+        if self.requested_frame == Some(key) {
+            return;
+        }
+
+        // Not cached. Keep the old image on screen until the new frame is ready;
+        // do not composite the new caption over the previous popup's frame.
+        self.requested_frame = Some(key);
+        let _ = self.preview_tx.send(target);
+        if let Some(r) = self.review.as_mut() {
+            r.preview.hold();
+        }
+        self.prefetch_neighbours(chunk);
+    }
+
+    /// Warm the neighbouring popups so Next/Previous and quick back-and-forth
+    /// switches hit the cache.
+    fn prefetch_neighbours(&mut self, selected: usize) {
+        let Some(r) = self.review.as_ref() else {
+            return;
+        };
+        let mut jobs = Vec::new();
+        let neighbours = [
+            selected.checked_sub(1),
+            (selected + 1 < r.chunks.len()).then_some(selected + 1),
+        ];
+        for idx in neighbours.into_iter().flatten() {
+            let Some(key) = r.chunk_key(idx) else {
+                continue;
+            };
+            if self.frame_cache.contains(key)
+                || self.applied_frame == Some(key)
+                || self.requested_frame == Some(key)
+            {
+                continue;
+            }
+            jobs.push(PreviewJob {
+                generation: self.preview_generation,
+                chunk: idx,
+                key,
+                at: r
+                    .popup_time(idx)
+                    .min((r.info.duration_secs - 0.05).max(0.0)),
+                src_width: r.info.display_width,
+                src_height: r.info.display_height,
+                tools: r.tools.clone(),
+                input: r.input.clone(),
+                prefetch: true,
+            });
+        }
+        for job in jobs {
+            let _ = self.preview_tx.send(job);
+        }
+    }
+
+    /// Export was requested from review: validate, then ask where to save.
+    fn request_export(&mut self) {
+        if self.pending_overwrite.is_some() {
+            return;
+        }
         if self.stage != Stage::Review {
             eprintln!("      export ignored: stage is not review");
             return;
@@ -663,27 +870,105 @@ impl App {
             eprintln!("      export ignored: no review state");
             return;
         };
+        if r.to_chunks().is_empty() {
+            self.error = Some("nothing to export: every caption is empty".into());
+            return;
+        }
+        self.pending_pick = Some(PickRequest::SaveExport);
+    }
+
+    /// Run the save panel, then start the export (or ask to replace a file).
+    fn export_after_pick(&mut self) {
+        let Some(r) = self.review.as_ref() else {
+            return;
+        };
         let chunks = r.to_chunks();
         if chunks.is_empty() {
             self.error = Some("nothing to export: every caption is empty".into());
             return;
         }
         let input = r.input.clone();
-        let tools = r.tools.clone();
-        let info = r.info.clone();
-        let style = r.style.clone();
-        let output = pipeline::default_output(&input);
+        let suggested = output::default_output(&input);
         // The render pass makes one PNG per caption state; the step row shows
         // the count, and it is the same arithmetic the pipeline does.
         let states: usize = chunks.iter().map(|c| c.state_windows().len()).sum();
+        let plan = ExportPlan {
+            input: r.input.clone(),
+            tools: r.tools.clone(),
+            info: r.info.clone(),
+            chunks,
+            style: r.style.clone(),
+            states,
+        };
 
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Save captioned video")
+            .add_filter("MP4 video", &["mp4"]);
+        if let Some(name) = suggested.file_name() {
+            dialog = dialog.set_file_name(name.to_string_lossy());
+        }
+        let start_dir = self
+            .saved_prefs
+            .last_export_dir
+            .as_ref()
+            .filter(|dir| dir.is_dir())
+            .cloned()
+            .or_else(|| {
+                input
+                    .parent()
+                    .filter(|dir| !dir.as_os_str().is_empty())
+                    .map(Path::to_path_buf)
+            });
+        if let Some(dir) = start_dir {
+            dialog = dialog.set_directory(dir);
+        }
+
+        let Some(picked) = dialog.save_file() else {
+            // Dialog cancelled: stay in Review with every edit intact.
+            return;
+        };
+        let target = match output::ExportTarget::resolve(&input, Some(&picked), true) {
+            Ok(target) => target,
+            Err(e) => {
+                eprintln!("      export destination rejected: {e:#}");
+                self.error = Some(format!("{e:#}"));
+                return;
+            }
+        };
+
+        // Remember the folder as soon as the choice is made, even if the encode
+        // later fails: that is where the user will want the next one.
+        if let Some(dir) = target.final_path().parent() {
+            self.saved_prefs.last_export_dir = Some(dir.to_path_buf());
+            self.persist_prefs();
+        }
+
+        // The macOS panel has already asked "replace?" for the name the user
+        // chose. It cannot know that we appended `.mp4`, so confirm ourselves
+        // whenever the resolved path differs from the picked one. On Linux the
+        // portal may not prompt at all, so always confirm there.
+        let picked_final = picked.as_path() == target.final_path();
+        let needs_confirm =
+            target.final_path().exists() && (!cfg!(target_os = "macos") || !picked_final);
+        if needs_confirm {
+            self.pending_overwrite = Some((plan, target));
+            return;
+        }
+
+        self.begin_export(plan, target);
+    }
+
+    /// Start the worker. The encoder writes a hidden part file; only a
+    /// successful encode is renamed over the destination.
+    fn begin_export(&mut self, plan: ExportPlan, target: output::ExportTarget) {
+        let output = target.final_path().to_path_buf();
         self.error = None;
         self.export = Some(ExportStatus {
             file: file_label(&output),
             phase: ExportPhase::Rendering,
             phase_frac: 0.0,
             overall: 0.0,
-            states,
+            states: plan.states,
             started: Instant::now(),
         });
         self.stage = Stage::Export;
@@ -696,21 +981,31 @@ impl App {
         let sink: ExportSink = Box::new(move |p| {
             let _ = tx.send(Msg::Export(p));
         });
-        let dims = (info.display_width, info.display_height, info.duration_secs);
+        let dims = (
+            plan.info.display_width,
+            plan.info.display_height,
+            plan.info.duration_secs,
+        );
         self.pending += 1;
         std::thread::spawn(move || {
             let started = std::time::Instant::now();
-            match pipeline::export_video(
-                &tools,
-                &input,
-                &output,
-                &info,
-                &chunks,
-                &style,
+            if let Err(e) = target.prepare() {
+                target.discard();
+                let _ = done_tx.send(Msg::ExportErr(format!("{e:#}")));
+                return;
+            }
+            let encoded = pipeline::export_video(
+                &plan.tools,
+                &plan.input,
+                target.part_path(),
+                &plan.info,
+                &plan.chunks,
+                &plan.style,
                 crate::export::Encoder::Auto,
                 &cancel,
                 sink,
-            ) {
+            );
+            match encoded.and_then(|()| target.commit()) {
                 Ok(()) => {
                     let (width, height, duration_secs) = dims;
                     let _ = done_tx.send(Msg::ExportOk {
@@ -722,10 +1017,66 @@ impl App {
                     });
                 }
                 Err(e) => {
+                    target.discard();
                     let _ = done_tx.send(Msg::ExportErr(format!("{e:#}")));
                 }
             }
         });
+    }
+
+    fn service_pick(&mut self) {
+        // The overwrite modal owns the interaction while it is open; a stray
+        // Cmd+E must not open a native panel behind it.
+        if self.pending_overwrite.is_some() {
+            self.pending_pick = None;
+            return;
+        }
+        match self.pending_pick.take() {
+            Some(PickRequest::OpenVideo) => {
+                if let Some(path) = pick_video() {
+                    self.start_ingest(path);
+                }
+            }
+            Some(PickRequest::SaveExport) => self.export_after_pick(),
+            None => {}
+        }
+    }
+
+    /// In-app overwrite confirmation. macOS uses this only when the resolved
+    /// name differs from the panel's pick (for example, `.mp4` was appended);
+    /// Linux always confirms because the portal may not.
+    fn confirm_overwrite(&mut self, ctx: &egui::Context) {
+        let Some((plan, target)) = self.pending_overwrite.take() else {
+            return;
+        };
+        let path = target.final_path().display().to_string();
+        let mut replace = false;
+        let mut cancel = false;
+        egui::Modal::new(egui::Id::unique("replace_export")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.label("A file already exists at:");
+            ui.add(
+                egui::Label::new(egui::RichText::new(&path).monospace().small())
+                    .wrap()
+                    .selectable(true),
+            );
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Replacing it cannot be undone.").weak());
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if theme::button(ui, "Replace").clicked() {
+                    replace = true;
+                }
+                if theme::button(ui, "Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if replace {
+            self.begin_export(plan, target);
+        } else if !cancel {
+            self.pending_overwrite = Some((plan, target));
+        }
     }
 
     /// Ask the in-flight export to stop; the worker kills ffmpeg and drops the
@@ -749,9 +1100,14 @@ impl App {
         self.done = None;
         self.error = None;
         self.warn = None;
-        // Invalidate any in-flight frame extraction: its token no longer
-        // matches, so the result is dropped when it arrives.
-        self.frame_token = self.frame_token.wrapping_add(1);
+        self.pending_pick = None;
+        self.pending_overwrite = None;
+        // Invalidate in-flight preview work and drop cached frames from the
+        // video that is going away.
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        self.frame_cache.clear();
+        self.applied_frame = None;
+        self.requested_frame = None;
     }
 
     // ── message pump ──────────────────────────────────────────────────────
@@ -822,6 +1178,12 @@ impl App {
                 let input = self.input.clone().unwrap_or_default();
                 let style = self.current_style();
                 let grouping = self.current_grouping();
+                // New video: discard any frames or in-flight extraction from
+                // the previous one.
+                self.preview_generation = self.preview_generation.wrapping_add(1);
+                self.frame_cache.clear();
+                self.applied_frame = None;
+                self.requested_frame = None;
                 self.review = Some(ReviewState::new(input, *ing, style, grouping));
                 self.ingest = None;
                 self.stage = Stage::Review;
@@ -833,18 +1195,39 @@ impl App {
                 self.error = Some(e);
                 self.stage = Stage::Drop;
             }
-            Msg::Frame { token, image } => {
-                self.pending = self.pending.saturating_sub(1);
-                if token != self.frame_token || self.stage != Stage::Review {
+            Msg::PreviewFrame {
+                generation,
+                key,
+                frame,
+            } => {
+                if generation != self.preview_generation {
                     return;
                 }
-                match image {
+                // Any result for the key we are waiting on ends the wait, even
+                // if the user has already navigated elsewhere.
+                if self.requested_frame == Some(key) {
+                    self.requested_frame = None;
+                }
+                let current = self.current_key();
+                match frame {
                     Some(frame) => {
-                        if let Some(r) = self.review.as_mut() {
-                            r.preview.set_frame(frame);
+                        if current == Some(key) {
+                            self.frame_cache.insert(key, frame.clone());
+                            if let Some(r) = self.review.as_mut() {
+                                r.preview.set_frame(frame);
+                            }
+                            self.applied_frame = Some(key);
+                        } else {
+                            // A prefetch result: cache it without touching the
+                            // displayed composite.
+                            self.frame_cache.insert(key, frame);
                         }
                     }
-                    None => self.error = Some("frame extraction failed".into()),
+                    None => {
+                        if current == Some(key) && self.stage == Stage::Review {
+                            self.error = Some("frame extraction failed".into());
+                        }
+                    }
                 }
             }
             Msg::Export(p) => {
@@ -1194,8 +1577,12 @@ impl App {
                 v.error_fg_color,
             );
             let btn = egui::Rect::from_center_size(
-                egui::pos2(center.x, center.y + 104.0),
+                egui::pos2(center.x - 86.0, center.y + 104.0),
                 egui::vec2(120.0, theme::CONTROL_H),
+            );
+            let open_btn = egui::Rect::from_center_size(
+                egui::pos2(center.x + 66.0, center.y + 104.0),
+                egui::vec2(160.0, theme::CONTROL_H),
             );
             let clicked = ui
                 .scope_builder(
@@ -1206,12 +1593,25 @@ impl App {
                 )
                 .inner
                 .clicked();
+            let open_clicked = ui
+                .scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(open_btn)
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                    |ui| theme::fixed_button(ui, true, 160.0, "Open another\u{2026}"),
+                )
+                .inner
+                .clicked();
             if clicked {
                 self.start_ingest(path);
             }
+            if open_clicked {
+                self.pending_pick = Some(PickRequest::OpenVideo);
+            }
         } else {
-            // The only way in on a Wayland session: winit implements native file
-            // drop for X11 only, so `DroppedFile` never arrives there.
+            // The windowing layer implements native file drop for X11 only, so
+            // the picker is the supported way in on Wayland (and a convenience
+            // everywhere else).
             let btn = egui::Rect::from_center_size(
                 egui::pos2(center.x, center.y + 92.0),
                 egui::vec2(180.0, theme::CONTROL_H),
@@ -1226,9 +1626,7 @@ impl App {
                 .inner
                 .clicked();
             if clicked {
-                if let Some(path) = pick_video() {
-                    self.start_ingest(path);
-                }
+                self.pending_pick = Some(PickRequest::OpenVideo);
             }
         }
     }
@@ -1522,7 +1920,15 @@ impl App {
             ui.add_space(2.0);
             ui.heading("Export complete");
             ui.add_space(6.0);
-            ui.label(egui::RichText::new(file_label(&output)).strong());
+            ui.label(egui::RichText::new(file_label(&output)).strong())
+                .on_hover_text(output.display().to_string());
+            if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+                ui.label(
+                    egui::RichText::new(dir.display().to_string())
+                        .weak()
+                        .small(),
+                );
+            }
             ui.add_space(3.0);
             ui.label(
                 egui::RichText::new(format!(
@@ -1978,8 +2384,18 @@ impl App {
                                         );
                                         ui.add_space(6.0);
                                         ui.horizontal(|ui| {
-                                            if theme::button(ui, "Download & install").clicked() {
-                                                start_install_update = Some(r.clone());
+                                            if r.installable() {
+                                                if theme::button(ui, "Download & install").clicked()
+                                                {
+                                                    start_install_update = Some(r.clone());
+                                                }
+                                            } else {
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        "No package for this platform yet.",
+                                                    )
+                                                    .weak(),
+                                                );
                                             }
                                             ui.hyperlink_to("Release notes", &r.notes_url);
                                         });
@@ -2264,11 +2680,14 @@ impl App {
             self.warn = Some("words-per-popup changed — transcript edits were discarded".into());
         }
         if export {
-            self.start_export();
+            self.request_export();
         } else if seek {
-            // A re-chunk may have changed what (chunk, word) means; the caller
-            // clears frame_key first when content moved under the same key.
+            // Frames are cached by each chunk's time span, so a re-chunk
+            // naturally misses the old cache entries.
             self.seek_preview();
+            // A cache hit or a caption-only change happens after the panels
+            // were drawn; make sure the new composite is painted next frame.
+            ui.ctx().request_repaint();
         }
     }
 }
@@ -2319,6 +2738,10 @@ impl eframe::App for App {
             }
         }
 
+        // Native dialogs run after the frame, never inside a draw closure.
+        self.service_pick();
+        self.confirm_overwrite(&ctx);
+
         self.about_window(&ctx);
         licenses::window(&ctx, &mut self.licenses_open, &mut self.licenses_sel);
         self.autosave_prefs(&ctx);
@@ -2331,38 +2754,8 @@ impl eframe::App for App {
     }
 }
 
-/// Start under X11 when XWayland is available.
-///
-/// The windowing layer egui sits on implements native file drop only for X11 on
-/// Linux; on a Wayland session `DroppedFile` never arrives, so dragging a video
-/// does nothing. Starting under XWayland restores drag-and-drop. An explicit
-/// `WINIT_UNIX_BACKEND` always wins, and a Wayland-only session stays on
-/// Wayland — the drop screen offers a file picker either way.
-#[cfg(target_os = "linux")]
-fn prefer_x11_backend() {
-    if std::env::var_os("WINIT_UNIX_BACKEND").is_some() {
-        return;
-    }
-    let Ok(display) = std::env::var("DISPLAY") else {
-        return;
-    };
-    // `:0`, `:0.0`, `host:0` → find the local socket for that display number.
-    let number = display.rsplit(':').next().unwrap_or("");
-    let number = number.split('.').next().unwrap_or("");
-    if number.is_empty() {
-        return;
-    }
-    if Path::new(&format!("/tmp/.X11-unix/X{number}")).exists() {
-        std::env::set_var("WINIT_UNIX_BACKEND", "x11");
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn prefer_x11_backend() {}
-
 /// Launch the GUI, optionally pre-loading a video.
 pub fn run(initial: Option<PathBuf>) -> Result<()> {
-    prefer_x11_backend();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("TextLayr")
         .with_inner_size([1320.0, 840.0])

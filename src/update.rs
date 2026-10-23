@@ -122,6 +122,16 @@ pub struct Release {
     pub fallback: Option<Asset>,
 }
 
+impl Release {
+    /// Whether this platform has anything to download. A release can exist
+    /// without an entry for every platform (for example a macOS-only release
+    /// while Linux publishing is paused); the UI must not offer an install
+    /// button in that case.
+    pub fn installable(&self) -> bool {
+        self.primary.is_some() || self.fallback.is_some()
+    }
+}
+
 // ── manifest (as written by .github/workflows/release.yml) ─────────────────
 
 #[derive(Debug, Deserialize)]
@@ -168,6 +178,7 @@ impl Release {
         if version.is_empty() {
             bail!("the update manifest has no version");
         }
+        safe_component(&version, "version")?;
 
         let notes_url = m
             .notes_url
@@ -176,6 +187,17 @@ impl Release {
             .unwrap_or_else(|| RELEASES_URL.to_string());
 
         let selected = select_platform_assets(&m);
+        for asset in [
+            &selected.zip,
+            &selected.dmg,
+            &selected.tar,
+            &selected.appimage,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            safe_component(&asset.name, "asset name")?;
+        }
         let (primary, fallback) = build_artifact(&selected, source);
 
         Ok(Release {
@@ -185,6 +207,25 @@ impl Release {
             fallback,
         })
     }
+}
+
+/// Manifest values become path components (the staging directory and download
+/// destination). Reject anything that could escape its parent instead of
+/// trusting the remote document.
+fn safe_component(value: &str, what: &str) -> Result<()> {
+    let bad = value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+        || value.contains("..")
+        || value.contains('\0')
+        || value.starts_with('-')
+        || value.starts_with('.');
+    if bad {
+        bail!("the update manifest has an unsafe {what}: '{value}'");
+    }
+    Ok(())
 }
 
 /// Choose the asset set for the running platform: the matching `platforms`
@@ -378,6 +419,7 @@ fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
     if version.is_empty() {
         bail!("the newest GitHub release has no version tag");
     }
+    safe_component(&version, "version")?;
 
     let mut sums_url = None;
     let mut assets: Vec<Asset> = gh
@@ -399,6 +441,9 @@ fn fetch_from_api(cancel: &AtomicBool) -> Result<Release> {
 
     let zip_idx = assets.iter().position(|a| is_app_asset(&a.name, ".zip"));
     let dmg_idx = assets.iter().position(|a| is_app_asset(&a.name, ".dmg"));
+    for index in [zip_idx, dmg_idx].into_iter().flatten() {
+        safe_component(&assets[index].name, "asset name")?;
+    }
 
     // Older releases may predate GitHub's per-asset `digest`; fill the hash from
     // a published SHA256SUMS when we can (best effort — the manual-install path
@@ -749,8 +794,7 @@ fn find_app(root: &Path) -> Option<PathBuf> {
 /// Confirm the downloaded bundle is the app we expect before trusting it.
 fn validate_bundle(app: &Path, expected_version: &str) -> Result<()> {
     let info = app.join("Contents").join("Info.plist");
-    let text =
-        std::fs::read_to_string(&info).with_context(|| format!("missing {}", info.display()))?;
+    let text = read_plist(&info)?;
 
     let id = plist_string(&text, "CFBundleIdentifier").unwrap_or_default();
     if id != BUNDLE_ID {
@@ -777,6 +821,21 @@ fn validate_bundle(app: &Path, expected_version: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read an XML property list as text. `read_to_string` would accept a binary
+/// plist as garbage and the key search would silently return nothing; refuse it
+/// with a clear message instead.
+fn read_plist(path: &Path) -> Result<String> {
+    let bytes = std::fs::read(path).with_context(|| format!("missing {}", path.display()))?;
+    if bytes.starts_with(b"bplist00") {
+        bail!(
+            "{} is a binary property list; TextLayr can only verify an XML Info.plist",
+            path.display()
+        );
+    }
+    String::from_utf8(bytes)
+        .with_context(|| format!("{} is not a UTF-8 XML property list", path.display()))
+}
+
 /// Read a `<string>` value for `key` out of an XML plist. Handles the simple
 /// key/string pairs that Cocoa bundles use for identifiers and versions.
 fn plist_string(plist: &str, key: &str) -> Option<String> {
@@ -790,12 +849,29 @@ fn plist_string(plist: &str, key: &str) -> Option<String> {
 
 /// `<data dir>/updates/<version>`, where a download is staged.
 fn staging_dir(version: &str) -> Result<PathBuf> {
+    safe_component(version, "version")?;
     let base = paths::data_dir().context("no application data directory")?;
-    Ok(base.join("updates").join(version))
+    let root = base.join("updates");
+    let dir = root.join(version);
+    // Defence in depth: even if the component rules change, the staging path
+    // must stay under the updates directory.
+    if !dir.starts_with(&root) || dir == root {
+        bail!("the update version escapes the staging directory");
+    }
+    Ok(dir)
 }
 
 /// Write the detached relaunch helper that swaps the bundle once we exit.
 fn write_helper(staging: &Path, target_app: &Path, new_app: &Path) -> Result<PathBuf> {
+    write_helper_for_pid(std::process::id(), staging, target_app, new_app)
+}
+
+fn write_helper_for_pid(
+    pid: u32,
+    staging: &Path,
+    target_app: &Path,
+    new_app: &Path,
+) -> Result<PathBuf> {
     let script = staging.join("textlayr-update.sh");
     let body = format!(
         r#"#!/bin/sh
@@ -806,10 +882,10 @@ app={app}
 new={new}
 staging={staging}
 
-i=0
-while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 900 ]; do
+# No deadline: swapping the bundle while the app is still alive is worse than
+# waiting a little longer. The helper is detached, so a slow quit is harmless.
+while kill -0 "$pid" 2>/dev/null; do
     /bin/sleep 0.2
-    i=$((i + 1))
 done
 
 backup="${{app}}.old-$$"
@@ -831,11 +907,12 @@ if ! /usr/bin/ditto "$new" "$app"; then
 fi
 /usr/bin/xattr -dr com.apple.quarantine "$app" 2>/dev/null || true
 /bin/rm -rf "$backup"
-/usr/bin/open "$app"
+# Tests set this so a helper run does not launch Finder.
+[ "${{TEXTLAYR_UPDATE_NO_RELAUNCH:-0}}" = "1" ] || /usr/bin/open "$app"
 /bin/rm -rf "$staging"
 /bin/rm -f "$0"
 "#,
-        pid = std::process::id(),
+        pid = pid,
         app = sh_quote(&target_app.to_string_lossy()),
         new = sh_quote(&new_app.to_string_lossy()),
         staging = sh_quote(&staging.to_string_lossy()),
@@ -975,6 +1052,109 @@ mod tests {
             assert!(release.primary.is_none(), "legacy assets are macOS-only");
             assert!(release.fallback.is_none());
         }
+    }
+
+    #[test]
+    fn unsafe_path_components_are_rejected() {
+        for bad in [
+            "../x", "/abs/x", r"..\x", "-flag", "x/y", "x..y", ".", "..", "", ".hidden",
+        ] {
+            assert!(safe_component(bad, "test").is_err(), "{bad:?}");
+        }
+        assert!(safe_component("TextLayr-0.3.0.zip", "test").is_ok());
+        assert!(safe_component("0.3.0", "test").is_ok());
+    }
+
+    #[test]
+    fn a_hostile_manifest_is_rejected() {
+        let manifest: Manifest =
+            serde_json::from_value(serde_json::json!({"version": "../../etc", "platforms": {}}))
+                .unwrap();
+        assert!(Release::from_manifest(manifest, "https://h/latest.json").is_err());
+
+        let sha = "a".repeat(64);
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "version": "0.3.0",
+            "platforms": {
+                platform::slug(): {
+                    "zip": asset("../evil.zip", &sha, 1),
+                    "dmg": asset("TextLayr-0.3.0.dmg", &sha, 1),
+                }
+            }
+        }))
+        .unwrap();
+        assert!(Release::from_manifest(manifest, "https://h/latest.json").is_err());
+    }
+
+    #[test]
+    fn a_binary_info_plist_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Info.plist");
+        std::fs::write(&path, b"bplist00not-xml").unwrap();
+        let err = read_plist(&path).unwrap_err().to_string();
+        assert!(err.contains("binary"), "{err}");
+
+        std::fs::write(
+            &path,
+            br#"<plist><dict><key>CFBundleIdentifier</key><string>com.x</string></dict></plist>"#,
+        )
+        .unwrap();
+        let text = read_plist(&path).unwrap();
+        assert_eq!(
+            plist_string(&text, "CFBundleIdentifier").as_deref(),
+            Some("com.x")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_helper_waits_for_a_live_process_and_swaps_after_a_dead_one() {
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let staging = dir.path().join("updates").join("0.3.0");
+        let target = dir.path().join("TextLayr.app");
+        let new = staging.join("extracted").join("TextLayr.app");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(target.join("old"), b"old").unwrap();
+        std::fs::write(new.join("new"), b"new").unwrap();
+
+        // A live PID: the helper must not touch the bundle.
+        let script = write_helper_for_pid(std::process::id(), &staging, &target, &new).unwrap();
+        let mut child = Command::new("/bin/sh")
+            .arg(&script)
+            .env("TEXTLAYR_UPDATE_NO_RELAUNCH", "1")
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(target.join("old").is_file(), "the bundle was touched early");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        drop(script);
+
+        // A dead PID: the swap happens (no relaunch in tests).
+        let script = write_helper_for_pid(999_999, &staging, &target, &new).unwrap();
+        let status = Command::new("/bin/sh")
+            .arg(&script)
+            .env("TEXTLAYR_UPDATE_NO_RELAUNCH", "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(target.join("new").is_file());
+        assert!(!target.join("old").exists());
+    }
+
+    #[test]
+    fn a_release_with_no_artifact_for_this_platform_is_not_installable() {
+        // This is what a paused Linux release looks like: the manifest is
+        // valid, but its platforms{} map has nothing for the running OS.
+        let manifest: Manifest =
+            serde_json::from_value(serde_json::json!({"version": "0.3.0", "platforms": {}}))
+                .unwrap();
+        let release = Release::from_manifest(manifest, "https://h/d/latest.json").unwrap();
+        assert!(release.primary.is_none());
+        assert!(!release.installable());
     }
 
     #[test]
@@ -1161,6 +1341,9 @@ mod tests {
         assert!(body.contains("/usr/bin/ditto"));
         assert!(body.contains("com.apple.quarantine"));
         assert!(body.contains(r#"/bin/rm -f "$0""#));
+        // No deadline: never swap under a live process.
+        assert!(body.contains(r#"while kill -0 "$pid" 2>/dev/null; do"#));
+        assert!(!body.contains("-lt 900"));
 
         #[cfg(unix)]
         {

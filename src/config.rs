@@ -637,6 +637,8 @@ struct Config {
     /// Unix seconds of the last update check (success or failure), used to
     /// throttle the automatic check to once a day.
     last_update_check: Option<u64>,
+    /// Folder of the last export destination chosen in the save dialog.
+    last_export_dir: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -649,6 +651,7 @@ impl Default for Config {
             model: Model::default(),
             auto_check_updates: true,
             last_update_check: None,
+            last_export_dir: None,
         }
     }
 }
@@ -759,6 +762,8 @@ pub struct Prefs {
     pub model: Model,
     pub auto_check_updates: bool,
     pub last_update_check: Option<u64>,
+    /// Folder of the last export destination, if one has been chosen.
+    pub last_export_dir: Option<PathBuf>,
 }
 
 impl Default for Prefs {
@@ -771,6 +776,7 @@ impl Default for Prefs {
             // Checking on launch is on by default; the user can turn it off.
             auto_check_updates: true,
             last_update_check: None,
+            last_export_dir: None,
         }
     }
 }
@@ -862,6 +868,7 @@ fn load_prefs_inner(path: &Path) -> (Prefs, bool) {
                         model: cfg.model,
                         auto_check_updates: cfg.auto_check_updates,
                         last_update_check: cfg.last_update_check,
+                        last_export_dir: cfg.last_export_dir,
                     },
                     false,
                 );
@@ -886,6 +893,7 @@ fn load_prefs_inner(path: &Path) -> (Prefs, bool) {
                     model: cfg.model,
                     auto_check_updates: cfg.auto_check_updates,
                     last_update_check: cfg.last_update_check,
+                    last_export_dir: None,
                 },
                 true,
             )
@@ -918,6 +926,7 @@ pub fn save_prefs_to(path: &Path, prefs: &Prefs) -> Result<()> {
         model: prefs.model,
         auto_check_updates: prefs.auto_check_updates,
         last_update_check: prefs.last_update_check,
+        last_export_dir: prefs.last_export_dir.clone(),
     };
     let json = serde_json::to_vec_pretty(&cfg).context("serialize config")?;
     let tmp = path.with_extension("json.tmp");
@@ -989,6 +998,7 @@ mod tests {
         // Update checking is on by default even for a config that predates it.
         assert!(cfg.auto_check_updates);
         assert_eq!(cfg.last_update_check, None);
+        assert_eq!(cfg.last_export_dir, None);
         assert_eq!(cfg.active_profile, None);
     }
 
@@ -1013,6 +1023,7 @@ mod tests {
             model: Model::SmallEn,
             auto_check_updates: false,
             last_update_check: Some(42),
+            last_export_dir: Some(PathBuf::from("/tmp/exports")),
         };
         save_prefs_to(&path, &prefs).unwrap();
         assert!(path.is_file());
@@ -1028,6 +1039,10 @@ mod tests {
         assert_eq!(loaded.model, Model::SmallEn);
         assert!(!loaded.auto_check_updates);
         assert_eq!(loaded.last_update_check, Some(42));
+        assert_eq!(
+            loaded.last_export_dir.as_deref(),
+            Some(Path::new("/tmp/exports"))
+        );
     }
 
     #[test]

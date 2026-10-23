@@ -16,7 +16,7 @@ use textlayr::config::{Grouping, PopupEffect, Style};
 use textlayr::install::{self, InstallProgress};
 use textlayr::model::Model;
 use textlayr::pipeline::{self, IngestProgress, Progress};
-use textlayr::{chunk, deps, export, profile, render, transcribe, ui, update};
+use textlayr::{chunk, deps, export, output, profile, render, transcribe, ui, update};
 
 /// CLI options (parsed by hand — no arg-parsing dependency).
 #[derive(Debug, Default)]
@@ -36,6 +36,8 @@ struct Args {
     /// Ignore (and don't write) the transcript cache.
     no_cache: bool,
     output: Option<PathBuf>,
+    /// Replace an existing output file (CLI only; the GUI asks first).
+    force: bool,
     /// Render states + filter script into this directory instead of encoding.
     png_dir: Option<PathBuf>,
     /// Legacy overlay-graph encode: render states + encode via the N-stage graph.
@@ -89,6 +91,7 @@ fn usage() -> ! {
     eprintln!("  --words             Milestone 1 mode: print (word, start, end) and stop");
     eprintln!("  --no-cache          Ignore the cached transcript, re-transcribe");
     eprintln!("  -o, --output <path> Output path (default: <input>_textlayr.mp4)");
+    eprintln!("  --force             Replace an existing output file (never the input)");
     eprintln!("  --png-dir <path>    Render caption states + filter script, don't encode");
     eprintln!(
         "  --transcript <json> Skip whisper: read (word, start, end) timings from JSON (testing)"
@@ -148,6 +151,7 @@ fn parse_args() -> Args {
             "--words" => args.words_only = true,
             "--no-cache" => args.no_cache = true,
             "-o" | "--output" => args.output = Some(PathBuf::from(need_value(&mut it, "--output"))),
+            "--force" => args.force = true,
             "--png-dir" => args.png_dir = Some(PathBuf::from(need_value(&mut it, "--png-dir"))),
             "--transcript" => {
                 args.transcript = Some(PathBuf::from(need_value(&mut it, "--transcript")))
@@ -272,6 +276,7 @@ fn main() {
         && (args.headless
             || args.words_only
             || args.output.is_some()
+            || args.force
             || args.png_dir.is_some()
             || args.graph
             || args.encoder.is_some()
@@ -384,6 +389,19 @@ fn run_cli(args: &Args) -> Result<()> {
     }
     let found_model = check.model.clone();
     let model_kind = found_model.as_ref().map(|m| m.model).unwrap_or_default();
+
+    // Validate the destination before the expensive transcribe/render passes:
+    // a path that is the input, or an existing file without `--force`, should
+    // fail now rather than after ten minutes of encoding.
+    let target = if args.png_dir.is_none() && !args.words_only {
+        Some(output::ExportTarget::resolve(
+            &input,
+            args.output.as_deref(),
+            args.force,
+        )?)
+    } else {
+        None
+    };
 
     let mut style = Style::default();
     let mut grouping = Grouping::default();
@@ -534,10 +552,12 @@ fn run_cli(args: &Args) -> Result<()> {
     }
 
     // ── 4. export ──────────────────────────────────────────────────────────
-    let output = args
-        .output
-        .clone()
-        .unwrap_or_else(|| pipeline::default_output(&input));
+    let target = target.context("output path was not resolved")?;
+    if let Err(e) = target.prepare() {
+        target.discard();
+        return Err(e);
+    }
+    let part = target.part_path().to_path_buf();
     eprintln!("[4/4] encoding with ffmpeg…");
     let t = Instant::now();
     let mut last_pct = 0u32;
@@ -548,36 +568,48 @@ fn run_cli(args: &Args) -> Result<()> {
             eprint!("\r      encode {pct:3}%");
         }
     };
-    if args.graph {
-        // Milestone 2 backend: one overlay stage per state, exact PTS.
-        let script = state_dir.join("filter_complex.txt");
-        export::export(
-            &tools,
-            &input,
-            &output,
-            &info,
-            &states,
-            style.layout.position_pct,
-            &script,
-            &mut on_frac,
-        )?;
-    } else {
-        export::export_pipe(
-            &tools,
-            &input,
-            &output,
-            &info,
-            &states,
-            style.layout.position_pct,
-            &style.motion,
-            args.encoder.unwrap_or_default(),
-            &no_cancel,
-            &mut on_frac,
-        )?;
+    let encoded = (|| -> Result<()> {
+        if args.graph {
+            // Milestone 2 backend: one overlay stage per state, exact PTS.
+            let script = state_dir.join("filter_complex.txt");
+            export::export(
+                &tools,
+                &input,
+                &part,
+                &info,
+                &states,
+                style.layout.position_pct,
+                &script,
+                &mut on_frac,
+            )?;
+        } else {
+            export::export_pipe(
+                &tools,
+                &input,
+                &part,
+                &info,
+                &states,
+                style.layout.position_pct,
+                &style.motion,
+                args.encoder.unwrap_or_default(),
+                &no_cancel,
+                &mut on_frac,
+            )?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = encoded {
+        target.discard();
+        return Err(e);
+    }
+    if let Err(e) = target.commit() {
+        target.discard();
+        return Err(e);
     }
     eprintln!("\r      encode 100%");
 
-    let size = std::fs::metadata(&output)
+    let output = target.final_path();
+    let size = std::fs::metadata(output)
         .map(|m| m.len() as f64 / 1e6)
         .unwrap_or(0.0);
     eprintln!(

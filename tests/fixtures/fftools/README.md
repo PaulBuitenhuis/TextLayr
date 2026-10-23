@@ -10,6 +10,9 @@ of the bundled, downloaded, vendored or `PATH` copy.
 | `hang/` | Never exits. Proves cancel/timeout handling without needing a wedged real ffmpeg. |
 | `fail/` | Exits 3 immediately, with a `textlayr-fixture:` line on stderr. |
 | `torn-frame/` | Exits 0 after writing 100 bytes — a decoder killed mid-frame. |
+| `hang-decode/` | Delegates the one-frame size check, then hangs like a wedged decoder. |
+| `fail-after-decode/` | The decoder succeeds; the encoder (detected by `-i pipe:0`) exits 4. |
+| `wrong-frame-size/` | Real decode, but ffprobe reports a frame 2px larger than reality. |
 | `pass/` | Delegates to the real tool (`$TEXTLAYR_REAL_FFMPEG` / `$TEXTLAYR_REAL_FFPROBE`, else `PATH`), appending each invocation to `$TEXTLAYR_FFTOOLS_LOG` when set. |
 
 Notes:

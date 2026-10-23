@@ -51,9 +51,9 @@
 
 ## Requirements
 
-- **macOS 13 (Ventura) or later on Apple Silicon (arm64)**, or **Linux on
-  x86_64**. Linux releases ship as a portable `.tar.xz` and an AppImage; you can
-  also build one with `scripts/package_linux.sh`.
+- **macOS 13 (Ventura) or later on Apple Silicon (arm64)**. Published releases
+  are macOS-only for now. The source also builds on Linux x86_64 for development
+  (CI produces a tarball), but Linux packages are not published yet.
 - **No extra installs.** `ffmpeg` + `ffprobe` and a whisper model are fetched on
   first run (~190 MB, or ~530 MB if you pick the larger `small.en` model). If you
   already have ffmpeg on your `PATH` (e.g. from Homebrew), TextLayr uses it
@@ -140,20 +140,26 @@ TextLayr downloaded (it also removes your preferences):
 curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
 ```
 
-### Linux
+### Linux (development only)
 
-Download `TextLayr-<version>-linux-x86_64.tar.xz` (or the `.AppImage`) from
-[Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), unpack it and run
-`./textlayr`. Nothing else is needed: the first launch downloads a static
-`ffmpeg` build and a whisper model into `~/.local/share/textlayr/`. An `ffmpeg`
-already on your `PATH` is used instead of downloading one.
+Linux builds are **not published yet**: `ci.yml` builds and tests them, and its
+tarball artifact can be downloaded for development, but a public Linux release
+waits for a full desktop pass (portal dialogs, drag-and-drop, AppImage and the
+bundled whisper build's CPU compatibility). When it ships, the tarball will be
+`TextLayr-<version>-linux-x86_64.tar.xz` (plus an AppImage), unpacked and run as
+`./textlayr`.
 
-Open a video with the **Open video…** button or by dragging it onto the window.
-On a Wayland session TextLayr starts under XWayland, because the windowing layer
-it uses implements drag-and-drop for X11 only; the picker works either way.
+Build one locally on Linux x86_64 with:
 
-The in-app updater finds new versions but hands the Linux package over for you to
-install rather than replacing the running binary.
+```sh
+scripts/package_linux.sh
+```
+
+The first launch downloads a static `ffmpeg` build and a whisper model into
+`~/.local/share/textlayr/`; an `ffmpeg` already on your `PATH` is used instead of
+downloading one. Open a video with **Open video…** or by dragging it onto the
+window. The windowing layer implements drag-and-drop for X11 only, so use the
+picker on Wayland.
 
 ### Uninstall
 
@@ -293,7 +299,8 @@ textlayr --version                          # version + build hash
 | `--headless` / `--gui` | Force CLI / GUI mode when both would apply |
 | `--words` | Print the word-timing table and stop |
 | `--no-cache` | Ignore the cached transcript and re-transcribe |
-| `-o, --output <path>` | Output path (default `<input>_textlayr.mp4`) |
+| `-o, --output <path>` | Output path (default `<input>_textlayr.mp4`); an existing file is refused |
+| `--force` | Replace an existing output file (the input video is still refused) |
 | `--model <base.en\|small.en>` | Whisper model to use |
 | `--png-dir <dir>` | Render caption states + filter script, skip encoding |
 | `--transcript <json>` | Skip whisper: read `{text,start_secs,end_secs}` word timings from a file (testing/CI) |

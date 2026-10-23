@@ -1,0 +1,22 @@
+#!/bin/sh
+# Harness fixture: pass the one-frame size check, then hang like a wedged
+# decoder. Used to prove a cancel interrupts a blocked read within a second.
+case " $* " in
+    *" -frames:v 1 "*) ;;
+    *)
+        # Only the long-lived decoder/encoder are logged, so a test can kill
+        # them after SIGKILLing the CLI without touching a recycled PID.
+        if [ -n "${TEXTLAYR_FFTOOLS_PIDS:-}" ]; then
+            printf '%s\n' "$$" >> "$TEXTLAYR_FFTOOLS_PIDS"
+        fi
+        exec /bin/sleep 120
+        ;;
+esac
+if [ -n "${TEXTLAYR_REAL_FFMPEG:-}" ]; then
+    exec "$TEXTLAYR_REAL_FFMPEG" "$@"
+fi
+real=$(command -v ffmpeg) || {
+    echo "textlayr-fixture: no real ffmpeg on PATH" >&2
+    exit 127
+}
+exec "$real" "$@"

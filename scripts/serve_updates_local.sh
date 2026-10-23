@@ -46,22 +46,28 @@ shopt -u nullglob
 [[ -f "$zip" ]] || { echo "error: expected $zip" >&2; exit 1; }
 [[ -f "$dmg" ]] || { echo "error: expected $dmg" >&2; exit 1; }
 
-zip_name="$(basename "$zip")"
-dmg_name="$(basename "$dmg")"
-zip_sha="$(shasum -a 256 "$zip" | awk '{print $1}')"
-dmg_sha="$(shasum -a 256 "$dmg" | awk '{print $1}')"
-zip_size="$(stat -f%z "$zip")"
-dmg_size="$(stat -f%z "$dmg")"
+sha() { shasum -a 256 "$1" | awk '{print $1}'; }
+size() { stat -f%z "$1"; }
+asset() {
+    printf '{"name":"%s","sha256":"%s","size":%s}' \
+        "$(basename "$1")" "$(sha "$1")" "$(size "$1")"
+}
 
 say "writing dist/latest.json"
+# Same shape as .github/workflows/release.yml: legacy top-level macOS assets
+# plus the per-platform map the app actually reads.
 cat > dist/latest.json <<EOF
 {
   "version": "$version",
   "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases",
-  "zip": { "name": "$zip_name", "sha256": "$zip_sha", "size": $zip_size },
-  "dmg": { "name": "$dmg_name", "sha256": "$dmg_sha", "size": $dmg_size }
+  "zip": $(asset "$zip"),
+  "dmg": $(asset "$dmg"),
+  "platforms": {
+    "macos-arm64": { "zip": $(asset "$zip"), "dmg": $(asset "$dmg") }
+  }
 }
 EOF
+python3 -c "import json; json.load(open('dist/latest.json')); print('latest.json is valid JSON')"
 
 echo
 say "now run the scratch copy against this server:"

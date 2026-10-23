@@ -11,19 +11,43 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # One build per platform; each uploads its artifacts for the publish job.
-  build:
-    name: build (${{ matrix.slug }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            slug: macos-arm64
-          # 22.04 keeps the glibc floor low enough for older distros.
-          - os: ubuntu-22.04
-            slug: linux-x86_64
-    runs-on: ${{ matrix.os }}
+  # Published macOS artifact. This is the release gate: it must always succeed.
+  build-macos:
+    name: build (macos-arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # `git describe` feeds the build stamp
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Derive version from the tag
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (macOS)
+        env:
+          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
+        run: scripts/package_macos.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos-arm64
+          path: |
+            dist/*.zip
+            dist/*.dmg
+          if-no-files-found: error
+
+  # Linux is built by CI on every push, but is not published yet: the desktop
+  # GUI and the bundled whisper build still need a real Linux pass. Set the
+  # repository variable TEXTLAYR_RELEASE_LINUX=true to publish it again; the
+  # publish job includes the artifacts automatically when they exist.
+  build-linux:
+    name: build (linux-x86_64)
+    if: vars.TEXTLAYR_RELEASE_LINUX == 'true'
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,7 +56,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Linux GUI dev libraries
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -40,7 +63,6 @@ jobs:
             libxcursor-dev libxrandr-dev libxinerama-dev
 
       - name: Install appimagetool
-        if: runner.os == 'Linux'
         run: |
           mkdir -p "$HOME/bin"
           curl -fsSL -o "$HOME/bin/appimagetool" \
@@ -53,38 +75,35 @@ jobs:
         shell: bash
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        env:
-          TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
-        run: scripts/package_macos.sh
-
       - name: Package (Linux)
-        if: runner.os == 'Linux'
         env:
           TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
         run: scripts/package_linux.sh
 
       - uses: actions/upload-artifact@v7
         with:
-          name: dist-${{ matrix.slug }}
+          name: dist-linux-x86_64
           path: |
-            dist/*.zip
-            dist/*.dmg
             dist/*.tar.xz
             dist/*.AppImage
           if-no-files-found: error
 
-  # Single publish job: gather every platform's artifacts, write SHA256SUMS and
-  # the combined latest.json (legacy macOS top-level + a platforms{} map), then
-  # attach them all to one GitHub Release.
+  # Single publish job: gather whichever platform artifacts exist, write
+  # SHA256SUMS and latest.json, then attach them to one GitHub Release. The
+  # manifest only lists Linux when its tarball is present, so a macOS-only
+  # release cannot advertise an asset that was never built.
   publish:
     name: publish release
-    needs: build
+    needs: [build-macos, build-linux]
+    if: >-
+      always() &&
+      needs.build-macos.result == 'success' &&
+      (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
+          pattern: dist-*
           path: dist
           merge-multiple: true
 
@@ -105,7 +124,7 @@ jobs:
           lin_tar="TextLayr-${V}-linux-x86_64.tar.xz"
           lin_app="TextLayr-${V}-linux-x86_64.AppImage"
 
-          for f in "$mac_zip" "$mac_dmg" "$lin_tar"; do
+          for f in "$mac_zip" "$mac_dmg"; do
             [ -f "$f" ] || { echo "missing release artifact: $f" >&2; exit 1; }
           done
 
@@ -113,14 +132,24 @@ jobs:
           size()  { stat -c%s "$1"; }
           asset() { printf '{"name":"%s","sha256":"%s","size":%s}' "$1" "$(sha "$1")" "$(size "$1")"; }
 
-          sha256sum "$mac_zip" "$mac_dmg" "$lin_tar" > SHA256SUMS
-          # The AppImage is best-effort (needs appimagetool); the .tar.xz is the fallback.
-          if [ -f "$lin_app" ]; then sha256sum "$lin_app" >> SHA256SUMS; fi
-
-          lin_assets="\"tar\": $(asset "$lin_tar")"
-          if [ -f "$lin_app" ]; then
-            lin_assets="${lin_assets}, \"appimage\": $(asset "$lin_app")"
+          # macOS is mandatory; Linux is included only when CI built it.
+          sha_files=("$mac_zip" "$mac_dmg")
+          platforms="\"macos-arm64\": { \"zip\": $(asset "$mac_zip"), \"dmg\": $(asset "$mac_dmg") }"
+          if [ -f "$lin_tar" ]; then
+            lin_assets="\"tar\": $(asset "$lin_tar")"
+            if [ -f "$lin_app" ]; then
+              lin_assets="${lin_assets}, \"appimage\": $(asset "$lin_app")"
+              sha_files+=("$lin_app")
+            fi
+            # The AppImage is best-effort (needs appimagetool); the .tar.xz is
+            # the fallback.
+            platforms="${platforms}, \"linux-x86_64\": { ${lin_assets} }"
+            sha_files+=("$lin_tar")
+          else
+            echo "no Linux artifacts; publishing the macOS release only" >&2
           fi
+
+          sha256sum "${sha_files[@]}" > SHA256SUMS
 
           # `zip`/`dmg` at the top level stay for backward compatibility; the app
           # reads `platforms{}` (keyed by platform::slug()).
@@ -130,10 +159,7 @@ jobs:
             "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v${V}",
             "zip": $(asset "$mac_zip"),
             "dmg": $(asset "$mac_dmg"),
-            "platforms": {
-              "macos-arm64": { "zip": $(asset "$mac_zip"), "dmg": $(asset "$mac_dmg") },
-              "linux-x86_64": { ${lin_assets} }
-            }
+            "platforms": { ${platforms} }
           }
           EOF
 
@@ -148,6 +174,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          fail_on_unmatched_files: false
           files: |
             dist/TextLayr-*.dmg
             dist/TextLayr-*.zip

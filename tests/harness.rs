@@ -283,3 +283,269 @@ fn a_transcript_run_exports_without_a_model() {
     assert!(kinds.contains(&"video"), "streams: {kinds:?}");
     assert!(kinds.contains(&"audio"), "streams: {kinds:?}");
 }
+
+// ---------------------------------------------------------------------------
+// F1: the destination is chosen, validated and never clobbered by accident.
+// ---------------------------------------------------------------------------
+
+fn transcript() -> PathBuf {
+    fixture_transcript()
+}
+
+fn assert_no_part(dir: &Path, final_name: &str) {
+    let part = dir.join(format!(".{final_name}.part.mp4"));
+    assert!(!part.exists(), "left a part file at {}", part.display());
+}
+
+fn kill_pids(log: &Path) {
+    let Ok(text) = std::fs::read_to_string(log) else {
+        return;
+    };
+    for line in text.lines() {
+        let Ok(pid) = line.trim().parse::<u32>() else {
+            continue;
+        };
+        let _ = Command::new("/bin/kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+fn assert_pids_gone(log: &Path) {
+    let Ok(text) = std::fs::read_to_string(log) else {
+        return;
+    };
+    for line in text.lines() {
+        let Ok(pid) = line.trim().parse::<u32>() else {
+            continue;
+        };
+        let alive = Command::new("/bin/kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(!alive, "child process {pid} was left running");
+    }
+}
+
+#[test]
+fn an_existing_output_needs_force_and_is_left_untouched() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let output = work.path().join("out.mp4");
+    std::fs::write(&output, b"original bytes").unwrap();
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&output)
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/pass"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "an existing output must be refused");
+    assert!(stderr.contains("already exists"), "{stderr}");
+    assert_eq!(std::fs::read(&output).unwrap(), b"original bytes");
+    assert_no_part(work.path(), "out.mp4");
+}
+
+#[test]
+fn force_replaces_an_existing_output() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let output = work.path().join("out.mp4");
+    std::fs::write(&output, b"original bytes").unwrap();
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&output)
+        .arg("--force")
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/pass"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "export failed: {stderr}");
+    assert!(std::fs::metadata(&output).unwrap().len() > 1_000);
+    assert_no_part(work.path(), "out.mp4");
+}
+
+#[test]
+fn the_input_can_never_be_the_output() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let before = std::fs::read(&clip).unwrap();
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&clip)
+        .arg("--force")
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/pass"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "the input must be refused");
+    assert!(stderr.contains("input video"), "{stderr}");
+    assert_eq!(std::fs::read(&clip).unwrap(), before);
+}
+
+#[test]
+fn a_failed_export_leaves_the_target_intact_and_no_child_behind() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let output = work.path().join("out.mp4");
+    std::fs::write(&output, b"original bytes").unwrap();
+    let pids = work.path().join("pids.log");
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&output)
+        .arg("--force")
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/fail-after-decode"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FFTOOLS_PIDS", &pids)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "the encoder failure must be reported"
+    );
+    assert!(stderr.contains("encoder failed to start"), "{stderr}");
+    assert_eq!(std::fs::read(&output).unwrap(), b"original bytes");
+    assert_no_part(work.path(), "out.mp4");
+    assert_pids_gone(&pids);
+}
+
+#[test]
+fn a_decoder_size_mismatch_is_refused_before_encoding() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let output = work.path().join("out.mp4");
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&output)
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/wrong-frame-size"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a size mismatch must fail");
+    assert!(stderr.contains("decoder produces"), "{stderr}");
+    assert!(!output.exists(), "no output should be written");
+    assert_no_part(work.path(), "out.mp4");
+}
+
+#[test]
+fn killing_the_cli_leaves_the_existing_target_intact() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = synth_clip(&tools, work.path());
+    let output = work.path().join("out.mp4");
+    std::fs::write(&output, b"original bytes").unwrap();
+    let pids = work.path().join("pids.log");
+    let part = work.path().join(".out.mp4.part.mp4");
+
+    let mut child = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(transcript())
+        .arg("-o")
+        .arg(&output)
+        .arg("--force")
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/hang-decode"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FFTOOLS_PIDS", &pids)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .spawn()
+        .expect("spawn the CLI");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while !part.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(part.exists(), "the export never reached the encoding stage");
+    child.kill().expect("kill the CLI");
+    let _ = child.wait();
+
+    assert_eq!(std::fs::read(&output).unwrap(), b"original bytes");
+
+    // The CLI is SIGKILLed, so its children are orphaned; kill them ourselves.
+    // Allow a beat for a wrapper that had just spawned to append its PID, then
+    // sweep twice before asserting.
+    std::thread::sleep(Duration::from_millis(200));
+    kill_pids(&pids);
+    std::thread::sleep(Duration::from_millis(200));
+    kill_pids(&pids);
+    assert_pids_gone(&pids);
+    let _ = std::fs::remove_file(&part);
+}

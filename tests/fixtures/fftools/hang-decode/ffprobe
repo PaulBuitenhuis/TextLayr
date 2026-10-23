@@ -1,0 +1,10 @@
+#!/bin/sh
+# Harness fixture: the real ffprobe (the hang is in the decoder only).
+if [ -n "${TEXTLAYR_REAL_FFPROBE:-}" ]; then
+    exec "$TEXTLAYR_REAL_FFPROBE" "$@"
+fi
+real=$(command -v ffprobe) || {
+    echo "textlayr-fixture: no real ffprobe on PATH" >&2
+    exit 127
+}
+exec "$real" "$@"

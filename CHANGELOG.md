@@ -8,31 +8,65 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Linux support (x86_64) — source and CI only.** TextLayr builds and runs on
+  Linux: resources resolve from an AppImage or a standard prefix, first run
+  downloads a pinned static ffmpeg build, and `scripts/package_linux.sh` produces
+  a portable tarball (plus an AppImage when `appimagetool` is available). Linux
+  packages are **not published yet**; they wait for a full desktop pass. The
+  in-app updater hands a Linux package over for you to install instead of
+  replacing the running binary. First-run downloads and updates no longer shell
+  out to `curl` or `ditto`.
+
+## [0.3.0] - 2026-10-23
+
+### Added
+
 - **`--transcript <file>`** (headless) reads word timings from JSON instead of
   running whisper, so the render → export path can be run without a model.
   Intended for tests, CI and debugging a style change; it is the same
   `{text, start_secs, end_secs}` shape as the transcript cache.
-- **Linux support (x86_64).** TextLayr builds and runs on Linux: resources
-  resolve from an AppImage or a standard prefix, first run downloads a pinned
-  static ffmpeg build, and `scripts/package_linux.sh` produces a portable tarball
-  (plus an AppImage when `appimagetool` is available). Releases publish a
-  `linux-x86_64` entry in `latest.json` alongside the macOS one, and the in-app
-  updater hands the Linux package over for you to install instead of replacing
-  the running binary. First-run downloads and updates no longer shell out to
-  `curl` or `ditto`.
-
-### Fixed
-
-- **Dropping a video onto the Linux window did nothing.** The windowing layer
-  implements native file drop for X11 only, so a Wayland session silently
-  ignored drops. TextLayr now starts under XWayland when it is available, and
-  the drop screen has an **Open video…** picker that works on any session.
+- **Open video… on the drop screen.** Pick a video with the native file dialog
+  instead of dragging it onto the window. After a failed ingest you can choose
+  **Open another…** as well as retrying.
+- **Choose where to save an export.** Export now opens the native save panel,
+  prefilled with `<name>_textlayr.mp4` in the last folder you used. The finished
+  video is written as a hidden `.part.mp4` and only renamed into place on
+  success, so a failed or cancelled export cannot destroy an existing file. If
+  the name already exists, the panel (macOS) or an in-app confirmation (Linux)
+  asks before replacing it.
+- **`--force`** for the CLI, to replace an existing output in scripts. It never
+  permits overwriting the input video.
 
 ### Changed
 
 - **Newer window toolkit (egui/eframe 0.37).** Controls are a little roomier and
   the UI can fall back to system fonts for glyphs the bundled fonts lack.
   Workflow and output are unchanged.
+- **The Done screen names the folder** as well as the file, and the chosen
+  destination is what **Open video** and **Reveal in Finder** use.
+- **Preview popups switch without re-decoding the video.** The preview now
+  extracts one 480px frame per popup (instead of a full-resolution PNG per
+  click), caches it, and prefetches its neighbours. Clicking a word only moves
+  the highlight; the background stays put, and rapid clicks coalesce onto one
+  worker instead of piling up ffmpeg processes.
+
+### Fixed
+
+- **Export can no longer destroy a file.** It refuses the input as the output,
+  never overwrites an existing file without an explicit confirmation (or
+  `--force`), and leaves the previous file intact when an encode fails or is
+  cancelled.
+- **Cancel interrupts a stalled encode.** The decoder/encoder are killed and
+  reaped on every error path, so a wedged ffmpeg cannot leave the app on
+  "Cancelling…" forever or leak a child process. Probe and ffprobe waits are now
+  bounded.
+- **A decoder that disagrees with ffprobe is refused** instead of producing
+  mis-framed video, and absurd or overflowing dimensions are rejected before a
+  frame buffer is allocated.
+- **The updater no longer trusts manifest strings as paths.** A version or asset
+  name that could escape its folder is refused, the relaunch helper waits for
+  the app to exit instead of swapping under it after 180 s, and a binary
+  `Info.plist` is rejected with a clear error.
 
 ## [0.2.3] - 2026-10-20
 
@@ -297,7 +331,8 @@ video, as a native macOS app plus a headless CLI.
 - **Packaging:** `scripts/package_macos.sh` builds an ad-hoc-signed `TextLayr.app`
   plus `.zip` and `.dmg` release artifacts.
 
-[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.3.0
 [0.2.3]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.3
 [0.2.2]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.2
 [0.2.1]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.1

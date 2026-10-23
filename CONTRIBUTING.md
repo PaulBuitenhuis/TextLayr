@@ -116,8 +116,9 @@ model.
   chunking, rendering and encoding all run with no model.
 - **`$TEXTLAYR_FFTOOLS`** points ffmpeg/ffprobe discovery (and therefore the
   whole app) at a directory of fixture scripts. `tests/fixtures/fftools/` has
-  `hang`, `fail`, `torn-frame` and a `pass` wrapper that delegates to the real
-  binaries; the end-to-end test synthesizes its 2 s clip with `lavfi`.
+  `hang`, `fail`, `torn-frame`, `hang-decode`, `fail-after-decode`,
+  `wrong-frame-size` and a `pass` wrapper that delegates to the real binaries;
+  the end-to-end test synthesizes its 2 s clip with `lavfi`.
 - The suite asserts the fixtures themselves behave (a hang really hangs, a
   failure exits 3, a torn frame is short), so a later red test is the code's
   fault and not the harness's.

@@ -5,6 +5,7 @@ use std::process::Command;
 
 use crate::paths;
 use crate::platform;
+use crate::process;
 use crate::source::Source;
 
 /// Where we found ffmpeg/ffprobe. Populated once at startup.
@@ -151,16 +152,33 @@ fn weaker(a: Source, b: Source) -> Source {
     }
 }
 
+/// Reject dimensions that cannot produce a sane frame buffer. The upper bound
+/// is far beyond any real source (8K is 7680 wide) and keeps `w * h * 4` in
+/// range on every supported target.
+const MAX_DIMENSION: u64 = 16_384;
+
+fn validate_dimensions(width: u64, height: u64) -> Result<(u32, u32)> {
+    if width == 0 || height == 0 {
+        bail!("ffprobe reported invalid video dimensions {width}x{height}");
+    }
+    if width > MAX_DIMENSION || height > MAX_DIMENSION {
+        bail!("video dimensions {width}x{height} exceed the supported {MAX_DIMENSION}px limit");
+    }
+    let w = u32::try_from(width).context("video width does not fit in 32 bits")?;
+    let h = u32::try_from(height).context("video height does not fit in 32 bits")?;
+    Ok((w, h))
+}
+
 /// Probe a video file with ffprobe and return display-oriented properties.
 pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
-    let out = Command::new(&tools.ffprobe)
-        .arg("-v").arg("error")
+    let mut cmd = Command::new(&tools.ffprobe);
+    cmd.arg("-v").arg("error")
         .arg("-select_streams").arg("v:0")
         .arg("-show_entries")
         .arg("stream=width,height,avg_frame_rate,r_frame_rate,pix_fmt,color_range,color_space,color_primaries,color_transfer:stream_side_data=rotation:format=duration")
         .arg("-of").arg("json")
-        .arg(input)
-        .output()
+        .arg(input);
+    let out = process::output_with_timeout(&mut cmd, process::PROBE_TIMEOUT)
         .with_context(|| format!("failed to run ffprobe on {}", input.display()))?;
 
     if !out.status.success() {
@@ -184,11 +202,12 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
     let width = stream
         .get("width")
         .and_then(|v| v.as_u64())
-        .context("missing width")? as u32;
+        .context("missing width")?;
     let height = stream
         .get("height")
         .and_then(|v| v.as_u64())
-        .context("missing height")? as u32;
+        .context("missing height")?;
+    let (width, height) = validate_dimensions(width, height)?;
 
     // Rotation can appear in stream_side_data (newer ffprobe) or as a top-level
     // tag. Read both.
@@ -266,7 +285,8 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
     let color_transfer = color("color_transfer");
 
     // --- audio presence (separate quick query) ---
-    let aout = Command::new(&tools.ffprobe)
+    let mut aquery = Command::new(&tools.ffprobe);
+    aquery
         .arg("-v")
         .arg("error")
         .arg("-select_streams")
@@ -275,8 +295,8 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .arg("stream=codec_type")
         .arg("-of")
         .arg("csv=p=0")
-        .arg(input)
-        .output()
+        .arg(input);
+    let aout = process::output_with_timeout(&mut aquery, process::PROBE_TIMEOUT)
         .context("failed to run ffprobe audio query")?;
     let has_audio = aout.status.success()
         && String::from_utf8_lossy(&aout.stdout)
@@ -350,6 +370,16 @@ mod tests {
         assert_eq!(weaker(Source::System, Source::Bundled), Source::System);
         assert_eq!(weaker(Source::Env, Source::Downloaded), Source::Env);
         assert_eq!(weaker(Source::Bundled, Source::Bundled), Source::Bundled);
+    }
+
+    #[test]
+    fn dimensions_are_validated_before_they_reach_a_buffer() {
+        assert_eq!(validate_dimensions(1920, 1080).unwrap(), (1920, 1080));
+        assert_eq!(validate_dimensions(16_384, 1).unwrap(), (16_384, 1));
+        assert!(validate_dimensions(0, 1080).is_err());
+        assert!(validate_dimensions(1920, 0).is_err());
+        assert!(validate_dimensions(16_385, 1080).is_err());
+        assert!(validate_dimensions(u64::MAX, u64::MAX).is_err());
     }
 
     #[test]

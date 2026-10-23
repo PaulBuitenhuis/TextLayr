@@ -11,7 +11,7 @@ use crate::probe::{Fftools, VideoInfo};
 use crate::render::MotionPhase;
 use crate::transcribe::Word;
 
-use super::preview::Preview;
+use super::preview::{FrameKey, Preview};
 use super::theme;
 
 /// What a panel wants the app to do after handling its own state changes.
@@ -82,8 +82,6 @@ pub struct ReviewState {
     pub motion_playing: bool,
     pub edited_any: bool,
     pub preview: Preview,
-    /// Which (chunk, word) the extracted frame belongs to.
-    pub frame_key: (usize, usize),
 }
 
 impl ReviewState {
@@ -107,7 +105,6 @@ impl ReviewState {
             motion_playing: false,
             edited_any: false,
             preview: Preview::default(),
-            frame_key: (usize::MAX, usize::MAX),
         }
     }
 
@@ -120,18 +117,21 @@ impl ReviewState {
             .collect()
     }
 
-    /// Preview time: midpoint of the highlighted word's window, i.e. the exact
-    /// instant the exporter would show this state.
-    pub fn preview_time(&self) -> f64 {
-        let Some(c) = self.chunks.get(self.selected) else {
-            return 0.0;
-        };
-        let windows = c.to_chunk().state_windows();
-        if windows.is_empty() {
-            return (c.start_secs + c.end_secs) / 2.0;
-        }
-        let (s, e) = windows[self.active_word.min(windows.len() - 1)];
-        (s + e) / 2.0
+    /// Stable key for the popup's time span. Re-chunking changes the span, so a
+    /// cached frame cannot be shown for different words.
+    pub fn chunk_key(&self, idx: usize) -> Option<FrameKey> {
+        self.chunks
+            .get(idx)
+            .map(|c| (c.start_secs.to_bits(), c.end_secs.to_bits()))
+    }
+
+    /// Representative timestamp for a popup's background frame. One frame per
+    /// popup keeps the background stable while the highlighted word changes.
+    pub fn popup_time(&self, idx: usize) -> f64 {
+        self.chunks
+            .get(idx)
+            .map(|c| (c.start_secs + c.end_secs) / 2.0)
+            .unwrap_or(0.0)
     }
 
     /// Caption words for the preview (same tokens the export renders).

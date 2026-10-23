@@ -21,6 +21,12 @@ cd "$repo_root"
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# The tarball must contain an ELF binary. Running this on macOS used to package
+# a Mach-O executable under a linux-x86_64 name, which fails on the target with
+# an opaque "cannot execute" error.
+[[ "$(uname -s)" == "Linux" ]] || die "package_linux.sh must run on Linux (this is $(uname -s))"
+[[ "$(uname -m)" == "x86_64" ]] || die "the Linux release target is x86_64 (this is $(uname -m))"
+
 # ── 1. release build ────────────────────────────────────────────────────────
 say "building release binary"
 cargo build --release

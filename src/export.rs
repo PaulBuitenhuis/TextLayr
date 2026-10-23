@@ -27,9 +27,10 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
-use std::process::{ChildStderr, Command, Stdio};
+use std::process::{Child, ChildStderr, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Top-left y coordinate (in frame pixels) for a caption state whose box
 /// anchor should land at `position_pct` of the frame height.
@@ -118,8 +119,8 @@ fn vaapi_works(tools: &Fftools) -> bool {
 
 #[cfg(target_os = "linux")]
 fn vaapi_probe(tools: &Fftools, device: &Path) -> bool {
-    Command::new(&tools.ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-y", "-vaapi_device"])
+    let mut cmd = Command::new(&tools.ffmpeg);
+    cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-vaapi_device"])
         .arg(device)
         .args([
             "-f",
@@ -137,8 +138,8 @@ fn vaapi_probe(tools: &Fftools, device: &Path) -> bool {
             "-f",
             "null",
             "-",
-        ])
-        .status()
+        ]);
+    crate::process::status_with_timeout(&mut cmd, crate::process::PROBE_TIMEOUT)
         .map(|s| s.success())
         .unwrap_or(false)
 }
@@ -155,27 +156,27 @@ fn videotoolbox_works(tools: &Fftools) -> bool {
         }
         #[cfg(target_os = "macos")]
         {
-            Command::new(&tools.ffmpeg)
-                .args([
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=black:s=256x256:r=30:d=0.2",
-                    "-frames:v",
-                    "1",
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-b:v",
-                    "2000k",
-                    "-f",
-                    "null",
-                    "-",
-                ])
-                .status()
+            let mut cmd = Command::new(&tools.ffmpeg);
+            cmd.args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:s=256x256:r=30:d=0.2",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "h264_videotoolbox",
+                "-b:v",
+                "2000k",
+                "-f",
+                "null",
+                "-",
+            ]);
+            crate::process::status_with_timeout(&mut cmd, crate::process::PROBE_TIMEOUT)
                 .map(|s| s.success())
                 .unwrap_or(false)
         }
@@ -264,6 +265,93 @@ fn drain_stderr(stream: ChildStderr) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinH
     (err_buf, handle)
 }
 
+/// Owns a child process and guarantees it is killed and reaped, even on an
+/// early `?` or a panic. The child is behind a mutex so a watchdog thread can
+/// kill it while the main thread is blocked reading or writing a pipe.
+struct ChildGuard {
+    child: Arc<Mutex<Child>>,
+    err_thread: Option<std::thread::JoinHandle<()>>,
+    reaped: bool,
+}
+
+impl ChildGuard {
+    fn new(child: Child) -> Self {
+        ChildGuard {
+            child: Arc::new(Mutex::new(child)),
+            err_thread: None,
+            reaped: false,
+        }
+    }
+
+    fn handle(&self) -> Arc<Mutex<Child>> {
+        Arc::clone(&self.child)
+    }
+
+    fn take_stdout(&self) -> Option<std::process::ChildStdout> {
+        self.child.lock().unwrap().stdout.take()
+    }
+
+    fn take_stderr(&self) -> Option<ChildStderr> {
+        self.child.lock().unwrap().stderr.take()
+    }
+
+    fn take_stdin(&self) -> Option<std::process::ChildStdin> {
+        self.child.lock().unwrap().stdin.take()
+    }
+
+    fn set_err_thread(&mut self, thread: std::thread::JoinHandle<()>) {
+        self.err_thread = Some(thread);
+    }
+
+    fn join_err(&mut self) {
+        if let Some(thread) = self.err_thread.take() {
+            let _ = thread.join();
+        }
+    }
+
+    /// Poll `try_wait` instead of blocking in `wait`, so the lock is free for
+    /// the watchdog's kill.
+    fn wait(&mut self) -> Result<ExitStatus> {
+        loop {
+            if let Some(status) = self.try_wait()? {
+                return Ok(status);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn try_wait(&mut self) -> Result<Option<ExitStatus>> {
+        let status = {
+            let mut child = self.child.lock().unwrap();
+            child.try_wait().context("failed to poll ffmpeg")?
+        };
+        if status.is_some() {
+            self.reaped = true;
+        }
+        Ok(status)
+    }
+
+    fn kill(&mut self) {
+        if self.reaped {
+            return;
+        }
+        {
+            let mut child = self.child.lock().unwrap();
+            let _ = child.kill();
+        }
+        let _ = self.wait();
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if !self.reaped {
+            self.kill();
+        }
+        self.join_err();
+    }
+}
+
 /// Fill `buf` with exactly one frame; `Ok(false)` = clean EOF at a frame
 /// boundary (the expected end of the stream).
 fn read_frame(r: &mut impl Read, buf: &mut [u8]) -> Result<bool> {
@@ -337,9 +425,9 @@ pub fn write_filter_script(
 fn filter_graph_file_option(tools: &Fftools) -> &'static str {
     static OPTION: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     OPTION.get_or_init(|| {
-        let legacy = Command::new(&tools.ffmpeg)
-            .args(["-hide_banner", "-h", "full"])
-            .output()
+        let mut cmd = Command::new(&tools.ffmpeg);
+        cmd.args(["-hide_banner", "-h", "full"]);
+        let legacy = crate::process::output_with_timeout(&mut cmd, crate::process::PROBE_TIMEOUT)
             .map(|out| {
                 String::from_utf8_lossy(&out.stdout)
                     .lines()
@@ -370,6 +458,14 @@ pub fn export(
 ) -> Result<()> {
     if states.is_empty() {
         bail!("nothing to render: no caption states");
+    }
+    let (decoded_w, decoded_h) = decoded_frame_size(tools, input)?;
+    if (decoded_w, decoded_h) != (info.display_width, info.display_height) {
+        bail!(
+            "ffprobe reported {}x{} but the decoder produces {decoded_w}x{decoded_h}",
+            info.display_width,
+            info.display_height
+        );
     }
 
     write_filter_script(states, position_pct, script_path)?;
@@ -468,6 +564,43 @@ pub fn export(
     Ok(())
 }
 
+/// Decode one frame and read its PNG header. ffprobe metadata can disagree with
+/// what the decoder actually produces; this is the authoritative size check
+/// before a raw RGBA pipe is framed with the metadata's dimensions.
+fn decoded_frame_size(tools: &Fftools, input: &Path) -> Result<(u32, u32)> {
+    let mut cmd = Command::new(&tools.ffmpeg);
+    cmd.args(["-hide_banner", "-loglevel", "error", "-i"])
+        .arg(input)
+        .args([
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ]);
+    let out = crate::process::output_with_timeout(&mut cmd, crate::process::PROBE_TIMEOUT)
+        .context("failed to decode a frame to verify its size")?;
+    if !out.status.success() {
+        bail!(
+            "could not decode a frame to verify its size: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let bytes = &out.stdout;
+    const PNG_SIG: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 24 || &bytes[..8] != PNG_SIG {
+        bail!("the decoder did not return a PNG frame");
+    }
+    // IHDR: 8-byte signature, 4-byte length, "IHDR", then width and height.
+    let w = u32::from_be_bytes(bytes[16..20].try_into().expect("4 bytes"));
+    let h = u32::from_be_bytes(bytes[20..24].try_into().expect("4 bytes"));
+    Ok((w, h))
+}
+
 /// Encode `output` by piping raw frames through Rust (the default backend).
 ///
 /// ffmpeg decodes `input` to RGBA (rotation applied by autorotate), we blend
@@ -475,9 +608,9 @@ pub fn export(
 /// the preview, and a second ffmpeg encodes the composited frames. Peak RAM is
 /// one frame + one state, independent of state count.
 ///
-/// `on_progress` receives 0.0..=1.0 as the encode advances, and `cancel` is
-/// polled once per frame: when it is set the frame pump stops, both ffmpeg
-/// children are killed, and the error says "cancelled".
+/// `on_progress` receives 0.0..=1.0 as the encode advances. A watchdog watches
+/// `cancel` while the pump runs: when it is set, both ffmpeg children are killed
+/// (which also unblocks a stalled pipe) and the error says "cancelled".
 #[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn export_pipe(
     tools: &Fftools,
@@ -497,7 +630,14 @@ pub fn export_pipe(
 
     let w = info.display_width;
     let h = info.display_height;
-    let frame_len = w as usize * h as usize * 4;
+    let (decoded_w, decoded_h) = decoded_frame_size(tools, input)?;
+    if (decoded_w, decoded_h) != (w, h) {
+        bail!("ffprobe reported {w}x{h} but the decoder produces {decoded_w}x{decoded_h}");
+    }
+    let frame_len = (w as usize)
+        .checked_mul(h as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .context("frame size overflow")?;
     let total_secs = info.duration_secs.max(0.001);
     let rate = if info.frame_rate.is_empty() || info.frame_rate == "0/0" {
         "30/1".to_string()
@@ -553,14 +693,17 @@ pub fn export_pipe(
             "rgba",
             "-",
         ]);
-    let mut dec = dec_cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn the decoding ffmpeg")?;
-    let dec_out = dec.stdout.take().context("decoder stdout pipe")?;
-    let (dec_err, dec_err_thread) = drain_stderr(dec.stderr.take().context("decoder stderr pipe")?);
+    let mut dec = ChildGuard::new(
+        dec_cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn the decoding ffmpeg")?,
+    );
+    let dec_out = dec.take_stdout().context("decoder stdout pipe")?;
+    let (dec_err, dec_err_thread) = drain_stderr(dec.take_stderr().context("decoder stderr pipe")?);
+    dec.set_err_thread(dec_err_thread);
 
     // ── encoder: composited RGBA frames from stdin -> output ──────────────
     let mut enc_cmd = Command::new(&tools.ffmpeg);
@@ -631,15 +774,18 @@ pub fn export_pipe(
             "-nostats",
         ])
         .arg(output);
-    let mut enc = enc_cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn the encoding ffmpeg")?;
-    let mut enc_in = enc.stdin.take().context("encoder stdin pipe")?;
-    let enc_out = enc.stdout.take().context("encoder stdout pipe")?;
-    let (enc_err, enc_err_thread) = drain_stderr(enc.stderr.take().context("encoder stderr pipe")?);
+    let mut enc = ChildGuard::new(
+        enc_cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn the encoding ffmpeg")?,
+    );
+    let mut enc_in = enc.take_stdin().context("encoder stdin pipe")?;
+    let enc_out = enc.take_stdout().context("encoder stdout pipe")?;
+    let (enc_err, enc_err_thread) = drain_stderr(enc.take_stderr().context("encoder stderr pipe")?);
+    enc.set_err_thread(enc_err_thread);
 
     // Parse `-progress` on the encoder's stdout on a thread; frames are
     // pumped on this thread, which drains the channel as it goes.
@@ -662,130 +808,172 @@ pub fn export_pipe(
         }
     });
 
-    // ── pump: read frame → pick state → blend → write ─────────────────────
-    let mut buf = vec![0u8; frame_len];
-    let mut idx = 0usize;
-    let mut cached_idx: Option<usize> = None;
-    let mut cached: Option<(Vec<u8>, u32, u32)> = None;
-    let mut frame_no = 0u64;
-    let mut last_frac = 0.0f64;
+    let dec_handle = dec.handle();
+    let enc_handle = enc.handle();
+    let done = AtomicBool::new(false);
 
-    let pump = (|| -> Result<u64> {
-        let mut reader = dec_out;
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                break Err(anyhow::anyhow!("export cancelled"));
-            }
-            if !read_frame(&mut reader, &mut buf)? {
-                break Ok(frame_no);
-            }
-
-            // States are chronological and non-overlapping: advance the
-            // pointer, then blend if this frame falls inside the window.
-            let t = frame_no as f64 / fps;
-            while idx < states.len() && t >= states[idx].end_secs {
-                idx += 1;
-            }
-            if let Some(st) = states.get(idx).filter(|s| t >= s.start_secs) {
-                if cached_idx != Some(idx) {
-                    let img = image::open(&st.png)
-                        .with_context(|| format!("failed to read {}", st.png.display()))?
-                        .to_rgba8();
-                    let (rw, rh) = (img.width(), img.height());
-                    cached = Some((img.into_raw(), rw, rh));
-                    cached_idx = Some(idx);
+    let (pump, enc_status) = std::thread::scope(|scope| {
+        // Cancel must interrupt a blocked read or write, not just be noticed
+        // between frames. Killing the children closes their pipes, which wakes
+        // the pump below.
+        scope.spawn(|| {
+            while !done.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) {
+                    if let Ok(mut child) = dec_handle.lock() {
+                        let _ = child.kill();
+                    }
+                    if let Ok(mut child) = enc_handle.lock() {
+                        let _ = child.kill();
+                    }
+                    return;
                 }
-                let (src, sw, sh) = cached.as_ref().expect("state cached");
-                // Same placement math as the preview and the graph's overlay
-                // expressions: centered, with the box anchor at position_pct.
-                let x = ((w as f32 - *sw as f32) / 2.0).round() as i32;
-                let y = caption_y(h, position_pct, st.anchor, st.box_top, st.box_h).round() as i32;
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
 
-                // Popup motion runs across the per-word states of the same
-                // popup. Exit motion wins near the popup's end, so short
-                // popups still leave visibly.
-                let in_dur = motion.duration_ms as f64 / 1000.0;
-                let out_dur = motion.exit_duration_ms as f64 / 1000.0;
-                let phase = if motion.exit != PopupEffect::None
-                    && out_dur > 0.0
-                    && t >= st.popup_end_secs - out_dur
-                {
-                    MotionPhase::Exit(
-                        ((t - (st.popup_end_secs - out_dur)) / out_dur).clamp(0.0, 1.0) as f32,
-                    )
-                } else if motion.popup != PopupEffect::None
-                    && in_dur > 0.0
-                    && t < st.popup_start_secs + in_dur
-                {
-                    MotionPhase::Entrance(
-                        ((t - st.popup_start_secs) / in_dur).clamp(0.0, 1.0) as f32
-                    )
-                } else {
-                    MotionPhase::Settled
-                };
-                let transform = phase.transform(motion, st.font_px);
-                if transform.is_identity() {
-                    blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
-                } else {
-                    let pivot_x = *sw as f32 / 2.0;
-                    let pivot_y = match st.anchor {
-                        Anchor::Center => st.box_top + st.box_h / 2.0,
-                        Anchor::Top => st.box_top,
-                        Anchor::Bottom => st.box_top + st.box_h,
+        // ── pump: read frame → pick state → blend → write ─────────────────────
+        let mut buf = vec![0u8; frame_len];
+        let mut idx = 0usize;
+        let mut cached_idx: Option<usize> = None;
+        let mut cached: Option<(Vec<u8>, u32, u32)> = None;
+        let mut frame_no = 0u64;
+        let mut last_frac = 0.0f64;
+
+        let pump = (|| -> Result<u64> {
+            let mut reader = dec_out;
+            loop {
+                if cancel.load(Ordering::Relaxed) {
+                    break Err(anyhow::anyhow!("export cancelled"));
+                }
+                if !read_frame(&mut reader, &mut buf)? {
+                    break Ok(frame_no);
+                }
+
+                // States are chronological and non-overlapping: advance the
+                // pointer, then blend if this frame falls inside the window.
+                let t = frame_no as f64 / fps;
+                while idx < states.len() && t >= states[idx].end_secs {
+                    idx += 1;
+                }
+                if let Some(st) = states.get(idx).filter(|s| t >= s.start_secs) {
+                    if cached_idx != Some(idx) {
+                        let img = image::open(&st.png)
+                            .with_context(|| format!("failed to read {}", st.png.display()))?
+                            .to_rgba8();
+                        let (rw, rh) = (img.width(), img.height());
+                        cached = Some((img.into_raw(), rw, rh));
+                        cached_idx = Some(idx);
+                    }
+                    let (src, sw, sh) = cached.as_ref().expect("state cached");
+                    // Same placement math as the preview and the graph's overlay
+                    // expressions: centered, with the box anchor at position_pct.
+                    let x = ((w as f32 - *sw as f32) / 2.0).round() as i32;
+                    let y =
+                        caption_y(h, position_pct, st.anchor, st.box_top, st.box_h).round() as i32;
+
+                    // Popup motion runs across the per-word states of the same
+                    // popup. Exit motion wins near the popup's end, so short
+                    // popups still leave visibly.
+                    let in_dur = motion.duration_ms as f64 / 1000.0;
+                    let out_dur = motion.exit_duration_ms as f64 / 1000.0;
+                    let phase = if motion.exit != PopupEffect::None
+                        && out_dur > 0.0
+                        && t >= st.popup_end_secs - out_dur
+                    {
+                        MotionPhase::Exit(
+                            ((t - (st.popup_end_secs - out_dur)) / out_dur).clamp(0.0, 1.0) as f32,
+                        )
+                    } else if motion.popup != PopupEffect::None
+                        && in_dur > 0.0
+                        && t < st.popup_start_secs + in_dur
+                    {
+                        MotionPhase::Entrance(
+                            ((t - st.popup_start_secs) / in_dur).clamp(0.0, 1.0) as f32
+                        )
+                    } else {
+                        MotionPhase::Settled
                     };
-                    blend_transformed(
-                        &mut buf, w, h, src, *sw, *sh, x, y, pivot_x, pivot_y, transform,
-                    );
+                    let transform = phase.transform(motion, st.font_px);
+                    if transform.is_identity() {
+                        blend_straight(&mut buf, w, h, src, *sw, *sh, x, y);
+                    } else {
+                        let pivot_x = *sw as f32 / 2.0;
+                        let pivot_y = match st.anchor {
+                            Anchor::Center => st.box_top + st.box_h / 2.0,
+                            Anchor::Top => st.box_top,
+                            Anchor::Bottom => st.box_top + st.box_h,
+                        };
+                        blend_transformed(
+                            &mut buf, w, h, src, *sw, *sh, x, y, pivot_x, pivot_y, transform,
+                        );
+                    }
                 }
-            }
 
-            // Progress reported by the encoder as it consumes our frames.
-            while let Ok(us) = prog_rx.try_recv() {
-                let frac = if us >= f64::MAX {
-                    1.0
-                } else {
-                    (us / 1e6 / total_secs).clamp(0.0, 1.0)
-                };
-                if frac > last_frac {
-                    last_frac = frac;
-                    on_progress(frac);
+                // Progress reported by the encoder as it consumes our frames.
+                while let Ok(us) = prog_rx.try_recv() {
+                    let frac = if us >= f64::MAX {
+                        1.0
+                    } else {
+                        (us / 1e6 / total_secs).clamp(0.0, 1.0)
+                    };
+                    if frac > last_frac {
+                        last_frac = frac;
+                        on_progress(frac);
+                    }
                 }
-            }
 
-            enc_in
-                .write_all(&buf)
-                .map_err(|e| anyhow::anyhow!("encoder pipe closed: {e}"))?;
-            frame_no += 1;
+                enc_in
+                    .write_all(&buf)
+                    .map_err(|e| anyhow::anyhow!("encoder pipe closed: {e}"))?;
+                frame_no += 1;
+            }
+        })();
+
+        // End the encoder's input stream (or kill both on failure), then reap.
+        drop(enc_in);
+        done.store(true, Ordering::Relaxed);
+        if pump.is_err() {
+            dec.kill();
+            enc.kill();
         }
-    })();
-
-    // End the encoder's input stream (or kill both on failure), then reap.
-    drop(enc_in);
-    if pump.is_err() {
-        let _ = dec.kill();
-        let _ = enc.kill();
-    }
-    let enc_status = loop {
-        match prog_rx.recv() {
-            Ok(us) => {
-                let frac = if us >= f64::MAX {
-                    1.0
-                } else {
-                    (us / 1e6 / total_secs).clamp(0.0, 1.0)
-                };
-                if frac > last_frac {
-                    last_frac = frac;
-                    on_progress(frac);
+        let enc_status = loop {
+            match prog_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(us) => {
+                    let frac = if us >= f64::MAX {
+                        1.0
+                    } else {
+                        (us / 1e6 / total_secs).clamp(0.0, 1.0)
+                    };
+                    if frac > last_frac {
+                        last_frac = frac;
+                        on_progress(frac);
+                    }
                 }
+                // Poll rather than block, so a cancel or an early exit is seen
+                // even if the progress thread is still draining.
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => match enc.try_wait() {
+                    Ok(Some(status)) => break Ok(status),
+                    Ok(None) => {}
+                    Err(e) => break Err(e),
+                },
+                // Progress thread finished = encoder exited.
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break enc.wait(),
             }
-            // Progress thread finished = encoder exited.
-            Err(_) => break enc.wait().context("failed to wait for the encoder")?,
-        }
-    };
+        };
+        (pump, enc_status)
+    });
+
     let _ = dec.wait();
-    let _ = dec_err_thread.join();
+    dec.join_err();
+    enc.join_err();
     let _ = prog_thread.join();
-    let _ = enc_err_thread.join();
+
+    // A cancel can land after the decoder reaches EOF but before the rename;
+    // never treat that as a successful export.
+    if cancel.load(Ordering::Relaxed) {
+        bail!("export cancelled");
+    }
+    let enc_status = enc_status.context("failed to wait for the encoder")?;
 
     let tail = |buf: &Arc<Mutex<Vec<u8>>>| {
         String::from_utf8_lossy(&buf.lock().unwrap())
@@ -817,32 +1005,10 @@ pub fn export_pipe(
     Ok(())
 }
 
-/// Grab a single frame at `at_secs` as a PNG (used by the GUI's live
-/// preview, and by verification scripts).
-pub fn extract_frame(tools: &Fftools, input: &Path, at_secs: f64, out: &Path) -> Result<()> {
-    let status = Command::new(&tools.ffmpeg)
-        .arg("-hide_banner")
-        .arg("-loglevel")
-        .arg("error")
-        .arg("-y")
-        .arg("-ss")
-        .arg(format!("{at_secs:.3}"))
-        .arg("-i")
-        .arg(input)
-        .arg("-frames:v")
-        .arg("1")
-        .arg(out)
-        .status()
-        .context("failed to spawn ffmpeg")?;
-    if !status.success() {
-        bail!("frame extraction failed at {at_secs:.3}s");
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn placement_uses_the_box_anchor() {
@@ -870,5 +1036,121 @@ mod tests {
 
         let empty = tempfile::tempdir().unwrap();
         assert!(render_nodes(empty.path()).is_empty());
+    }
+
+    /// A cancel must interrupt a decoder blocked on a pipe, not just be noticed
+    /// between frames. The fixture passes the one-frame size check and then
+    /// hangs, exactly like a wedged driver.
+    #[cfg(unix)]
+    #[test]
+    fn cancel_interrupts_a_hung_decoder() {
+        let real = match crate::probe::find_ffmpeg() {
+            Ok(tools) => tools.ffmpeg,
+            Err(e) => {
+                eprintln!("skipping: no real ffmpeg available ({e:#})");
+                return;
+            }
+        };
+        let work = tempfile::tempdir().unwrap();
+        let clip = work.path().join("clip.mp4");
+        let status = Command::new(&real)
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x203040:s=64x64:r=30:d=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&clip)
+            .status()
+            .expect("spawn the synthesizing ffmpeg");
+        assert!(status.success());
+
+        // Delegate the size check to the real binary, hang on the decoder.
+        let wrapper = work.path().join("ffmpeg-hang");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/sh\ncase \" $* \" in\n  *\" -frames:v 1 \"*) exec '{}' \"$@\";;\n  *) exec /bin/sleep 120;;\nesac\n",
+                real.display()
+            ),
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&wrapper).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&wrapper, perms).unwrap();
+        }
+
+        let tools = Fftools {
+            ffmpeg: wrapper,
+            ffprobe: real,
+            source: crate::source::Source::Env,
+        };
+        let info = VideoInfo {
+            display_width: 64,
+            display_height: 64,
+            duration_secs: 1.0,
+            fps: 30.0,
+            frame_rate: "30/1".into(),
+            has_audio: false,
+            pix_fmt: "yuv420p".into(),
+            color_range: "tv".into(),
+            color_space: "bt709".into(),
+            color_primaries: "bt709".into(),
+            color_transfer: "bt709".into(),
+        };
+        let states = vec![CaptionState {
+            png: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/icon.png"),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            box_top: 0.0,
+            box_h: 10.0,
+            anchor: Anchor::Center,
+            popup_start_secs: 0.0,
+            popup_end_secs: 1.0,
+            font_px: 10.0,
+        }];
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_thread = {
+            let cancel = Arc::clone(&cancel);
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                cancel.store(true, Ordering::Relaxed);
+            })
+        };
+        let started = std::time::Instant::now();
+        let err = export_pipe(
+            &tools,
+            &clip,
+            &work.path().join("out.mp4"),
+            &info,
+            &states,
+            50.0,
+            &MotionStyle::default(),
+            Encoder::X264,
+            &cancel,
+            |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        cancel_thread.join().unwrap();
+        assert!(err.contains("cancelled"), "{err}");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "cancel took {:?}",
+            started.elapsed()
+        );
     }
 }

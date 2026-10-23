@@ -8,8 +8,8 @@ use crate::probe::Fftools;
 /// mono float samples in [-1, 1]; producing a raw PCM blob means we can read
 /// it straight into a `Vec<f32>` with no WAV parsing.
 pub fn extract_pcm(tools: &Fftools, video: &Path, pcm: &Path) -> Result<()> {
-    let out = Command::new(&tools.ffmpeg)
-        .arg("-y")
+    let mut cmd = Command::new(&tools.ffmpeg);
+    cmd.arg("-y")
         .arg("-i")
         .arg(video)
         .arg("-vn")
@@ -19,8 +19,10 @@ pub fn extract_pcm(tools: &Fftools, video: &Path, pcm: &Path) -> Result<()> {
         .arg("16000")
         .arg("-f")
         .arg("f32le")
-        .arg(pcm)
-        .output()
+        .arg(pcm);
+    // A long video's audio can take a while, but a dead mount must not hang the
+    // transcription worker forever.
+    let out = crate::process::output_with_timeout(&mut cmd, std::time::Duration::from_secs(600))
         .context("failed to run ffmpeg for audio extraction")?;
 
     if !out.status.success() {

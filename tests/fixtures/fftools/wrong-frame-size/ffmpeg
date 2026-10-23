@@ -1,0 +1,11 @@
+#!/bin/sh
+# Harness fixture: the decoder is real; ffprobe lies about the frame size so
+# the export must notice the mismatch before it writes mis-framed video.
+if [ -n "${TEXTLAYR_REAL_FFMPEG:-}" ]; then
+    exec "$TEXTLAYR_REAL_FFMPEG" "$@"
+fi
+real=$(command -v ffmpeg) || {
+    echo "textlayr-fixture: no real ffmpeg on PATH" >&2
+    exit 127
+}
+exec "$real" "$@"

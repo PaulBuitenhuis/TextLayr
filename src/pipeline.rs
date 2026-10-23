@@ -4,7 +4,7 @@
 //! same code drives stderr printing in the CLI and a channel in the GUI (the
 //! whisper callback runs on the calling thread and requires a `'static` sink).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -256,10 +256,10 @@ pub type ExportSink = Box<dyn FnMut(ExportProgress) + Send>;
 /// finishes. Encoding goes through the raw-pipe backend (see
 /// [`export::export_pipe`]) with `encoder` selecting VAAPI/x264/auto.
 ///
-/// `cancel` is polled between states and between encoded frames; when it is set
-/// the ffmpeg children are killed, the half-written `output` is removed, and the
-/// error message contains "cancelled" so callers can tell a cancel from a
-/// failure.
+/// `cancel` is polled between states and while the encode runs; when it is set
+/// the ffmpeg children are killed and the error message contains "cancelled" so
+/// callers can tell a cancel from a failure. The caller owns the destination
+/// (see [`crate::output::ExportTarget`]) and removes its part file on error.
 #[allow(clippy::too_many_arguments)] // a pipeline step: each parameter is distinct
 pub fn export_video(
     tools: &Fftools,
@@ -301,28 +301,13 @@ pub fn export_video(
         |frac| progress(ExportProgress::new(ExportPhase::Encoding, frac as f32)),
     );
 
-    // Either way, don't leave a truncated mp4 behind: on cancel it is unwanted,
-    // and on failure it is unusable.
-    if let Err(e) = encoded {
-        let _ = std::fs::remove_file(output);
-        return Err(e);
-    }
+    // The caller owns the destination. Encoders write to an
+    // [`output::ExportTarget`] part file, so a failure or cancel here must not
+    // delete anything the caller did not create.
+    encoded?;
 
     work.close().context("failed to clean up export temp dir")?;
     Ok(())
-}
-
-/// Default output path: `<input stem>_textlayr.mp4` next to the input.
-pub fn default_output(input: &Path) -> PathBuf {
-    let stem = input
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "video".to_string());
-    let name = format!("{stem}_textlayr.mp4");
-    match input.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.join(name),
-        _ => PathBuf::from(name),
-    }
 }
 
 #[cfg(test)]
