@@ -65,7 +65,7 @@ jobs:
           TEXTLAYR_VERSION: ${{ steps.version.outputs.value }}
         run: scripts/package_linux.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.slug }}
           path: |
