@@ -96,6 +96,22 @@ scripts/package_linux.sh
 ./target/release/textlayr path/to/video.mp4 --headless
 ```
 
+### The shipped binary's CPU floor
+
+`whisper-rs-sys` builds whisper.cpp through CMake, and CMake enables
+`GGML_NATIVE` by default. On a machine with AVX-512 that adds `-march=native`
+and bakes those kernels into the binary, so it dies with SIGILL on an older
+CPU. The Linux packaging script and the Linux CI jobs therefore export
+`GGML_NATIVE=OFF`: ggml keeps its per-ISA defaults (SSE4.2/AVX/AVX2/FMA/F16C/
+BMI2 — Intel Haswell 2013, AMD Excavator 2015) and leaves AVX-512* off.
+
+`src/transcribe.rs` refuses to load a model when the CPU is below that floor,
+and the Linux CI job disassembles the binary to prove no AVX-512 kernel leaked
+in. macOS keeps native codegen: it is a single ISA family, and a native build
+there is both faster and still portable across Apple Silicon. If you build a
+Linux binary by hand, export `GGML_NATIVE=OFF` first — or just use
+`scripts/package_linux.sh`, which does it for you.
+
 ## Tests
 
 ```sh

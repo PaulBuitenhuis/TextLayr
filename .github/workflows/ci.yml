@@ -30,17 +30,29 @@ jobs:
 
   test-linux:
     name: build + test (Linux)
-    runs-on: ubuntu-latest
+    # Pinned to the oldest Ubuntu the release targets: the tarball is built here
+    # and must run on the same glibc (2.35) as the one release.yml ships. The
+    # ubuntu-latest image's newer glibc would make the test artifact unusable on
+    # 22.04/24.04 machines.
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       # apt must never wait on a debconf/restart prompt in a headless runner.
       DEBIAN_FRONTEND: noninteractive
+      # No `-march=native` in the shipped binary; see scripts/package_linux.sh.
+      GGML_NATIVE: "OFF"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          # whisper.cpp's CMake build does not fingerprint GGML_NATIVE, so a
+          # cache restored from a native build would skip the C rebuild and serve
+          # an AVX-512 binary to the assertion below. Keep this job's cache
+          # separate from the portable one.
+          key: ggml-native-off
       # Everything apt is installed in one step: egui/eframe need the X11 and
       # Wayland headers, egui 0.37 finds system fonts through fontique, which
       # pkg-configs libfontconfig at build time, and the harness drives a real
@@ -71,18 +83,43 @@ jobs:
         run: cargo clippy --locked --all-targets --no-deps -- -D warnings
       - name: cargo test
         run: cargo test --locked --all-targets
-      # Build the shippable tarball so the packaging script is exercised on every
-      # run and a build can be downloaded for a real-machine smoke test. CI skips
-      # the AppImage (needs appimagetool); releases still produce it.
-      - name: package (Linux tarball)
+      # Build both shippable Linux artefacts on every run, so the packaging
+      # script and the AppImage recipe cannot rot between tags. appimagetool is
+      # an AppImage itself; SKIP_APPIMAGE would let a broken recipe go unnoticed,
+      # and release.yml already assumes it works.
+      - name: install appimagetool
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$HOME/bin/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$HOME/bin/appimagetool"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: package (Linux tarball + AppImage)
         env:
           TEXTLAYR_VERSION: 0.0.0-ci.${{ github.run_number }}
-          SKIP_APPIMAGE: "1"
         run: scripts/package_linux.sh
+
+      # whisper.cpp is built with GGML_NATIVE=OFF (job env, mirrored in
+      # scripts/package_linux.sh). If that ever regresses, the runner's AVX-512
+      # CPUs bake those kernels in and the first transcription on an older
+      # machine is SIGILL. Check the binary we actually ship, not the build
+      # flags. AVX-VNNI (vpdpbusd/vpdpwssd) only appears when a
+      # native/AVX-VNNI build leaked in too.
+      - name: assert no AVX-512 in the binary
+        run: |
+          if objdump -d target/release/textlayr | grep -qE '%zmm|vpternlog|vpdpbusd|vpdpwssd'; then
+            echo "error: AVX-512/AVX-VNNI instructions in target/release/textlayr" >&2
+            objdump -d target/release/textlayr | grep -m5 -E '%zmm|vpternlog|vpdpbusd|vpdpwssd' >&2
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v7
         with:
           name: textlayr-linux-x86_64
-          path: dist/TextLayr-*-linux-x86_64.tar.xz
+          path: |
+            dist/TextLayr-*-linux-x86_64.tar.xz
+            dist/TextLayr-*-linux-x86_64.AppImage
           if-no-files-found: error
 
   audit:

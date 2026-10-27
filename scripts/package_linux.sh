@@ -29,6 +29,14 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── 1. release build ────────────────────────────────────────────────────────
 say "building release binary"
+# whisper.cpp must not bake the build machine's instruction set into the
+# tarball. ggml's native mode adds `-march=native`, which on an AVX-512 CI
+# runner produces a binary that dies with SIGILL on any older CPU. Off leaves
+# the per-ISA defaults (AVX2/FMA/F16C/BMI2, the Haswell 2013 floor), which
+# `src/transcribe.rs` enforces at runtime and `ci.yml` checks by disassembling
+# the binary. Only Linux sets this: macOS is a single ISA family and keeps its
+# native codegen.
+export GGML_NATIVE="${GGML_NATIVE:-OFF}"
 cargo build --release
 bin="$repo_root/target/release/textlayr"
 [[ -x "$bin" ]] || die "release binary not found at $bin"
@@ -88,18 +96,22 @@ else
         mkdir -p "$appdir/usr/bin" \
                  "$appdir/usr/share/textlayr/assets/fonts" \
                  "$appdir/usr/share/icons/hicolor" \
-                 "$appdir/usr/share/applications"
+                 "$appdir/usr/share/applications" \
+                 "$appdir/usr/share/licenses/textlayr"
         cp "$bin" "$appdir/usr/bin/textlayr"
         cp "$repo_root/assets/fonts"/*.ttf "$appdir/usr/share/textlayr/assets/fonts/"
         [[ -f "$repo_root/assets/fonts/OFL.txt" ]] && \
             cp "$repo_root/assets/fonts/OFL.txt" "$appdir/usr/share/textlayr/assets/fonts/"
+        # MIT requires the notice to travel with the binary; the third-party
+        # texts are compiled into it (Settings → About → Licenses).
+        cp "$repo_root/LICENSE" "$appdir/usr/share/licenses/textlayr/LICENSE"
         cp -R "$repo_root/assets/icons/hicolor/." "$appdir/usr/share/icons/hicolor/"
         cp "$repo_root/assets/icons/hicolor/256x256/apps/textlayr.png" "$appdir/textlayr.png"
         cp "$appdir/textlayr.png" "$appdir/.DirIcon"
         cat > "$appdir/textlayr.desktop" <<'EOF'
 [Desktop Entry]
 Name=TextLayr
-Comment=Offline karaoke captions for short-form video
+Comment=Burn word-by-word captions into video, offline
 Exec=textlayr %F
 Icon=textlayr
 MimeType=video/*;

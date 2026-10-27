@@ -9,6 +9,58 @@ use whisper_rs::{
 
 use crate::model::Model;
 
+/// x86-64 CPU features the Linux build of whisper.cpp is compiled against.
+///
+/// `scripts/package_linux.sh` and the Linux CI jobs set `GGML_NATIVE=OFF`, which
+/// leaves ggml's per-ISA defaults on: AVX2, FMA, F16C and BMI2 but no AVX-512.
+/// ggml picks them at build time and runs them unconditionally, so a CPU below
+/// this floor takes a SIGILL during the first transcription — before any error
+/// can reach the user.
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+const X86_CPU_FLOOR: [&str; 4] = ["AVX2", "FMA", "F16C", "BMI2"];
+
+/// The entries of `checks` whose probe reported `false`, in order. Pure so the
+/// message can be tested without a CPU that is missing a feature.
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+fn missing_features<'a>(checks: &[(&'a str, bool)]) -> Vec<&'a str> {
+    checks
+        .iter()
+        .filter(|(_, present)| !present)
+        .map(|(name, _)| *name)
+        .collect()
+}
+
+/// `Ok` when every probe passed, otherwise the user-facing refusal.
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+fn check_x86_cpu_floor(checks: &[(&str, bool)]) -> Result<()> {
+    let missing = missing_features(checks);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "this CPU is missing {} — the whisper.cpp build needs AVX2, FMA, F16C and BMI2 \
+         (Intel Haswell from 2013, or AMD Excavator from 2015, and newer), so speech \
+         recognition cannot run here",
+        missing.join(", ")
+    )
+}
+
+/// Refuse to load a model on a CPU that would crash inside ggml.
+///
+/// ggml's own `ggml_cpu_has_*` helpers answer "was this compiled in", not "does
+/// this CPU have it", so the check goes through real CPUID via `std::arch`.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn require_x86_cpu_floor() -> Result<()> {
+    use std::arch::is_x86_feature_detected;
+    let checks = [
+        (X86_CPU_FLOOR[0], is_x86_feature_detected!("avx2")),
+        (X86_CPU_FLOOR[1], is_x86_feature_detected!("fma")),
+        (X86_CPU_FLOOR[2], is_x86_feature_detected!("f16c")),
+        (X86_CPU_FLOOR[3], is_x86_feature_detected!("bmi2")),
+    ];
+    check_x86_cpu_floor(&checks)
+}
+
 /// A single transcribed word with word-level timing (seconds).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Word {
@@ -35,6 +87,11 @@ pub fn transcribe(
     if samples.is_empty() {
         bail!("no audio samples to transcribe");
     }
+
+    // ggml is compiled for a fixed ISA on Linux; on an older CPU it would
+    // SIGILL deep inside the first inference call.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    require_x86_cpu_floor()?;
 
     // Redirect whisper.cpp/GGML C logs away from stdout (no log backend = dropped).
     whisper_rs::install_logging_hooks();
@@ -382,5 +439,35 @@ mod tests {
         let path = write_json(dir.path(), r#"{"words":[]}"#);
         let msg = format!("{:#}", read_words(&path).unwrap_err());
         assert!(msg.contains("JSON array"), "{msg}");
+    }
+
+    #[test]
+    fn the_cpu_floor_names_only_what_is_missing() {
+        let all = [
+            ("AVX2", true),
+            ("FMA", true),
+            ("F16C", true),
+            ("BMI2", true),
+        ];
+        assert!(missing_features(&all).is_empty());
+        assert!(check_x86_cpu_floor(&all).is_ok());
+
+        let some = [
+            ("AVX2", true),
+            ("FMA", false),
+            ("F16C", true),
+            ("BMI2", false),
+        ];
+        assert_eq!(missing_features(&some), vec!["FMA", "BMI2"]);
+        let msg = format!("{:#}", check_x86_cpu_floor(&some).unwrap_err());
+        assert!(msg.starts_with("this CPU is missing FMA, BMI2"), "{msg}");
+
+        let none = [
+            ("AVX2", false),
+            ("FMA", false),
+            ("F16C", false),
+            ("BMI2", false),
+        ];
+        assert_eq!(missing_features(&none), X86_CPU_FLOOR.to_vec());
     }
 }
