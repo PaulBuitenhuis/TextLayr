@@ -1044,7 +1044,8 @@ mod tests {
         let primary = release.primary.expect("the host platform has an artifact");
         let expected = match platform::os() {
             Os::Macos => ArtifactKind::MacApp,
-            _ => ArtifactKind::UnixAppImage,
+            // No $APPDIR here, so a Linux run counts as a tarball install.
+            _ => ArtifactKind::UnixBinaryTar,
         };
         assert_eq!(primary.kind, expected);
         assert_eq!(
