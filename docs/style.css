@@ -270,6 +270,8 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .cta-alt { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
 .cta-alt a { color: var(--accent); }
+.hero-code { margin-top: 12px; }
+.hero-code code { font-size: 0.78rem; }
 
 /* In-page anchors land under the 62px sticky header without this. */
 section[id] { scroll-margin-top: 78px; }
@@ -423,6 +425,41 @@ section[id] { scroll-margin-top: 78px; }
   font-size: 0.9rem; font-weight: 700;
   margin-bottom: 14px;
 }
+
+/* Scripting: design in the app, apply from the shell */
+.script-block {
+  max-width: 720px;
+  margin: 64px auto 0;
+  padding-top: 40px;
+  border-top: 1px solid var(--border-soft);
+  text-align: center;
+}
+.script-title { font-size: 1.32rem; }
+.script-lede {
+  max-width: 600px;
+  margin: 8px auto 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.script-steps {
+  list-style: none;
+  margin: 30px 0 0;
+  padding: 0;
+  text-align: left;
+}
+.script-steps > li {
+  position: relative;
+  padding-left: 46px;
+  margin-bottom: 26px;
+}
+.script-steps > li > .step-num {
+  position: absolute; left: 0; top: -3px;
+  margin: 0;
+}
+.script-steps p { margin: 0 0 8px; color: var(--muted); font-size: 0.93rem; }
+.script-steps p b { color: var(--text); }
+.script-steps .code { margin-top: 6px; }
+.script-steps .code code { font-size: 0.8rem; }
 
 /* Screenshot */
 .shot { margin: 56px auto 0; max-width: 940px; }
@@ -863,8 +900,8 @@ section[id] { scroll-margin-top: 78px; }
 .install-alt { font-size: 0.88rem !important; margin-top: 10px !important; }
 .install-alt a { color: var(--accent); }
 
-/* Two-path install layout: disk image (primary) + terminal. */
-#install, #terminal { scroll-margin-top: 88px; }
+/* Two-path install layout: terminal first (no prompts) + disk image. */
+#install, #terminal, #dmg, #scripting { scroll-margin-top: 88px; }
 
 .install-jump {
   margin: 22px 0 0;

@@ -6,8 +6,9 @@
 </p>
 
 <p align="center">
-  <b>Offline caption burner for short-form video.</b><br>
-  Drop in a video, review the transcript, and export with word-by-word captions burned in.<br>
+  <b>Burn word-by-word captions into video, on your own Mac.</b><br>
+  Design the look in the app — edit the transcript, restyle, watch the live preview —<br>
+  then save it as a profile and run the same pipeline headless over a folder of clips.<br>
   Free, open source and donation-supported. No uploads, no accounts, and no network after the one-time setup download (beyond an optional once-a-day update check).
 </p>
 
@@ -49,6 +50,23 @@
   replaces transcript edits.
 - **Also a CLI.** The same pipeline is available headlessly for scripting.
 
+## Why not just a script — or just a GUI app?
+
+- **A script has no preview.** The usual local caption tools write an `.ass` file
+  and hope. Here you edit the transcript, restyle, and watch each word light up
+  before anything is burned.
+- **A GUI app has no batch.** Most Mac caption apps do one file at a time and
+  keep the look inside the app. Here the look you just made becomes
+  `--profile user:my-look` over a folder of clips.
+- **The profile is the bridge.** A profile is one JSON file: commit one per show,
+  hand it to a collaborator, or apply it in CI. Same look, every episode.
+- **The renderer is ours.** Caption states are rendered to pixels and composited
+  in Rust — not described in ASS markup — which is why pills, per-word scale,
+  motion and bar lower-thirds exist at all.
+
+Nothing to assemble, either: no Python, no `pip`, no `libass` to find. TextLayr
+fetches its own `ffmpeg` and model on first run.
+
 ## Requirements
 
 - **macOS 13 (Ventura) or later on Apple Silicon (arm64)**. Published releases
@@ -64,8 +82,37 @@
 
 TextLayr is free and open source, so it isn't signed with a paid Apple Developer
 ID and can't be notarized. macOS therefore refuses to open it the way it opens a
-paid app. There are two ways in — the disk image is the normal one, and the
-terminal script avoids the warning entirely.
+paid app. That is the only thing standing in the way: there are two ways in, and
+they differ only in whether macOS warns you. The terminal script never gets the
+warning; the disk image needs one approval, once.
+
+### Terminal — no warnings, no password
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
+```
+
+Files fetched with `curl` don't carry the `com.apple.quarantine` flag that
+browsers and AirDrop add to downloads, so Gatekeeper is never consulted: TextLayr
+installs and opens like any other app. The script reads the same release manifest
+the app's own updater trusts, checks the download's SHA-256, unpacks it with
+`ditto` (which preserves the code signature) and installs to `/Applications` — or
+`~/Applications` when `/Applications` isn't writable. It never asks for a
+password. Read it first if you prefer:
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | less
+```
+
+Options go through `sh -s --`, e.g. `... | sh -s -- --dir ~/Applications
+--no-open`. `--cli` also puts a `textlayr` command on your `PATH`
+(`/usr/local/bin` when writable, otherwise `~/.local/bin`). `--version <x.y.z>`
+installs a specific release, and `--uninstall` removes the app and everything
+TextLayr downloaded (it also removes your preferences):
+
+```sh
+curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
+```
 
 ### Disk image — point and click
 
@@ -73,7 +120,10 @@ Download the latest `TextLayr-<version>.dmg` from
 [Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), or use the
 stable link:
 [TextLayr.dmg](https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg).
-Then:
+
+macOS **will** block the first launch — that's expected for an unnotarized app,
+and steps 2–4 are the one-time fix. The terminal install above avoids it
+altogether. Then:
 
 1. **Drag TextLayr into Applications before opening it.** Launching it from the
    disk image makes macOS run it from a temporary read-only copy, which stops it
@@ -111,34 +161,6 @@ the app downloads those updates itself — so they never trip Gatekeeper.
 Step-by-step guide with pictures:
 <https://paulbuitenhuis.github.io/TextLayr/#install> — or the printable
 [PDF guide](https://paulbuitenhuis.github.io/TextLayr/assets/install/TextLayr-install-guide.pdf).
-
-### Terminal — no warnings, no password
-
-```sh
-curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
-```
-
-Files fetched with `curl` don't carry the `com.apple.quarantine` flag that
-browsers and AirDrop add to downloads, so Gatekeeper is never consulted: TextLayr
-installs and opens like any other app. The script reads the same release manifest
-the app's own updater trusts, checks the download's SHA-256, unpacks it with
-`ditto` (which preserves the code signature) and installs to `/Applications` — or
-`~/Applications` when `/Applications` isn't writable. It never asks for a
-password. Read it first if you prefer:
-
-```sh
-curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | less
-```
-
-Options go through `sh -s --`, e.g. `... | sh -s -- --dir ~/Applications
---no-open`. `--cli` also puts a `textlayr` command on your `PATH`
-(`/usr/local/bin` when writable, otherwise `~/.local/bin`). `--version <x.y.z>`
-installs a specific release, and `--uninstall` removes the app and everything
-TextLayr downloaded (it also removes your preferences):
-
-```sh
-curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
-```
 
 ### Linux (development only)
 
@@ -256,6 +278,19 @@ are no thumbnail previews to browse.
   or copied between machines. Every config save also keeps the previous document
   as `config-v3.bak` next to `config.json`.
 
+Profiles are shared between the app and the CLI. Anything you save in the app is
+available headlessly by name, so the look you refined in the preview is the look
+your batch job uses:
+
+```sh
+textlayr --list-profiles                       # built-ins and saved profiles, with ids
+textlayr ep12.mp4 --headless --profile user:my-look
+textlayr ep12.mp4 --headless --profile ./profiles/podcast.json
+```
+
+`--profile` takes `builtin:<name>`, `user:<name>` or a path to a profile JSON
+file — so a profile can live in the repo next to the show it belongs to.
+
 ### Updates
 
 TextLayr reads a small `latest.json` manifest attached to the newest GitHub
@@ -308,13 +343,35 @@ textlayr --version                          # version + build hash
 | `--font-size <pct>` | Glyph size as % of frame height (default 3.4) |
 | `--position <pct>` | Caption box centre as % of frame height (default 72) |
 | `--words-per <n>` | Words per popup, 1–8 (default 3; 1 is word-by-word) |
-| `--profile <id\|path>` | Start from a built-in/saved profile, or a profile JSON file |
+| `--profile <id\|name\|path>` | `builtin:classic`, `user:my-look`, or a profile JSON file |
 | `--list-profiles` | List built-in and saved profiles, then exit |
 | `--encoder <name>` | `auto` (default) · `vaapi` · `videotoolbox` · `x264` |
 | `--graph` | Legacy overlay-graph encoder (higher RAM; motion effects need the default pipe) |
 | `--setup` | Download missing dependencies and exit |
 | `--check-updates` | Check GitHub for a newer release and exit (0 up to date, 10 update available, 1 error) |
 | `-V, --version` | Print the version and build hash |
+
+### Batch and scripting
+
+The CLI runs the same pipeline, so a look designed in the app can be applied
+without opening it:
+
+```sh
+# one show, one look, every episode
+for f in *.mp4; do textlayr "$f" --headless --profile user:podcast; done
+
+# restyle without re-transcribing — the transcript is cached per input and model
+textlayr ep12.mp4 --headless --profile user:podcast --words-per 1
+
+# caption states as PNGs plus the ffmpeg filter script, with no encode
+textlayr ep12.mp4 --png-dir out/states --profile user:podcast
+
+# exit 10 means an update is available (0 up to date, 1 error)
+textlayr --check-updates
+```
+
+More — per-show profiles in git, hand-written transcripts, encoder choices and
+what's in the cache — is in [`docs/RECIPES.md`](docs/RECIPES.md).
 
 ## Building from source
 

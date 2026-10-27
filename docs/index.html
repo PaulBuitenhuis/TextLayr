@@ -120,9 +120,11 @@
 
         <p class="lede">
           TextLayr transcribes your video <b>on your own Mac</b> and burns in
-          word-by-word captions — the TikTok, Reels and Shorts style, where each
-          word lights up as it's spoken. Review every line first, fix the typos,
-          then export. Free, open source, no account.
+          word-by-word captions — the look popular on Shorts and Reels, where
+          each word lights up as it's spoken. Design it in the app: edit the
+          transcript, restyle, watch the preview. Then save the look as a profile
+          and run the same pipeline headless over a folder of clips. Free, open
+          source, no account.
         </p>
 
         <div class="cta-row">
@@ -135,9 +137,19 @@
             Step-by-step install
           </a>
         </div>
+
+        <p class="cta-alt">Or install from the terminal — no security prompt:</p>
+        <div class="code hero-code">
+          <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
+          <button class="copy" type="button" data-copy aria-label="Copy terminal install command"
+                  data-goatcounter-click="copy-install-hero" data-goatcounter-title="Copy terminal install command (hero)">
+            <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+            <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
         <p class="cta-alt">
-          Requires macOS 13+ on Apple Silicon. Prefer the terminal?
-          <a href="#terminal">One command, no security prompts</a>.
+          Requires macOS 13+ on Apple Silicon. Both routes install the same app.
         </p>
 
         <p class="cta-note" data-release-meta hidden>
@@ -207,7 +219,7 @@
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14M5 16h14"/><circle cx="9" cy="8" r="2.3"/><circle cx="15" cy="16" r="2.3"/></svg></div>
           <h3>All the style knobs</h3>
-          <p>Font, colour, outline, pill, underline, box, padding and motion — about twenty controls in one inline panel. Save the look as a profile, or start from a built-in.</p>
+          <p>Font, colour, outline, pill, underline, box, padding and motion — about twenty controls in one inline panel. Save the look as a profile to reuse it in the app or from the CLI.</p>
         </article>
 
         <article class="card">
@@ -218,8 +230,8 @@
 
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7.5 10.2l2.4 2.1-2.4 2.2M12.6 15h4"/></svg></div>
-          <h3>Scriptable CLI included</h3>
-          <p>The same pipeline runs headlessly for batch jobs and automation: <code>textlayr video.mp4 --headless</code>.</p>
+          <h3>The look you designed, as a flag</h3>
+          <p>Save the style as a profile and the same pipeline runs headlessly: <code>textlayr ep12.mp4 --headless --profile user:podcast</code>. One look, every episode.</p>
         </article>
       </div>
 
@@ -311,6 +323,64 @@
              alt="The TextLayr window with the live preview, editable transcript, single-panel style inspector and export button.">
         <figcaption>Live preview, editable transcript, styling, and export — all in one window.</figcaption>
       </figure>
+
+      <div class="script-block" id="scripting">
+        <h3 class="script-title">Design it once, apply it everywhere</h3>
+        <p class="script-lede">
+          The look you saved in the preview is a profile — one JSON file, shared by
+          the app and the CLI. Find it, then use it without opening a window.
+        </p>
+
+        <ol class="script-steps">
+          <li>
+            <span class="step-num">1</span>
+            <p><b>Save as…</b> in the <b>Look</b> dropdown. It lands in
+              <code>~/Library/Application Support/textlayr/profiles/</code> as a
+              profile you can back up or commit.</p>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <p>Find its id:</p>
+            <div class="code">
+              <code>textlayr --list-profiles</code>
+              <button class="copy" type="button" data-copy aria-label="Copy command"
+                      data-goatcounter-click="copy-list-profiles" data-goatcounter-title="Copy list profiles command">
+                <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+                <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <p>Apply it headlessly — one clip, or a folder:</p>
+            <div class="code">
+              <code>textlayr ep12.mp4 --headless --profile user:podcast</code>
+              <button class="copy" type="button" data-copy aria-label="Copy command"
+                      data-goatcounter-click="copy-profile-command" data-goatcounter-title="Copy headless profile command">
+                <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+                <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+            <div class="code">
+              <code>for f in *.mp4; do textlayr "$f" --headless --profile user:podcast; done</code>
+              <button class="copy" type="button" data-copy aria-label="Copy command"
+                      data-goatcounter-click="copy-batch-command" data-goatcounter-title="Copy batch command">
+                <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+                <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+          </li>
+        </ol>
+
+        <p class="install-alt">
+          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/RECIPES.md" rel="noopener"
+             data-goatcounter-click="read-recipes">More scripting recipes</a>
+          — per-show profiles in git, hand-written timings, stills and CI.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -325,12 +395,60 @@
       </p>
 
       <p class="install-jump">
-        Comfortable with Terminal?
-        <a href="#terminal">One command, no security prompts →</a>
+        Would rather point and click?
+        <a href="#dmg">Download the disk image →</a>
       </p>
 
-      <article class="install-card install-card--primary">
-        <span class="install-badge">Recommended</span>
+      <article class="install-card install-card--primary" id="terminal">
+        <span class="install-badge install-badge--alt">No security prompt</span>
+        <h3>Terminal</h3>
+        <p class="install-lede">
+          One command installs the app and skips the warning entirely — files
+          fetched with <code>curl</code> never get the quarantine flag that
+          browsers add. No password, no System Settings detour. Open
+          <b>Terminal</b> (press ⌘Space, type <i>Terminal</i>, press Return),
+          paste this line, and press Return:
+        </p>
+        <div class="code">
+          <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
+          <button class="copy" type="button" data-copy aria-label="Copy command"
+                  data-goatcounter-click="copy-install-command" data-goatcounter-title="Copy terminal install command">
+            <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+            <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+        <p class="install-alt">
+          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/install.sh" rel="noopener"
+             data-goatcounter-click="read-install-script">Read the script first</a>
+          — a self-contained POSIX shell script. It checks the release's SHA-256 and installs
+          to <code>/Applications</code>, or <code>~/Applications</code> when that
+          isn't writable.
+        </p>
+        <details class="install-details">
+          <summary>Options</summary>
+          <p>
+            Pass options through <code>sh -s --</code>. <code>--cli</code> installs a
+            <code>textlayr</code> command onto your <code>PATH</code> (and prints
+            the line to add if the folder isn't on it),
+            <code>--version &lt;x.y.z&gt;</code> installs a specific release, and
+            <code>--uninstall</code> removes the app plus everything it
+            downloaded.
+          </p>
+          <div class="code">
+            <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --no-open</code>
+            <button class="copy" type="button" data-copy aria-label="Copy command"
+                    data-goatcounter-click="copy-install-options" data-goatcounter-title="Copy install options command">
+              <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
+              <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
+              <span class="copy-label">Copy</span>
+            </button>
+          </div>
+        </details>
+      </article>
+
+      <article class="install-card" id="dmg">
+        <span class="install-badge install-badge--alt">Point and click</span>
         <h3>Disk image</h3>
         <p class="install-lede">
           Download the disk image, drag the app into Applications, and allow it
@@ -446,54 +564,6 @@
              data-goatcounter-click="install-guide-pdf" data-goatcounter-title="Download install guide PDF">Download the two-page PDF</a>
           — the same steps with the pictures.
         </p>
-      </article>
-
-      <article class="install-card" id="terminal">
-        <span class="install-badge install-badge--alt">No security prompt</span>
-        <h3>Terminal</h3>
-        <p class="install-lede">
-          One command installs the app and skips the warning entirely — files
-          fetched with <code>curl</code> never get the quarantine flag that
-          browsers add. No password, no System Settings detour. Open
-          <b>Terminal</b> (press ⌘Space, type <i>Terminal</i>, press Return),
-          paste this line, and press Return:
-        </p>
-        <div class="code">
-          <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
-          <button class="copy" type="button" data-copy aria-label="Copy command"
-                  data-goatcounter-click="copy-install-command" data-goatcounter-title="Copy terminal install command">
-            <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
-            <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-            <span class="copy-label">Copy</span>
-          </button>
-        </div>
-        <p class="install-alt">
-          <a href="https://github.com/PaulBuitenhuis/TextLayr/blob/main/docs/install.sh" rel="noopener"
-             data-goatcounter-click="read-install-script">Read the script first</a>
-          — a self-contained POSIX shell script. It checks the release's SHA-256 and installs
-          to <code>/Applications</code>, or <code>~/Applications</code> when that
-          isn't writable.
-        </p>
-        <details class="install-details">
-          <summary>Options</summary>
-          <p>
-            Pass options through <code>sh -s --</code>. <code>--cli</code> installs a
-            <code>textlayr</code> command onto your <code>PATH</code> (and prints
-            the line to add if the folder isn't on it),
-            <code>--version &lt;x.y.z&gt;</code> installs a specific release, and
-            <code>--uninstall</code> removes the app plus everything it
-            downloaded.
-          </p>
-          <div class="code">
-            <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --no-open</code>
-            <button class="copy" type="button" data-copy aria-label="Copy command"
-                    data-goatcounter-click="copy-install-options" data-goatcounter-title="Copy install options command">
-              <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
-              <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-              <span class="copy-label">Copy</span>
-            </button>
-          </div>
-        </details>
       </article>
 
       <aside class="callout">
