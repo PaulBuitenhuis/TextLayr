@@ -3,6 +3,15 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Rehearsal: build the same artefacts a tag would, upload them for a
+  # real-machine test, and stop before publishing. The version is compiled in,
+  # so pass the version the release will carry. Publishing still needs a tag.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (no leading v), e.g. 0.4.0"
+        required: true
+        default: "0.4.0"
 
 permissions:
   contents: write
@@ -25,7 +34,14 @@ jobs:
       - name: Derive version from the tag
         id: version
         shell: bash
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "value=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Package (macOS)
         env:
@@ -42,25 +58,33 @@ jobs:
 
   # Linux is built by CI on every push, but is not published yet: the desktop
   # GUI and the bundled whisper build still need a real Linux pass. Set the
-  # repository variable TEXTLAYR_RELEASE_LINUX=true to publish it again; the
-  # publish job includes the artifacts automatically when they exist.
+  # repository variable TEXTLAYR_RELEASE_LINUX=true to publish it; the publish
+  # job includes the artifacts automatically when they exist. A manual dispatch
+  # is a rehearsal and builds Linux even while the variable is unset.
   build-linux:
     name: build (linux-x86_64)
-    if: vars.TEXTLAYR_RELEASE_LINUX == 'true'
+    if: vars.TEXTLAYR_RELEASE_LINUX == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
+    env:
+      # No `-march=native` in the shipped binary; see scripts/package_linux.sh.
+      GGML_NATIVE: "OFF"
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # `git describe` feeds the build stamp
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # See ci.yml: GGML_NATIVE is not part of whisper.cpp's fingerprint.
+          key: ggml-native-off
 
       - name: Linux GUI dev libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libxkbcommon-dev libwayland-dev libx11-dev libxi-dev \
-            libxcursor-dev libxrandr-dev libxinerama-dev
+            libxcursor-dev libxrandr-dev libxinerama-dev \
+            libfontconfig1-dev
 
       - name: Install appimagetool
         run: |
@@ -73,7 +97,14 @@ jobs:
       - name: Derive version from the tag
         id: version
         shell: bash
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "value=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Package (Linux)
         env:
@@ -97,6 +128,7 @@ jobs:
     needs: [build-macos, build-linux]
     if: >-
       always() &&
+      github.event_name == 'push' &&
       needs.build-macos.result == 'success' &&
       (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
     runs-on: ubuntu-latest
@@ -109,66 +141,17 @@ jobs:
 
       - name: Derive version from the tag
         id: version
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Checksums + update manifest
-        working-directory: dist
         env:
-          VERSION: ${{ steps.version.outputs.value }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          set -euo pipefail
-          V="$VERSION"
-
-          mac_zip="TextLayr-${V}.zip"
-          mac_dmg="TextLayr-${V}.dmg"
-          lin_tar="TextLayr-${V}-linux-x86_64.tar.xz"
-          lin_app="TextLayr-${V}-linux-x86_64.AppImage"
-
-          for f in "$mac_zip" "$mac_dmg"; do
-            [ -f "$f" ] || { echo "missing release artifact: $f" >&2; exit 1; }
-          done
-
-          sha()   { sha256sum "$1" | awk '{print $1}'; }
-          size()  { stat -c%s "$1"; }
-          asset() { printf '{"name":"%s","sha256":"%s","size":%s}' "$1" "$(sha "$1")" "$(size "$1")"; }
-
-          # macOS is mandatory; Linux is included only when CI built it.
-          sha_files=("$mac_zip" "$mac_dmg")
-          platforms="\"macos-arm64\": { \"zip\": $(asset "$mac_zip"), \"dmg\": $(asset "$mac_dmg") }"
-          if [ -f "$lin_tar" ]; then
-            lin_assets="\"tar\": $(asset "$lin_tar")"
-            if [ -f "$lin_app" ]; then
-              lin_assets="${lin_assets}, \"appimage\": $(asset "$lin_app")"
-              sha_files+=("$lin_app")
-            fi
-            # The AppImage is best-effort (needs appimagetool); the .tar.xz is
-            # the fallback.
-            platforms="${platforms}, \"linux-x86_64\": { ${lin_assets} }"
-            sha_files+=("$lin_tar")
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "value=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "no Linux artifacts; publishing the macOS release only" >&2
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
-          sha256sum "${sha_files[@]}" > SHA256SUMS
-
-          # `zip`/`dmg` at the top level stay for backward compatibility; the app
-          # reads `platforms{}` (keyed by platform::slug()).
-          cat > latest.json <<EOF
-          {
-            "version": "${V}",
-            "notes_url": "https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v${V}",
-            "zip": $(asset "$mac_zip"),
-            "dmg": $(asset "$mac_dmg"),
-            "platforms": { ${platforms} }
-          }
-          EOF
-
-          python3 -c "import json; json.load(open('latest.json')); print('latest.json is valid JSON')"
-
-          # Version-agnostic aliases for the website (after SHA256SUMS, so the
-          # checksums only name the versioned files).
-          cp "$mac_dmg" TextLayr.dmg
-          cp "$mac_zip" TextLayr.zip
+      - name: Checksums + update manifest
+        run: scripts/release_manifest.sh dist "${{ steps.version.outputs.value }}"
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
@@ -182,5 +165,7 @@ jobs:
             dist/TextLayr-*.AppImage
             dist/TextLayr.dmg
             dist/TextLayr.zip
+            dist/TextLayr-linux-x86_64.tar.xz
+            dist/TextLayr-linux-x86_64.AppImage
             dist/SHA256SUMS
             dist/latest.json
