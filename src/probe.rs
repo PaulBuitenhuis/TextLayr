@@ -169,17 +169,61 @@ fn validate_dimensions(width: u64, height: u64) -> Result<(u32, u32)> {
     Ok((w, h))
 }
 
+/// The ffprobe `-show_entries` query for a video stream. `stream_side_data`
+/// carries the display-matrix rotation on ffmpeg 6 and newer.
+const PROBE_ENTRIES: &str = "stream=width,height,avg_frame_rate,r_frame_rate,pix_fmt,color_range,color_space,color_primaries,color_transfer:stream_side_data=rotation:format=duration";
+
+/// The same query for ffprobe before 6.0, where rotation was a stream tag.
+const PROBE_ENTRIES_LEGACY: &str = "stream=width,height,avg_frame_rate,r_frame_rate,pix_fmt,color_range,color_space,color_primaries,color_transfer:stream_tags=rotate:format=duration";
+
+fn run_probe(tools: &Fftools, input: &Path, entries: &str) -> Result<std::process::Output> {
+    let mut cmd = Command::new(&tools.ffprobe);
+    cmd.arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-show_entries")
+        .arg(entries)
+        .arg("-of")
+        .arg("json")
+        .arg(input);
+    process::output_with_timeout(&mut cmd, process::PROBE_TIMEOUT)
+        .with_context(|| format!("failed to run ffprobe on {}", input.display()))
+}
+
+/// ffprobe older than 6.0 refuses an `-show_entries` section it does not know.
+fn reports_unknown_section(stderr: &[u8]) -> bool {
+    String::from_utf8_lossy(stderr).contains("No match for section")
+}
+
+/// Rotation in degrees, from either shape ffprobe reports: the display-matrix
+/// side data (ffmpeg 6+) or the older `rotate` stream tag (ffmpeg 4/5).
+fn rotation_of(stream: &serde_json::Value) -> i64 {
+    if let Some(list) = stream.get("side_data_list").and_then(|v| v.as_array()) {
+        for entry in list {
+            if let Some(rotation) = entry.get("rotation").and_then(|v| v.as_i64()) {
+                return rotation;
+            }
+        }
+    }
+    stream
+        .get("tags")
+        .and_then(|tags| tags.get("rotate"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(0)
+}
+
 /// Probe a video file with ffprobe and return display-oriented properties.
 pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
-    let mut cmd = Command::new(&tools.ffprobe);
-    cmd.arg("-v").arg("error")
-        .arg("-select_streams").arg("v:0")
-        .arg("-show_entries")
-        .arg("stream=width,height,avg_frame_rate,r_frame_rate,pix_fmt,color_range,color_space,color_primaries,color_transfer:stream_side_data=rotation:format=duration")
-        .arg("-of").arg("json")
-        .arg(input);
-    let out = process::output_with_timeout(&mut cmd, process::PROBE_TIMEOUT)
-        .with_context(|| format!("failed to run ffprobe on {}", input.display()))?;
+    let mut out = run_probe(tools, input, PROBE_ENTRIES)?;
+    if !out.status.success() && reports_unknown_section(&out.stderr) {
+        // The system ffmpeg may predate `stream_side_data` (Ubuntu 22.04 ships
+        // ffprobe 4.4, Debian 12 ships 5.1); it rejects the whole query rather
+        // than ignoring the unknown section. Ask for the legacy rotation tag
+        // instead of failing the import.
+        out = run_probe(tools, input, PROBE_ENTRIES_LEGACY)?;
+    }
 
     if !out.status.success() {
         bail!(
@@ -209,20 +253,7 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .context("missing height")?;
     let (width, height) = validate_dimensions(width, height)?;
 
-    // Rotation can appear in stream_side_data (newer ffprobe) or as a top-level
-    // tag. Read both.
-    let mut rotation = 0i64;
-    if let Some(side) = json.get("streams").and_then(|s| s.as_array()) {
-        for st in side {
-            if let Some(sd) = st.get("side_data_list").and_then(|v| v.as_array()) {
-                for entry in sd {
-                    if let Some(r) = entry.get("rotation").and_then(|v| v.as_i64()) {
-                        rotation = r;
-                    }
-                }
-            }
-        }
-    }
+    let rotation = rotation_of(stream);
 
     // 90 or 270 (either sign) means portrait: swap display dims.
     let normalized = ((rotation % 360) + 360) % 360;
@@ -392,5 +423,40 @@ mod tests {
         );
         assert_eq!(parse_rate("29.97"), Some(29.97));
         assert_eq!(parse_rate("nope"), None);
+    }
+
+    #[test]
+    fn rotation_reads_both_ffprobe_shapes() {
+        let modern = serde_json::json!({
+            "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]
+        });
+        assert_eq!(rotation_of(&modern), -90);
+
+        let legacy = serde_json::json!({ "tags": { "rotate": "90" } });
+        assert_eq!(rotation_of(&legacy), 90);
+
+        // Side data with no rotation must still fall through to the tag.
+        let both = serde_json::json!({
+            "side_data_list": [{"side_data_type": "Display Matrix"}],
+            "tags": { "rotate": "-270" }
+        });
+        assert_eq!(rotation_of(&both), -270);
+
+        assert_eq!(rotation_of(&serde_json::json!({})), 0);
+        assert_eq!(
+            rotation_of(&serde_json::json!({"tags": {"rotate": "x"}})),
+            0
+        );
+    }
+
+    #[test]
+    fn an_old_ffprobe_unknown_section_is_recognised() {
+        // ffprobe 4.4 (Ubuntu 22.04) rejects the query outright.
+        assert!(reports_unknown_section(
+            b"No match for section 'stream_side_data'"
+        ));
+        assert!(!reports_unknown_section(
+            b"Invalid data found when processing input"
+        ));
     }
 }
