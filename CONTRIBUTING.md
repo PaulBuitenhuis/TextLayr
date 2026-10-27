@@ -106,11 +106,13 @@ CPU. The Linux packaging script and the Linux CI jobs therefore export
 BMI2 — Intel Haswell 2013, AMD Excavator 2015) and leaves AVX-512* off.
 
 `src/transcribe.rs` refuses to load a model when the CPU is below that floor,
-and the Linux CI job disassembles the binary to prove no AVX-512 kernel leaked
-in. macOS keeps native codegen: it is a single ISA family, and a native build
-there is both faster and still portable across Apple Silicon. If you build a
-Linux binary by hand, export `GGML_NATIVE=OFF` first — or just use
-`scripts/package_linux.sh`, which does it for you.
+and the Linux CI job disassembles whisper.cpp's static libraries to prove no
+AVX-512 kernel leaked in (the linked binary also contains ring's runtime-gated
+AVX-512, so it can't be checked as a whole). macOS keeps native codegen: it is
+a single ISA family, and a native build there is both faster and still portable
+across Apple Silicon. If you build a Linux binary by hand, export
+`GGML_NATIVE=OFF` first — or just use `scripts/package_linux.sh`, which does it
+for you.
 
 ## Tests
 

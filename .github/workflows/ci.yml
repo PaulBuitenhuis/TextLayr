@@ -95,18 +95,24 @@ jobs:
         run: scripts/package_linux.sh
 
       # whisper.cpp is built with GGML_NATIVE=OFF (job env, mirrored in
-      # scripts/package_linux.sh). If that ever regresses, the runner's AVX-512
-      # CPUs bake those kernels in and the first transcription on an older
-      # machine is SIGILL. Check the binary we actually ship, not the build
-      # flags. AVX-VNNI (vpdpbusd/vpdpwssd) only appears when a
-      # native/AVX-VNNI build leaked in too.
-      - name: assert no AVX-512 in the binary
+      # scripts/package_linux.sh). If that regresses, the runner's AVX-512 CPUs
+      # bake those kernels in and the first transcription on an older machine is
+      # SIGILL. Audit whisper.cpp's own static libraries rather than the linked
+      # binary: ring (TLS) ships CPUID-guarded AVX-512 asm of its own, and thin
+      # LTO anonymises ggml symbols, so a whole-binary grep can't tell them
+      # apart. AVX-VNNI (vpdpbusd/vpdpwssd) also only appears in a native build.
+      - name: assert no AVX-512 in whisper.cpp
         run: |
-          if objdump -d target/release/textlayr | grep -qE '%zmm|vpternlog|vpdpbusd|vpdpwssd'; then
-            echo "error: AVX-512/AVX-VNNI instructions in target/release/textlayr" >&2
-            objdump -d target/release/textlayr | grep -m5 -E '%zmm|vpternlog|vpdpbusd|vpdpwssd' >&2
-            exit 1
-          fi
+          grep -h "GGML_NATIVE:BOOL" target/release/build/whisper-rs-sys-*/out/build/CMakeCache.txt || true
+          libs=$(find target/release/build -path '*whisper-rs-sys*/out/build/*' -name '*.a')
+          [ -n "$libs" ] || { echo "error: whisper static libraries not found" >&2; exit 1; }
+          for lib in $libs; do
+            if objdump -d "$lib" | grep -qE '%zmm|vpternlog|vpdpbusd|vpdpwssd'; then
+              echo "error: AVX-512/AVX-VNNI instructions in $lib" >&2
+              objdump -d "$lib" | grep -m5 -E '%zmm|vpternlog|vpdpbusd|vpdpwssd' >&2
+              exit 1
+            fi
+          done
 
       - uses: actions/upload-artifact@v7
         with:
