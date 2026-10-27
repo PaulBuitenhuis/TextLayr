@@ -442,8 +442,16 @@ impl App {
                                         ui.add_space(6.0);
                                         ui.horizontal(|ui| {
                                             if r.installable() {
-                                                if theme::button(ui, "Download & install").clicked()
-                                                {
+                                                // Linux has no in-place update yet:
+                                                // the package is downloaded and
+                                                // handed over, so don't promise a
+                                                // restart.
+                                                let label = if cfg!(target_os = "linux") {
+                                                    "Download package"
+                                                } else {
+                                                    "Download & install"
+                                                };
+                                                if theme::button(ui, label).clicked() {
                                                     start_install_update = Some(r.clone());
                                                 }
                                             } else {
@@ -484,13 +492,14 @@ impl App {
                                         );
                                     }
                                     UpdateUi::OpenedDmg => {
-                                        ui.label(
-                                            egui::RichText::new(
-                                                "The installer is open — drag TextLayr into \
-                                                 Applications, then quit and reopen it.",
-                                            )
-                                            .weak(),
-                                        );
+                                        let text = if cfg!(target_os = "linux") {
+                                            "The package was downloaded and shown in your file \
+                                             manager. Install it by hand — this copy keeps running."
+                                        } else {
+                                            "The installer is open — drag TextLayr into \
+                                             Applications, then quit and reopen it."
+                                        };
+                                        ui.label(egui::RichText::new(text).weak());
                                     }
                                     UpdateUi::Failed(e) => {
                                         ui.colored_label(ui.visuals().error_fg_color, e.as_str());

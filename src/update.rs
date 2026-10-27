@@ -259,20 +259,46 @@ fn build_artifact(sel: &PlatformAssets, source: &str) -> (Option<Artifact>, Opti
             sel.zip.as_ref().and_then(|a| art(a, ArtifactKind::MacApp)),
             sel.dmg.as_ref().map(|a| asset_from(a.clone(), source)),
         ),
-        Os::Linux => (
-            sel.appimage
-                .as_ref()
-                .and_then(|a| art(a, ArtifactKind::UnixAppImage))
-                .or_else(|| {
-                    sel.tar
-                        .as_ref()
-                        .and_then(|a| art(a, ArtifactKind::UnixBinaryTar))
-                }),
-            None,
-        ),
+        Os::Linux => {
+            // Hand over the shape that is actually installed: only the AppImage
+            // runtime sets $APPDIR. A tarball (or distro-package) install gets
+            // the tarball, so upgrading cannot silently switch packaging.
+            let appimage = sel.appimage.as_ref().map(|a| Artifact {
+                asset: asset_from(a.clone(), source),
+                kind: ArtifactKind::UnixAppImage,
+            });
+            let tar = sel.tar.as_ref().map(|a| Artifact {
+                asset: asset_from(a.clone(), source),
+                kind: ArtifactKind::UnixBinaryTar,
+            });
+            (
+                preferred_linux_artifact(appimage, tar, running_as_appimage()),
+                None,
+            )
+        }
         // Windows packaging ships with the Windows item.
         Os::Windows => (None, None),
     }
+}
+
+/// The Linux artifact to hand over, preferring the shape that is running.
+fn preferred_linux_artifact(
+    appimage: Option<Artifact>,
+    tar: Option<Artifact>,
+    running_as_appimage: bool,
+) -> Option<Artifact> {
+    if running_as_appimage {
+        appimage.or(tar)
+    } else {
+        tar.or(appimage)
+    }
+}
+
+/// The AppImage type-2 runtime exports `$APPDIR` (and `$APPIMAGE`) to the app
+/// it launches; a tarball or distro install has neither. Only read on Linux —
+/// the macOS build compiles the call but never reaches it.
+fn running_as_appimage() -> bool {
+    std::env::var_os("APPDIR").is_some()
 }
 
 fn asset_from(a: ManifestAsset, source: &str) -> Asset {
@@ -1171,35 +1197,42 @@ mod tests {
         assert!(Release::from_manifest(m, "https://h/latest.json").is_err());
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn linux_prefers_the_appimage_then_the_tarball() {
-        let sha = "c".repeat(64);
-        let appimage = ManifestAsset {
-            name: "TextLayr-0.3.0.AppImage".into(),
-            sha256: Some(sha.clone()),
-            size: Some(50),
+    fn linux_hands_over_the_same_shape_that_is_running() {
+        let appimage = Artifact {
+            asset: Asset {
+                name: "TextLayr-0.4.0-linux-x86_64.AppImage".into(),
+                url: "https://h/TextLayr-0.4.0-linux-x86_64.AppImage".into(),
+                size: Some(50),
+                sha256: None,
+            },
+            kind: ArtifactKind::UnixAppImage,
         };
-        let tar = ManifestAsset {
-            name: "TextLayr-0.3.0-linux.tar.xz".into(),
-            sha256: Some(sha),
-            size: Some(40),
+        let tar = Artifact {
+            asset: Asset {
+                name: "TextLayr-0.4.0-linux-x86_64.tar.xz".into(),
+                url: "https://h/TextLayr-0.4.0-linux-x86_64.tar.xz".into(),
+                size: Some(40),
+                sha256: None,
+            },
+            kind: ArtifactKind::UnixBinaryTar,
         };
-        let both = PlatformAssets {
-            appimage: Some(appimage),
-            tar: Some(tar.clone()),
-            ..PlatformAssets::default()
-        };
-        let (primary, fallback) = build_artifact(&both, "https://h/latest.json");
-        assert_eq!(primary.unwrap().kind, ArtifactKind::UnixAppImage);
-        assert!(fallback.is_none());
 
-        let only_tar = PlatformAssets {
-            tar: Some(tar),
-            ..PlatformAssets::default()
-        };
-        let (primary, _) = build_artifact(&only_tar, "https://h/latest.json");
-        assert_eq!(primary.unwrap().kind, ArtifactKind::UnixBinaryTar);
+        // An AppImage install gets the AppImage; a tarball install gets the
+        // tarball, so the hand-off never changes packaging by surprise.
+        let app =
+            preferred_linux_artifact(Some(appimage.clone()), Some(tar.clone()), true).unwrap();
+        assert_eq!(app.kind, ArtifactKind::UnixAppImage);
+        let pack =
+            preferred_linux_artifact(Some(appimage.clone()), Some(tar.clone()), false).unwrap();
+        assert_eq!(pack.kind, ArtifactKind::UnixBinaryTar);
+
+        // Whichever shape exists is still handed over.
+        let only_app = preferred_linux_artifact(Some(appimage.clone()), None, false).unwrap();
+        assert_eq!(only_app.kind, ArtifactKind::UnixAppImage);
+        let only_tar = preferred_linux_artifact(None, Some(tar), true).unwrap();
+        assert_eq!(only_tar.kind, ArtifactKind::UnixBinaryTar);
+        assert!(preferred_linux_artifact(None, None, false).is_none());
     }
 
     #[test]
