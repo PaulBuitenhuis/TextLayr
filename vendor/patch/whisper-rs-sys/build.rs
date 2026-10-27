@@ -287,6 +287,10 @@ fn main() {
         let is_cmake_flag = key.starts_with("CMAKE_");
         if is_whisper_flag || is_ggml_flag || is_cmake_flag {
             config.define(&key, &value);
+            // Without this, changing (say) GGML_NATIVE reuses the previous CMake
+            // build directory and the flag silently has no effect — the stale
+            // binary is then packaged and shipped. TextLayr-local patch.
+            println!("cargo:rerun-if-env-changed={key}");
         }
     }
 

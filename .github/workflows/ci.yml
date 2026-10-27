@@ -47,12 +47,6 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          # whisper.cpp's CMake build does not fingerprint GGML_NATIVE, so a
-          # cache restored from a native build would skip the C rebuild and serve
-          # an AVX-512 binary to the assertion below. Keep this job's cache
-          # separate from the portable one.
-          key: ggml-native-off
       # Everything apt is installed in one step: egui/eframe need the X11 and
       # Wayland headers, egui 0.37 finds system fonts through fontique, which
       # pkg-configs libfontconfig at build time, and the harness drives a real

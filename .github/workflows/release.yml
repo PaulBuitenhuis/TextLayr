@@ -74,9 +74,6 @@ jobs:
           fetch-depth: 0 # `git describe` feeds the build stamp
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          # See ci.yml: GGML_NATIVE is not part of whisper.cpp's fingerprint.
-          key: ggml-native-off
 
       - name: Linux GUI dev libraries
         run: |
