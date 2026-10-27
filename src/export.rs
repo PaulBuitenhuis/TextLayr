@@ -442,6 +442,37 @@ fn filter_graph_file_option(tools: &Fftools) -> &'static str {
     })
 }
 
+/// Frame-rate handling for the decoding pipe. `-fps_mode passthrough` is
+/// ffmpeg 5.1+; older builds only know the deprecated `-vsync 0`, and newer
+/// ones have dropped it. Breaks without the shim on Ubuntu 22.04 (ffprobe/
+/// ffmpeg 4.4), where the decoder exits on the unknown option and the encode
+/// silently produces an audio-only file.
+fn decode_fps_mode_args(tools: &Fftools) -> &'static [&'static str] {
+    static ARGS: std::sync::OnceLock<&'static [&'static str]> = std::sync::OnceLock::new();
+    ARGS.get_or_init(|| {
+        let mut cmd = Command::new(&tools.ffmpeg);
+        cmd.args(["-hide_banner", "-h", "full"]);
+        let has_fps_mode =
+            crate::process::output_with_timeout(&mut cmd, crate::process::PROBE_TIMEOUT)
+                .map(|out| {
+                    String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        .any(|l| l.starts_with("-fps_mode"))
+                })
+                .unwrap_or(true);
+        fps_mode_args(has_fps_mode)
+    })
+}
+
+/// The decoder's frame-rate pair, given whether this build knows `-fps_mode`.
+fn fps_mode_args(has_fps_mode: bool) -> &'static [&'static str] {
+    if has_fps_mode {
+        &["-fps_mode", "passthrough"]
+    } else {
+        &["-vsync", "0"]
+    }
+}
+
 /// Encode `output` with the caption states composited over `input`.
 ///
 /// `on_progress` receives 0.0..=1.0 as the encode advances.
@@ -681,18 +712,9 @@ pub fn export_pipe(
     dec_cmd
         .args(["-hide_banner", "-loglevel", "error", "-i"])
         .arg(input)
-        .args([
-            "-map",
-            "0:v:0",
-            "-fps_mode",
-            "passthrough",
-            "-an",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-",
-        ]);
+        .args(["-map", "0:v:0"])
+        .args(decode_fps_mode_args(tools))
+        .args(["-an", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
     let mut dec = ChildGuard::new(
         dec_cmd
             .stdin(Stdio::null())
@@ -980,17 +1002,26 @@ pub fn export_pipe(
             .trim()
             .to_string()
     };
-    if let Err(e) = pump {
-        // A cancel is a user action, not a failure: keep the message clean so
-        // the caller can tell the two apart (and skip the error banner).
-        if e.to_string().contains("cancelled") {
-            bail!("export cancelled");
+    let frames = match pump {
+        Ok(frames) => frames,
+        Err(e) => {
+            // A cancel is a user action, not a failure: keep the message clean
+            // so the caller can tell the two apart (and skip the error banner).
+            if e.to_string().contains("cancelled") {
+                bail!("export cancelled");
+            }
+            bail!(
+                "pipe export failed: {e:#}\n  decoder: {}\n  encoder: {}",
+                tail(&dec_err),
+                tail(&enc_err)
+            );
         }
-        bail!(
-            "pipe export failed: {e:#}\n  decoder: {}\n  encoder: {}",
-            tail(&dec_err),
-            tail(&enc_err)
-        );
+    };
+    // A decoder that dies before its first frame (an option it doesn't know, a
+    // missing codec) would otherwise hand the encoder an empty pipe, which
+    // happily muxes the audio alone and reports success.
+    if frames == 0 {
+        bail!("the decoder produced no video frames: {}", tail(&dec_err));
     }
     if !enc_status.success() {
         bail!("ffmpeg encode failed ({enc_status}): {}", tail(&enc_err));
@@ -1009,6 +1040,13 @@ pub fn export_pipe(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_pre_5_1_ffmpeg_gets_the_legacy_fps_flag() {
+        // Ubuntu 22.04's ffmpeg 4.4 rejects `-fps_mode` outright.
+        assert_eq!(fps_mode_args(false), ["-vsync", "0"]);
+        assert_eq!(fps_mode_args(true), ["-fps_mode", "passthrough"]);
+    }
 
     #[test]
     fn placement_uses_the_box_anchor() {
@@ -1080,7 +1118,7 @@ mod tests {
         std::fs::write(
             &wrapper,
             format!(
-                "#!/bin/sh\ncase \" $* \" in\n  *\" -frames:v 1 \"*) exec '{}' \"$@\";;\n  *) exec /bin/sleep 120;;\nesac\n",
+                "#!/bin/sh\ncase \" $* \" in\n  *\" -frames:v 1 \"*) exec '{}' \"$@\";;\n  *\" -h full \"*) exit 0;;\n  *) exec /bin/sleep 120;;\nesac\n",
                 real.display()
             ),
         )
