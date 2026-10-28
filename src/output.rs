@@ -123,9 +123,24 @@ impl ExportTarget {
 
 /// Append `.mp4` when there is no extension, accept `.mp4` in any case, and
 /// reject every other container with a clear message.
+///
+/// GTK's portal save dialog appends the filter's extension even when the
+/// chosen name already ends with it, so a default export arrives as
+/// `clip_textlayr.mp4.mp4`. Collapse that to one extension; nobody means to
+/// write a file called `*.mp4.mp4`.
 fn normalise_extension(path: &mut PathBuf) -> Result<()> {
     match path.extension() {
-        Some(ext) if ext.eq_ignore_ascii_case("mp4") => Ok(()),
+        Some(ext) if ext.eq_ignore_ascii_case("mp4") => {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if let Some(base) = stem
+                    .strip_suffix(".mp4")
+                    .or_else(|| stem.strip_suffix(".MP4"))
+                {
+                    path.set_file_name(format!("{base}.mp4"));
+                }
+            }
+            Ok(())
+        }
         Some(ext) if ext.is_empty() => {
             path.set_extension("mp4");
             Ok(())
@@ -213,6 +228,24 @@ mod tests {
         let target =
             ExportTarget::resolve(&input, Some(&dir.path().join("OUT.MP4")), false).unwrap();
         assert_eq!(target.final_path(), dir.path().join("OUT.MP4"));
+    }
+
+    #[test]
+    fn a_dialog_that_appends_a_second_mp4_is_collapsed() {
+        // GTK's portal save dialog turns the suggested `clip_textlayr.mp4` into
+        // `clip_textlayr.mp4.mp4` (seen on Ubuntu 26.04).
+        let (dir, input) = fixture();
+        let target = ExportTarget::resolve(
+            &input,
+            Some(&dir.path().join("clip_textlayr.mp4.mp4")),
+            false,
+        )
+        .unwrap();
+        assert_eq!(target.final_path(), dir.path().join("clip_textlayr.mp4"));
+        assert_eq!(
+            target.part_path(),
+            dir.path().join(".clip_textlayr.mp4.part.mp4")
+        );
     }
 
     #[test]

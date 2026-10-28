@@ -183,7 +183,10 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<()> {
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or_else(|| Path::new("."));
             let mut c = Command::new("xdg-open");
-            c.arg("--").arg(dir);
+            // No `--`: most distros ship xdg-open as a shell script that rejects
+            // unknown options outright (seen on Ubuntu 26.04). The path is
+            // absolute, so it cannot be mistaken for one.
+            c.arg(dir);
             c
         }
     };

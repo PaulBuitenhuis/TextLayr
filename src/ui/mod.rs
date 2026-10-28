@@ -1709,9 +1709,9 @@ fn open_file(path: &Path) -> Result<()> {
     let mut cmd = if cfg!(target_os = "macos") {
         std::process::Command::new("open")
     } else {
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg("--");
-        c
+        // No `--`: Ubuntu's xdg-open script rejects unknown options (the same
+        // reason platform::reveal_in_file_manager avoids it).
+        std::process::Command::new("xdg-open")
     };
     cmd.arg(path);
     let mut child = cmd.spawn()?;

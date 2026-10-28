@@ -980,22 +980,33 @@ fn strip_quarantine(path: &Path) {
 }
 
 /// A path in `dir` for `name` that doesn't already exist ("name (1).zip").
+/// Split a file name into the part to keep and the suffix to keep last.
+///
+/// A tarball has two extensions, and the disambiguator must go before all of
+/// them: `TextLayr-x.tar.xz` → `TextLayr-x (1).tar.xz`, not `…tar (1).xz`.
+fn split_extension(name: &str) -> (&str, &str) {
+    for suffix in [".tar.xz", ".tar.gz", ".tar.bz2", ".tar.zst"] {
+        if let Some(stem) = name.strip_suffix(suffix) {
+            return (stem, suffix);
+        }
+    }
+    match name.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => (
+            stem,
+            &name[stem.len()..], // includes the dot
+        ),
+        _ => (name, ""),
+    }
+}
+
 fn unique_path(dir: &Path, name: &str) -> PathBuf {
     let first = dir.join(name);
     if !first.exists() {
         return first;
     }
-    let path = Path::new(name);
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("download");
-    let ext = path.extension().and_then(|s| s.to_str());
+    let (stem, suffix) = split_extension(name);
     for i in 1..1000 {
-        let candidate = match ext {
-            Some(ext) => dir.join(format!("{stem} ({i}).{ext}")),
-            None => dir.join(format!("{stem} ({i})")),
-        };
+        let candidate = dir.join(format!("{stem} ({i}){suffix}"));
         if !candidate.exists() {
             return candidate;
         }
@@ -1396,6 +1407,29 @@ mod tests {
         assert_eq!(
             unique_path(dir.path(), "TextLayr-0.3.0.dmg"),
             dir.path().join("TextLayr-0.3.0 (1).dmg")
+        );
+    }
+
+    #[test]
+    fn a_tarball_keeps_both_of_its_extensions() {
+        // Seen on Linux: `TextLayr-0.4.0-linux-x86_64.tar (1).xz` is not a name
+        // anything recognises as a tarball.
+        assert_eq!(
+            split_extension("TextLayr-0.4.0-linux-x86_64.tar.xz"),
+            ("TextLayr-0.4.0-linux-x86_64", ".tar.xz")
+        );
+        assert_eq!(
+            split_extension("TextLayr-0.3.0.dmg"),
+            ("TextLayr-0.3.0", ".dmg")
+        );
+        assert_eq!(split_extension("README"), ("README", ""));
+        assert_eq!(split_extension(".hidden"), (".hidden", ""));
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.tar.xz"), b"x").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "a.tar.xz"),
+            dir.path().join("a (1).tar.xz")
         );
     }
 }
