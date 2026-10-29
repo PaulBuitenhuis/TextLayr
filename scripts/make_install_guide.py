@@ -118,14 +118,14 @@ def page_one() -> Image.Image:
     im.paste(banner, (MARGIN, y), banner)
     y += bh + 26
 
-    d.text((MARGIN, y), "Install guide", font=font(20, bold=True), fill=INK)
+    d.text((MARGIN, y), "Install guide (macOS)", font=font(20, bold=True), fill=INK)
     y += 62
     y = para(
         d,
         MARGIN,
         y,
         "Requires macOS 13 or later on an Apple Silicon Mac. The download is about "
-        "8 MB; the first launch fetches ffmpeg and a Whisper model (~190 MB).",
+        "9 MB; the first launch fetches ffmpeg and a Whisper model (~190 MB).",
         font(10.5),
         fill=MUTED,
     )

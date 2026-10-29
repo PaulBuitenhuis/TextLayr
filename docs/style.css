@@ -269,7 +269,7 @@ svg:not([fill]) { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-li
 
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .cta-alt { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
-.cta-alt a { color: var(--accent); }
+.cta-alt a { color: var(--accent); white-space: nowrap; }
 .hero-code { margin-top: 12px; }
 .hero-code code { font-size: 0.78rem; }
 
@@ -900,15 +900,22 @@ section[id] { scroll-margin-top: 78px; }
 .install-alt { font-size: 0.88rem !important; margin-top: 10px !important; }
 .install-alt a { color: var(--accent); }
 
-/* Two-path install layout: terminal first (no prompts) + disk image. */
-#install, #terminal, #dmg, #scripting { scroll-margin-top: 88px; }
+/* Platform groups: macOS (terminal + disk image) and Linux. */
+#install, #terminal, #dmg, #macos, #linux, #scripting { scroll-margin-top: 88px; }
 
-.install-jump {
-  margin: 22px 0 0;
-  font-size: 0.92rem;
+.install-platform {
+  margin: 56px 0 0;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
+  font-size: 1.42rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.install-platform-lede {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
   color: var(--muted);
 }
-.install-jump a { color: var(--accent); font-weight: 600; }
 
 .install-card {
   position: relative;
@@ -922,25 +929,10 @@ section[id] { scroll-margin-top: 78px; }
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   box-shadow: 0 10px 34px rgb(0 0 0 / 0.06);
 }
-.install-card > h3 { margin: 6px 0 8px; font-size: 1.28rem; }
+.install-card > h3 { margin: 0 0 8px; font-size: 1.28rem; }
 .install-lede { color: var(--muted); font-size: 0.96rem; }
 .install-meta { color: var(--muted); font-size: 0.82rem; margin-top: -4px; }
-
-.install-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-.install-badge--alt {
-  background: color-mix(in srgb, var(--ok, #2ea043) 15%, transparent);
-  color: var(--ok, #2ea043);
-}
+.install-card .cta-row + .install-meta { margin-top: 12px; }
 
 .install-steps--media { margin-top: 30px; }
 .install-steps--media > li { padding-left: 52px; margin-bottom: 34px; }
@@ -1157,6 +1149,7 @@ details p {
 /* ── Final CTA ──────────────────────────────────────────────────────── */
 
 .final { padding-bottom: 96px; }
+.final .cta-row { justify-content: center; }
 .final-mark { width: 260px; height: auto; margin: 0 auto 8px; }
 .final-lede {
   color: var(--muted);
@@ -1203,7 +1196,8 @@ details p {
   .lede { margin-inline: auto; }
   .hero-copy { text-align: center; }
   .hero-mark { width: 220px; margin-inline: auto; }
-  .cta-row { justify-content: center; }
+  /* Centre the page-level CTAs only; install cards stay left-aligned with their copy. */
+  .hero .cta-row, .final .cta-row { justify-content: center; }
   .media-caption { max-width: 320px; }
   .section { padding: 62px 0; }
   .steps { grid-template-columns: 1fr; gap: 22px; }
@@ -1219,6 +1213,7 @@ details p {
   .install-steps > li::before { position: static; margin-bottom: 12px; }
   .code { flex-wrap: wrap; }
   .code code { white-space: normal; word-break: break-word; }
+  p code, li code, dd code { white-space: normal; overflow-wrap: anywhere; }
   .final-mark { width: 210px; }
 }
 

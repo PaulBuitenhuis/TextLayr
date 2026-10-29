@@ -12,7 +12,7 @@ new release rather than as backports to older versions.
 
 | Version | Supported |
 |---|---|
-| latest `0.2.x` | ✅ |
+| latest release | ✅ |
 | older | ❌ |
 
 ## Reporting a vulnerability
@@ -26,7 +26,7 @@ this opens a private advisory only you and the maintainer can see.
 Helpful to include:
 
 - affected version + build (`textlayr --version`, or Settings → About),
-- your macOS version and chip,
+- your OS and CPU — the macOS version and chip, or your Linux distro and CPU,
 - a description of the impact and a minimal way to reproduce it,
 - a sample file, if the issue depends on a specific input.
 
@@ -34,17 +34,18 @@ Helpful to include:
 
 ### In scope
 
-- **First-run download integrity.** ffmpeg/ffprobe (from `osxexperts.net`) and
-  whisper models (from Hugging Face) are fetched with `curl` and verified
-  against pinned SHA-256 hashes before use. Anything that bypasses the
-  checksum, leaves a partial download trusted, or resolves the wrong artifact
-  is in scope.
+- **First-run download integrity.** ffmpeg/ffprobe (from `osxexperts.net` on
+  macOS, pinned BtbN FFmpeg builds on Linux) and whisper models (from Hugging
+  Face) are downloaded in-process and verified against pinned SHA-256 hashes
+  before use. Anything that bypasses the checksum, leaves a partial download
+  trusted, or resolves the wrong artifact is in scope.
 - **Untrusted media handling.** TextLayr feeds arbitrary user video/audio to
   `ffprobe`, `ffmpeg`, and whisper.cpp. A crafted input that escapes the
   intended processing — e.g. via unsafe handling on TextLayr's side — is in scope.
-- **Subprocess invocation.** TextLayr invokes `curl`, `ditto`, `xattr`, `ffmpeg`,
-  and `ffprobe` directly (no shell). A crafted file path or value that changes
-  the arguments TextLayr passes to those tools is in scope.
+- **Subprocess invocation.** TextLayr invokes `ffmpeg`, `ffprobe`, `open` /
+  `xdg-open`, and — on macOS, to swap the app bundle — `ditto` and `xattr`
+  directly (no shell). A crafted file path or value that changes the arguments
+  TextLayr passes to those tools is in scope.
 - **Dependency chain.** Vulnerabilities in TextLayr's own Rust dependencies, and in
   the vendored `whisper-rs-sys` patch (`vendor/patch/whisper-rs-sys`), that are
   exploitable through TextLayr.

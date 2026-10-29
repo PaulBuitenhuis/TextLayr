@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>TextLayr — burn captions into video, offline on your Mac</title>
+<title>TextLayr — burn captions into video, offline on macOS and Linux</title>
 <meta name="description" content="Free, open-source macOS and Linux app that burns word-by-word captions into your video. Whisper transcribes locally in the TikTok/Reels style — no uploads, no accounts.">
 <link rel="canonical" href="https://paulbuitenhuis.github.io/TextLayr/">
 
@@ -13,14 +13,14 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="TextLayr">
-<meta property="og:title" content="TextLayr — burn captions into video, offline on your Mac">
+<meta property="og:title" content="TextLayr — burn captions into video, offline on macOS and Linux">
 <meta property="og:description" content="A free, private, offline caption burner for macOS and Linux. Whisper transcribes locally, you review the transcript, and it burns word-by-word captions into the video.">
 <meta property="og:url" content="https://paulbuitenhuis.github.io/TextLayr/">
 <meta property="og:image" content="https://paulbuitenhuis.github.io/TextLayr/assets/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="TextLayr — burn captions into video, offline on your Mac">
+<meta name="twitter:title" content="TextLayr — burn captions into video, offline on macOS and Linux">
 <meta name="twitter:description" content="A free, private, offline caption burner for macOS and Linux. No uploads, no accounts, no watermark.">
 <meta name="twitter:image" content="https://paulbuitenhuis.github.io/TextLayr/assets/og.jpg">
 
@@ -34,7 +34,7 @@
   "operatingSystem": "macOS 13 or later (Apple Silicon); Linux (x86_64)",
   "description": "An offline caption burner for macOS and Linux: Whisper transcribes the video locally, you review and edit the transcript, and TextLayr burns word-by-word captions into the exported MP4.",
   "url": "https://paulbuitenhuis.github.io/TextLayr/",
-  "downloadUrl": "https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg",
+  "downloadUrl": "https://github.com/PaulBuitenhuis/TextLayr/releases/latest",
   "screenshot": "https://paulbuitenhuis.github.io/TextLayr/screenshots/overview.jpg",
   "license": "https://opensource.org/license/mit",
   "isAccessibleForFree": true,
@@ -119,12 +119,12 @@
         <h1>Word-by-word captions,<br>burned into your video.</h1>
 
         <p class="lede">
-          TextLayr transcribes your video <b>on your own Mac</b> and burns in
-          word-by-word captions — the look popular on Shorts and Reels, where
+          TextLayr transcribes your video <b>on your own computer</b> and burns
+          in word-by-word captions — the look popular on Shorts and Reels, where
           each word lights up as it's spoken. Design it in the app: edit the
-          transcript, restyle, watch the preview. Then save the look as a profile
-          and run the same pipeline headless over a folder of clips. Free, open
-          source, no account.
+          transcript, restyle, watch the preview. Then save the look as a
+          profile and run the same pipeline headless over a folder of clips.
+          Free, open source, no account.
         </p>
 
         <div class="cta-row">
@@ -133,12 +133,19 @@
             <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 4v11M7.5 10.8 12 15.3l4.5-4.5M5 19.5h14"/></svg>
             <span>Download for macOS</span>
           </a>
-          <a class="btn btn-ghost" href="#install">
-            Step-by-step install
+          <a class="btn btn-ghost" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage" data-download-linux
+             data-goatcounter-click="download-appimage" data-goatcounter-title="Download AppImage (hero)">
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 4v11M7.5 10.8 12 15.3l4.5-4.5M5 19.5h14"/></svg>
+            <span>Download for Linux</span>
           </a>
         </div>
 
-        <p class="cta-alt">Or install from the terminal — no security prompt:</p>
+        <p class="cta-alt">
+          macOS 13+ on Apple Silicon · Linux x86_64 ·
+          <a href="#install">step-by-step install</a>
+        </p>
+
+        <p class="cta-alt">On macOS, install from the terminal:</p>
         <div class="code hero-code">
           <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
           <button class="copy" type="button" data-copy aria-label="Copy terminal install command"
@@ -148,9 +155,6 @@
             <span class="copy-label">Copy</span>
           </button>
         </div>
-        <p class="cta-alt">
-          Requires macOS 13+ on Apple Silicon, or Linux on x86_64. Both routes install the same app.
-        </p>
 
         <p class="cta-note" data-release-meta hidden>
           <span class="dot" aria-hidden="true"></span><b data-version>—</b>
@@ -159,8 +163,8 @@
           <span class="sep">·</span> supported by donations
         </p>
         <p class="cta-note" data-release-fallback>
-          Free &amp; open source (MIT), supported by donations · macOS 13+ on Apple Silicon
-          · about 8&nbsp;MB · ~190&nbsp;MB first-run setup
+          Free &amp; open source (MIT), supported by donations · macOS 13+ or Linux
+          · about 9&nbsp;MB · ~190&nbsp;MB first-run setup
         </p>
       </div>
 
@@ -201,7 +205,7 @@
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/></svg></div>
           <h3>Word-by-word captions</h3>
-          <p>A few words on screen at a time with the spoken word lit up and the rest dimmed — the look people call karaoke-style captions. Two to six words per popup, your call.</p>
+          <p>A few words on screen at a time with the spoken word lit up and the rest dimmed — the look people call karaoke-style captions. One to eight words per popup, your call.</p>
         </article>
 
         <article class="card">
@@ -225,7 +229,7 @@
         <article class="card">
           <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2.5 5 13.5h5l-1 8 8-11h-5l1-8Z"/></svg></div>
           <h3>Fast, hardware-accelerated export</h3>
-          <p>VideoToolbox encoding with audio copied through untouched. The transcript is cached, so restyling and re-exporting is instant.</p>
+          <p>Hardware encoding where it's available — VideoToolbox on macOS, VAAPI on Linux, with x264 as the fallback. Audio is copied through untouched, and the cached transcript makes restyling instant.</p>
         </article>
 
         <article class="card">
@@ -304,7 +308,7 @@
         <div class="step">
           <span class="step-num">1</span>
           <h3>Drop in a video</h3>
-          <p>Any orientation — portrait, landscape, or a clip with rotation metadata. TextLayr works out the rest.</p>
+          <p>Any orientation — portrait, landscape, or a clip with rotation metadata. Drop it in, or pick it with <b>Open video…</b> (the way to open on Wayland).</p>
         </div>
         <div class="step">
           <span class="step-num">2</span>
@@ -314,7 +318,7 @@
         <div class="step">
           <span class="step-num">3</span>
           <h3>Export the MP4</h3>
-          <p>Hit Export (⌘E) and it writes <code>&lt;name&gt;_textlayr.mp4</code> next to your input, ready to upload.</p>
+          <p>Hit Export (<b>⌘E</b>, or <b>Ctrl+E</b> on Linux) — it suggests <code>&lt;name&gt;_textlayr.mp4</code> in the folder you used last, and the finished MP4 is ready to upload.</p>
         </div>
       </div>
 
@@ -335,8 +339,9 @@
           <li>
             <span class="step-num">1</span>
             <p><b>Save as…</b> in the <b>Look</b> dropdown. It lands in
-              <code>~/Library/Application Support/textlayr/profiles/</code> as a
-              profile you can back up or commit.</p>
+              <code>~/Library/Application Support/textlayr/profiles/</code> on
+              macOS or <code>~/.config/textlayr/profiles/</code> on Linux — one
+              JSON file you can back up or commit.</p>
           </li>
           <li>
             <span class="step-num">2</span>
@@ -390,27 +395,24 @@
       <h2 class="section-title">Install TextLayr</h2>
       <p class="section-lede">
         Requires <b>macOS 13 or later</b> on an Apple Silicon Mac, or <b>Linux on
-        x86_64</b> (glibc 2.35+, i.e. Ubuntu 22.04 or newer). The download is
-        about 8&nbsp;MB; the first launch fetches ffmpeg and a Whisper model
-        (~190&nbsp;MB), which takes a couple of minutes on a normal connection.
+        x86_64</b> (glibc 2.35+, i.e. Ubuntu 22.04 or newer). Either way the
+        first launch fetches ffmpeg and a Whisper model (~190&nbsp;MB), which
+        takes a couple of minutes on a normal connection.
       </p>
 
-      <p class="install-jump">
-        Would rather point and click?
-        <a href="#dmg">Download the disk image →</a>
-        &nbsp;·&nbsp;
-        On Linux? <a href="#linux">Jump to the Linux downloads →</a>
+      <h3 class="install-platform" id="macos">macOS</h3>
+      <p class="install-platform-lede">
+        Two routes, one approval at most: the terminal install skips the
+        security prompt, the disk image needs one click in System Settings.
       </p>
 
       <article class="install-card install-card--primary" id="terminal">
-        <span class="install-badge install-badge--alt">No security prompt</span>
         <h3>Terminal</h3>
         <p class="install-lede">
-          One command installs the app and skips the warning entirely — files
-          fetched with <code>curl</code> never get the quarantine flag that
-          browsers add. No password, no System Settings detour. Open
-          <b>Terminal</b> (press ⌘Space, type <i>Terminal</i>, press Return),
-          paste this line, and press Return:
+          The script reads the release manifest, verifies the SHA-256 and unpacks
+          the app with <code>ditto</code> — no password, no System Settings
+          detour. Open <b>Terminal</b> (press ⌘Space, type <i>Terminal</i>,
+          press Return), paste this line, and press Return:
         </p>
         <div class="code">
           <code>curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh</code>
@@ -451,12 +453,10 @@
       </article>
 
       <article class="install-card" id="dmg">
-        <span class="install-badge install-badge--alt">Point and click</span>
         <h3>Disk image</h3>
         <p class="install-lede">
           Download the disk image, drag the app into Applications, and allow it
-          once in System Settings. macOS will warn you — that is expected for a
-          free, un-notarized app, and it only happens the first time.
+          once in System Settings.
         </p>
         <p>
           <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
@@ -564,31 +564,48 @@
         <p class="install-note">
           Prefer a printable guide?
           <a href="assets/install/TextLayr-install-guide.pdf"
-             data-goatcounter-click="install-guide-pdf" data-goatcounter-title="Download install guide PDF">Download the two-page PDF</a>
+             data-goatcounter-click="install-guide-pdf" data-goatcounter-title="Download install guide PDF">Download the macOS install guide (PDF)</a>
           — the same steps with the pictures.
         </p>
       </article>
 
-      <article class="install-card" id="linux">
-        <span class="install-badge install-badge--alt">Linux</span>
-        <h3>Linux (x86_64)</h3>
+      <aside class="callout">
+        <div class="callout-head">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z"/><path d="M12 9.5v4.2M12 16.6v.1"/></svg>
+          <h3>Why macOS warns you</h3>
+        </div>
+        <p>
+          TextLayr is free and open source, so it isn't signed with a paid Apple
+          Developer ID and can't be notarized. macOS refuses to open any such app
+          that carries the <code>com.apple.quarantine</code> flag — the mark
+          browsers and AirDrop put on downloads. The terminal install avoids the
+          flag completely; the disk image needs the one-time <b>Open Anyway</b>
+          step above. Either way, updates afterwards are handled by the app.
+        </p>
+      </aside>
+
+      <h3 class="install-platform" id="linux">Linux (x86_64)</h3>
+
+      <article class="install-card">
+        <h3>AppImage or tarball</h3>
         <p class="install-lede">
-          Two downloads, same app: a one-file <b>AppImage</b> and a portable
-          <b>tarball</b>. No installer, no system package and no root password —
-          and the first launch fetches ffmpeg and a Whisper model exactly as it
-          does on macOS.
+          Two portable files, no installer, no system package and no root
+          password. The first launch fetches ffmpeg and a Whisper model, just as
+          it does on macOS.
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage"
+          <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage" data-download-linux
              data-goatcounter-click="download-appimage" data-goatcounter-title="Download AppImage">Download AppImage</a>
-          <a class="btn btn-ghost" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.tar.xz"
+          <a class="btn btn-ghost" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.tar.xz" data-download-tarball
              data-goatcounter-click="download-tarball" data-goatcounter-title="Download Linux tarball">Download tarball</a>
         </div>
         <p class="install-meta">
-          <span>AppImage ~12&nbsp;MB · tarball ~9&nbsp;MB · free &amp; open source (MIT)</span>
+          <span data-size-appimage>~12&nbsp;MB</span> AppImage ·
+          <span data-size-tarball>~9&nbsp;MB</span> tarball ·
+          free &amp; open source (MIT)
         </p>
         <div class="code">
-          <code>chmod +x TextLayr-linux-x86_64.AppImage &amp;&amp; ./TextLayr-linux-x86_64.AppImage</code>
+          <code>chmod +x TextLayr-linux-x86_64.AppImage<br>./TextLayr-linux-x86_64.AppImage</code>
           <button class="copy" type="button" data-copy aria-label="Copy command"
                   data-goatcounter-click="copy-linux-run" data-goatcounter-title="Copy Linux run command">
             <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6.5 15H5.5A1.5 1.5 0 0 1 4 13.5v-8A1.5 1.5 0 0 1 5.5 4h8A1.5 1.5 0 0 1 15 5.5v1"/></svg>
@@ -625,21 +642,6 @@
           </p>
         </details>
       </article>
-
-      <aside class="callout">
-        <div class="callout-head">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z"/><path d="M12 9.5v4.2M12 16.6v.1"/></svg>
-          <h3>Why macOS warns you</h3>
-        </div>
-        <p>
-          TextLayr is free and open source, so it isn't signed with a paid Apple
-          Developer ID and can't be notarized. macOS refuses to open any such app
-          that carries the <code>com.apple.quarantine</code> flag — the mark
-          browsers and AirDrop put on downloads. The terminal install avoids the
-          flag completely; the disk image needs the one-time <b>Open Anyway</b>
-          step above. Either way, updates afterwards are handled by the app.
-        </p>
-      </aside>
 
       <details class="install-details install-trouble">
         <summary>If something goes wrong</summary>
@@ -699,12 +701,13 @@
       </ul>
 
       <p class="run-note">
-        Comfortable in a terminal? The app bundle doesn't add <code>textlayr</code>
-        to your <code>PATH</code> by default — re-run the installer with
-        <code>--cli</code>, or use
-        <code>/Applications/TextLayr.app/Contents/MacOS/TextLayr --setup</code>.
-        <code>… --headless video.mp4</code> runs the whole pipeline without a
-        window. Full flag list in the
+        Comfortable in a terminal? The app doesn't add <code>textlayr</code> to
+        your <code>PATH</code>: on macOS re-run the installer with
+        <code>--cli</code>, or run
+        <code>/Applications/TextLayr.app/Contents/MacOS/TextLayr --setup</code>;
+        on Linux run the binary you unpacked, or symlink the AppImage into
+        <code>~/.local/bin</code>. <code>… --headless video.mp4</code> runs the
+        whole pipeline without a window. Full flag list in the
         <a href="https://github.com/PaulBuitenhuis/TextLayr#command-line" rel="noopener">README</a>.
       </p>
     </div>
@@ -735,7 +738,7 @@
 
       <details>
         <summary>Do I have to use Terminal?</summary>
-        <p>No — the disk image is the normal route. It needs a one-time macOS security step (click <b>Done</b>, then <b>Open Anyway</b> in <b>Privacy &amp; Security</b>). The terminal command skips that step entirely. Both are on the <a href="#install">install instructions</a>.</p>
+        <p>On macOS, no — the disk image is the normal route. It needs a one-time security step (click <b>Done</b>, then <b>Open Anyway</b> in <b>Privacy &amp; Security</b>); the terminal command skips it. On Linux there is no prompt at all: download the AppImage or tarball and run it. Everything is on the <a href="#install">install instructions</a>.</p>
       </details>
 
       <details>
@@ -819,9 +822,13 @@
       <img class="final-mark logo-dark" src="assets/banner-dark.png" width="713" height="160" alt="TextLayr" loading="lazy">
       <img class="final-mark logo-light" src="assets/banner-light.png" width="713" height="160" alt="TextLayr" loading="lazy">
       <p class="final-lede">Captions in, videos out. Nothing uploaded.</p>
-      <p><a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
-            data-goatcounter-click="download-dmg" data-goatcounter-title="Download DMG (footer)">Download for macOS</a></p>
-      <p class="cta-alt">or <a href="#terminal">install from the terminal</a> to skip the first-launch security prompt</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr.dmg" data-download
+           data-goatcounter-click="download-dmg" data-goatcounter-title="Download DMG (footer)">Download for macOS</a>
+        <a class="btn btn-ghost" href="https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage" data-download-linux
+           data-goatcounter-click="download-appimage" data-goatcounter-title="Download AppImage (footer)">Download for Linux</a>
+      </div>
+      <p class="cta-alt">On macOS, you can also <a href="#terminal">install from the terminal</a> to skip the first-launch prompt.</p>
     </div>
   </section>
 

@@ -58,7 +58,7 @@ has rotted.
 - **Preview and export share `render_state_rgba`.** A rendering change moves
   both, and `tests/golden_matrix.rs` pins the pixels.
 - **Generated, never hand-edit:** `THIRD_PARTY_LICENSES.md`, `assets/icon.png`,
-  `AppIcon.icns`, `dmg-background.png`.
+  `AppIcon.icns`, `dmg-background.png`, `docs/assets/og.jpg`.
 - **macOS floor 13** appears in README, the site, `Info.plist` and
   `package_macos.sh` — keep them in sync.
 - User-visible changes go under `[Unreleased]` in `CHANGELOG.md`.

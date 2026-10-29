@@ -33,8 +33,9 @@ your Linux distro) and the error text. Please fill it in.
 ### Why no pull requests
 
 TextLayr is a single-author project. Every merged patch becomes code I have to
-maintain across ffmpeg, whisper.cpp and future macOS releases, so unsolicited
-PRs are closed automatically. A good bug report is the useful contribution.
+maintain across ffmpeg, whisper.cpp and future macOS and Linux releases, so
+unsolicited PRs are closed automatically. A good bug report is the useful
+contribution.
 
 ### If you fork
 
@@ -55,7 +56,7 @@ tarball and an AppImage. You need:
 | Tool | Why | Notes |
 |---|---|---|
 | Rust (stable) | build | via [`rustup`](https://rustup.rs) |
-| `clang` | builds whisper.cpp | Xcode CLT on macOS |
+| `clang` | builds whisper.cpp | Xcode CLT on macOS, `clang` package on Linux |
 | `cmake` | whisper-rs builds whisper.cpp | must be on `PATH` |
 | `make`, `g++` | C/C++ build | |
 | `ffmpeg` + `ffprobe` | probe, audio extract, compositing, encode | system install is fine in dev |
@@ -198,6 +199,10 @@ override, and `--transcript` is documented under testing in `--help`.
   hold a simplified "t" monogram because the wordmark is unreadable that small.
   Re-run the script after editing the art; both files are committed so builds
   don't need Python.
+- **The social card is generated.** `docs/assets/og.jpg` (1200×630) comes from
+  `scripts/make_og.py`, which composes the committed dark banner over the site
+  background. Re-run it after changing the banner or the platform line; the card
+  is committed so the site deploys without Python.
 - **Models are user-managed.** The Settings window lists every supported model with
   its installed state, lets you switch between installed ones, download a
   missing one, and remove a model TextLayr downloaded (`model::remove_downloaded`

@@ -55,8 +55,8 @@
 - **A script has no preview.** The usual local caption tools write an `.ass` file
   and hope. Here you edit the transcript, restyle, and watch each word light up
   before anything is burned.
-- **A GUI app has no batch.** Most Mac caption apps do one file at a time and
-  keep the look inside the app. Here the look you just made becomes
+- **A GUI app has no batch.** Most desktop caption apps do one file at a time
+  and keep the look inside the app. Here the look you just made becomes
   `--profile user:my-look` over a folder of clips.
 - **The profile is the bridge.** A profile is one JSON file: commit one per show,
   hand it to a collaborator, or apply it in CI. Same look, every episode.
@@ -86,16 +86,17 @@ fetches its own `ffmpeg` and model on first run.
 
 ## Install
 
-On macOS there are two routes, and they differ only in whether macOS warns you.
-On Linux, skip to [Linux](#linux) — the Gatekeeper material below doesn't apply.
+TextLayr is published for macOS and Linux. The sections below cover what is
+specific to each.
+
+### macOS
 
 TextLayr is free and open source, so it isn't signed with a paid Apple Developer
 ID and can't be notarized. macOS therefore refuses to open it the way it opens a
-paid app. That is the only thing standing in the way: there are two ways in, and
-they differ only in whether macOS warns you. The terminal script never gets the
-warning; the disk image needs one approval, once.
+paid app. There are two ways in: the terminal installer never trips that check,
+and the disk image needs one approval, once.
 
-### Terminal — no warnings, no password
+#### Terminal — no warnings, no password
 
 ```sh
 curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh
@@ -123,7 +124,7 @@ TextLayr downloaded (it also removes your preferences):
 curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall
 ```
 
-### Disk image — point and click
+#### Disk image — point and click
 
 Download the latest `TextLayr-<version>.dmg` from
 [Releases](https://github.com/PaulBuitenhuis/TextLayr/releases), or use the
@@ -162,10 +163,10 @@ altogether. Then:
    command fixes it.
 
    **Already installed and still getting the warning?** Run the terminal
-   installer below — it replaces the app and clears the flag.
+   installer above — it replaces the app and clears the flag.
 
-You only ever do this once. After the first launch TextLayr updates itself, and
-the app downloads those updates itself — so they never trip Gatekeeper.
+You only ever do this once: after the first launch TextLayr updates itself, and
+those updates never trip Gatekeeper.
 
 Step-by-step guide with pictures:
 <https://paulbuitenhuis.github.io/TextLayr/#install> — or the printable
@@ -173,8 +174,8 @@ Step-by-step guide with pictures:
 
 ### Linux
 
-Two downloads, same app. Both are unsigned, self-contained builds — there is no
-installer, no system package and no root password.
+Two portable formats: a one-file AppImage and a tarball. Neither has an
+installer, a system package or a root password, and both are unsigned.
 
 - **AppImage** —
   [TextLayr-linux-x86_64.AppImage](https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage).
@@ -239,16 +240,17 @@ Videos you exported (`<name>_textlayr.mp4`) are never touched.
 The first time you open TextLayr it shows a **Setup** screen. It needs an internet
 connection once and downloads:
 
-- `ffmpeg` + `ffprobe` (unless it finds them on your `PATH`, e.g. via Homebrew)
+- `ffmpeg` + `ffprobe` (unless it finds them on your `PATH`, e.g. via Homebrew or
+  your distro's package manager)
 - a whisper model — **base.en** by default (~148 MB, fast); **small.en**
   (~488 MB, more accurate) is selectable on the same screen.
 
-That is ~190 MB for the default choice, or ~530 MB with `small.en`. These are
+That is ~190 MB for the default choice, or ~530 MB with `small.en`. They are
 stored in `~/Library/Application Support/textlayr/` on macOS and
-`~/.local/share/textlayr/` on Linux, next to your preferences and saved style
-profiles (`profiles/`, which live in the platform config folder — the same place
-on macOS, `~/.config/textlayr/` on Linux). The only other thing TextLayr writes is
-a small transcript cache in `~/Library/Caches/textlayr/` (macOS) or
+`~/.local/share/textlayr/` on Linux. Preferences and saved profiles live in the
+config folder — the same `~/Library/Application Support/textlayr/` on macOS,
+`~/.config/textlayr/` on Linux. The only other thing TextLayr writes is a small
+transcript cache in `~/Library/Caches/textlayr/` (macOS) or
 `~/.cache/textlayr/` (Linux). From then on it works fully offline, apart from a
 once-a-day look for a new TextLayr release (you can switch that off in
 **Settings → Updates**).
@@ -258,9 +260,9 @@ ones, download the other, or remove one TextLayr downloaded (a dev-checkout or
 `$TEXTLAYR_MODEL` model is never deleted). **Settings → Diagnostics** can remove
 all downloaded dependencies at once.
 
-Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — see
-[Command line](#command-line) for the bundle path, or re-run the installer with
-`--cli`.
+Want `textlayr` on your `PATH`? On macOS re-run the installer with `--cli`; on
+Linux symlink the binary or AppImage into `~/.local/bin`. See
+[Command line](#command-line) for the paths.
 
 ## Using the app
 
@@ -270,8 +272,10 @@ Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — s
 3. **Review** the transcript: click a chunk to jump the preview to it, edit any
    text, and adjust the style in the right-hand panel. Everything is inline —
    there is no separate editor window covering the preview.
-4. **Export** (button or **⌘E**). The result is written next to the input as
-   `<name>_textlayr.mp4`, with a **Reveal in Finder** shortcut when it's done.
+4. **Export** (button, or **⌘E** on macOS / **Ctrl+E** on Linux). A save panel
+   opens, prefilled with `<name>_textlayr.mp4` in the folder you used last. The
+   Done screen can reveal the file — **Reveal in Finder** on macOS, **Show in
+   folder** on Linux.
 
 A transcript is cached per input file (and per model), so re-rendering or
 restyling after the first pass is instant.
@@ -314,9 +318,10 @@ are no thumbnail previews to browse.
 - If a built-in changes in an app update, an active copy shows **modified**;
   **Revert** applies the new version.
 - Profiles live as one JSON file each in
-  `~/Library/Application Support/textlayr/profiles/`, so they can be backed up
-  or copied between machines. Every config save also keeps the previous document
-  as `config-v3.bak` next to `config.json`.
+  `~/Library/Application Support/textlayr/profiles/` on macOS and
+  `~/.config/textlayr/profiles/` on Linux, so they can be backed up or copied
+  between machines. Every config save also keeps the previous document as
+  `config-v3.bak` next to `config.json`.
 
 Profiles are shared between the app and the CLI. Anything you save in the app is
 available headlessly by name, so the look you refined in the preview is the look
@@ -333,15 +338,16 @@ file — so a profile can live in the repo next to the show it belongs to.
 
 ### Updates
 
-TextLayr reads a small `latest.json` manifest attached to the newest GitHub
-release, on launch (at most once a day), and shows an **Update available** button
-next to **Settings** when there is a newer version. From **Settings → Updates**
-you can check on demand, read the release notes, or **Download & install** — the
-app verifies the download (SHA-256 from the manifest, plus a codesign /
-bundle-identifier / version check), swaps its own bundle in place and relaunches
-itself. If it can't (e.g. it is running from a quarantined "App Translocation"
-copy or a read-only location), it downloads the disk image and opens it so you
-can drag **TextLayr** into **Applications** by hand.
+On macOS, TextLayr reads a small `latest.json` manifest attached to the newest
+GitHub release, on launch (at most once a day), and shows an **Update available**
+button next to **Settings** when there is a newer version. From
+**Settings → Updates** you can check on demand, read the release notes, or
+**Download & install** — the app verifies the download (SHA-256 from the
+manifest, plus a codesign / bundle-identifier / version check), swaps its own
+bundle in place and relaunches itself. If it can't (e.g. it is running from a
+quarantined "App Translocation" copy or a read-only location), it downloads the
+disk image and opens it so you can drag **TextLayr** into **Applications** by
+hand.
 
 On Linux nothing replaces the running binary: **Download package** fetches the
 shape you installed — the AppImage when the app is running as one, otherwise the

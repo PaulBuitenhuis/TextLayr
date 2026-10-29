@@ -1,17 +1,18 @@
 /* TextLayr landing page — progressive enhancement only.
    With JavaScript off the page still works: the download buttons point at the
-   version-agnostic asset alias (releases/latest/download/TextLayr.dmg, published
-   by .github/workflows/release.yml) and the static copy is used everywhere.
-   With JS on we resolve the exact versioned asset instead and show its version
-   and size; RELEASES below is the last-resort fallback if a release somehow
-   carries no .dmg. */
+   version-agnostic asset aliases (releases/latest/download/TextLayr.dmg,
+   …/TextLayr-linux-x86_64.AppImage and …/TextLayr-linux-x86_64.tar.xz, all
+   published by .github/workflows/release.yml) and the static copy is used
+   everywhere. With JS on we resolve the exact versioned assets instead and show
+   their version and sizes; RELEASES below is the last-resort fallback if a
+   release somehow carries no matching asset. */
 (function () {
   'use strict';
 
   var REPO = 'PaulBuitenhuis/TextLayr';
   var API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
   var RELEASES = 'https://github.com/' + REPO + '/releases/latest';
-  var CACHE_KEY = 'textlayr-latest-release';
+  var CACHE_KEY = 'textlayr-latest-release-v2';
   var CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
   var $ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
@@ -39,7 +40,9 @@
       var block = btn.closest('.code');
       var source = block && block.querySelector('code');
       if (!source) return;
-      var text = source.textContent.trim();
+      // innerText keeps <br> breaks as newlines; textContent would glue the
+      // lines together and paste a non-command.
+      var text = (source.innerText || source.textContent || '').trim();
 
       var done = function () {
         btn.classList.add('is-copied');
@@ -108,7 +111,7 @@
     }
   }
 
-  /* ── Newest release (version, size, direct download) ─────────────── */
+  /* ── Newest release (version, sizes, direct downloads) ─────────────── */
 
   function formatSize(bytes) {
     if (!bytes) return '';
@@ -130,26 +133,38 @@
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), d: data })); } catch (e) {}
   }
 
+  function asset(rel, pattern) {
+    var found = (rel.assets || []).filter(function (a) { return pattern.test(a.name); })[0];
+    return found
+      ? { name: found.name, size: found.size, url: found.browser_download_url }
+      : { name: '', size: 0, url: '' };
+  }
+
   function apply(info) {
     var version = info.version || '';
-    var size = formatSize(info.size);
+    var dmg = info.dmg || {};
+    var appimage = info.appimage || {};
+    var tarball = info.tarball || {};
 
     $('[data-version]').forEach(function (el) { el.textContent = version || '—'; });
     $('[data-version-inline]').forEach(function (el) { el.textContent = version || 'latest'; });
-    $('[data-size]').forEach(function (el) { el.textContent = size || 'free'; });
-    $('[data-file]').forEach(function (el) { el.textContent = info.name || 'TextLayr for macOS'; });
-    $('[data-download]').forEach(function (el) { el.href = info.url || RELEASES; });
+    $('[data-size]').forEach(function (el) { el.textContent = formatSize(dmg.size) || 'free'; });
+    $('[data-size-appimage]').forEach(function (el) { el.textContent = formatSize(appimage.size) || 'AppImage'; });
+    $('[data-size-tarball]').forEach(function (el) { el.textContent = formatSize(tarball.size) || 'tarball'; });
+    $('[data-file]').forEach(function (el) { el.textContent = dmg.name || 'TextLayr for macOS'; });
+    $('[data-download]').forEach(function (el) { el.href = dmg.url || RELEASES; });
+    $('[data-download-linux]').forEach(function (el) { el.href = appimage.url || RELEASES; });
+    $('[data-download-tarball]').forEach(function (el) { el.href = tarball.url || RELEASES; });
     $('[data-release-meta]').forEach(function (el) { el.hidden = false; });
     $('[data-release-fallback]').forEach(function (el) { el.hidden = true; });
   }
 
   function fromRelease(rel) {
-    var dmg = (rel.assets || []).filter(function (a) { return /\.dmg$/i.test(a.name); })[0];
     return {
       version: String(rel.tag_name || rel.name || '').replace(/^v/, ''),
-      name: dmg ? dmg.name : '',
-      size: dmg ? dmg.size : 0,
-      url: dmg ? dmg.browser_download_url : RELEASES
+      dmg: asset(rel, /\.dmg$/i),
+      appimage: asset(rel, /x86_64\.AppImage$/i),
+      tarball: asset(rel, /x86_64\.tar\.xz$/i)
     };
   }
 

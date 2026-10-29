@@ -3,8 +3,10 @@
 The GUI and the CLI run the same pipeline. These recipes cover the part the GUI
 can't do: designing a look once, then applying it without opening a window.
 
-All examples assume `textlayr` is on your `PATH` (re-run the installer with
-`--cli`), or that you're running `target/release/textlayr` from a checkout.
+All examples assume `textlayr` is on your `PATH`: on macOS re-run the installer
+with `--cli`, on Linux symlink the binary or AppImage into `~/.local/bin`. From a
+checkout, use `target/release/textlayr` instead. The AppImage also works as the
+command itself — `./TextLayr-linux-x86_64.AppImage --list-profiles`.
 
 ## Start with a look you made in the app
 
@@ -59,8 +61,16 @@ done
 Profiles are plain JSON, so a show's look can live next to the show:
 
 ```sh
-ls ~/Library/Application\ Support/textlayr/profiles/   # macOS
-ls ~/.config/textlayr/profiles/                        # Linux
+# macOS
+ls ~/Library/Application\ Support/textlayr/profiles/
+
+# Linux
+ls ~/.config/textlayr/profiles/
+```
+
+Copy the `<id>.json` you want next to the show and point `--profile` at it:
+
+```sh
 cp ~/.config/textlayr/profiles/<id>.json profiles/podcast.json
 textlayr ep12.mp4 --headless --profile profiles/podcast.json
 ```
@@ -72,9 +82,9 @@ so the export matches the preview and not just the colours.
 ## Re-render without re-transcribing
 
 Word timings are cached per input file — keyed on path, size, mtime and the
-model — in `~/Library/Caches/textlayr/`. That is why restyling an export is
-quick, and why editing the video, or switching from `base.en` to `small.en`,
-transcribes again.
+model — in `~/Library/Caches/textlayr/` on macOS or `~/.cache/textlayr/` on
+Linux. That is why restyling an export is quick, and why editing the video, or
+switching from `base.en` to `small.en`, transcribes again.
 
 ```sh
 textlayr ep12.mp4 --headless --profile user:bold-pop      # cache hit
