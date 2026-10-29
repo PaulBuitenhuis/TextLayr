@@ -27,8 +27,8 @@ invitation only.**
 | A patch you want to exist | Fork the repo; MIT lets you publish your own version |
 
 A reproducible bug report is worth more than a patch written against a guess at
-the design, so the issue form asks for the version, the macOS release and the
-error text. Please fill it in.
+the design, so the issue form asks for the version, your OS (the macOS release or
+your Linux distro) and the error text. Please fill it in.
 
 ### Why no pull requests
 
@@ -49,7 +49,8 @@ Forking is fine — that's what the licence is for. If you publish a fork, thoug
 ## Building from source
 
 TextLayr targets **macOS 13+ on Apple Silicon** and **Linux on x86_64**; Linux is
-also the convenient dev environment. You need:
+also the convenient dev environment. Both are published — Linux as a portable
+tarball and an AppImage. You need:
 
 | Tool | Why | Notes |
 |---|---|---|

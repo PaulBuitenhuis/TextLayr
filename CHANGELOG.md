@@ -6,16 +6,48 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
 ### Added
 
-- **Linux support (x86_64) — source and CI only.** TextLayr builds and runs on
-  Linux: resources resolve from an AppImage or a standard prefix, first run
-  downloads a pinned static ffmpeg build, and `scripts/package_linux.sh` produces
-  a portable tarball (plus an AppImage when `appimagetool` is available). Linux
-  packages are **not published yet**; they wait for a full desktop pass. The
-  in-app updater hands a Linux package over for you to install instead of
-  replacing the running binary. First-run downloads and updates no longer shell
-  out to `curl` or `ditto`.
+- **Linux (x86_64) is a published platform.** Each release now carries
+  `TextLayr-<version>-linux-x86_64.tar.xz` and a matching `.AppImage` beside the
+  macOS disk image, with the same version-less aliases
+  (`TextLayr-linux-x86_64.tar.xz`, `TextLayr-linux-x86_64.AppImage`). Both are
+  self-contained: unpack the tarball and run `./textlayr`, or make the AppImage
+  executable and run it. The AppImage needs `libfuse2` (Ubuntu 24.04+:
+  `libfuse2t64`); the tarball needs nothing but glibc 2.35+.
+- **Linux updates are a hand-off, not a self-replace.** **Download package**
+  fetches the shape that is actually installed — the AppImage when the app is
+  running as one, otherwise the tarball — verifies its SHA-256 from the release
+  manifest, and shows it in your file manager. You swap it in yourself; the
+  running copy keeps working.
+
+### Changed
+
+- **Linux packages stay portable across x86-64 CPUs.** whisper.cpp is built with
+  `GGML_NATIVE=OFF`, so ggml keeps its per-ISA kernels (SSE4.2, AVX, AVX2, FMA,
+  F16C, BMI2) and no AVX-512 leaks in; macOS keeps native codegen. The app
+  refuses to load a model on a CPU below the AVX2/FMA floor with a clear message
+  instead of dying with SIGILL, and CI disassembles whisper.cpp's objects to
+  prove the shipped build stays that way.
+- **First-run downloads and updates no longer shell out to `curl` or `ditto`.**
+
+### Fixed
+
+- **Exports work with ffmpeg older than 5.1.** The pipe encoder passed
+  `-fps_mode`, which older builds ignore with a warning — the encode then wrote
+  audio and no video, without failing. It falls back to `-vsync 0`, and a decoder
+  that reports zero frames is now an error rather than an empty export.
+- **Videos with a rotation tag keep their orientation on ffprobe older than
+  6.0.** Rotation moved from stream side data to stream tags; both are read now.
+- **"Show in folder" and "Open in player" work on distros whose `xdg-open` is a
+  shell script** that rejects options — it is called with the path alone.
+- **A repeat update download keeps a sane name** (`…-x86_64 (1).tar.xz`, not
+  `…-x86_64.tar (1).xz`), and a path with a compound archive suffix is preserved.
+- **The GTK save dialog's doubled extension is collapsed.** Accepting the
+  suggested name used to write `clip_textlayr.mp4.mp4`; it now writes one
+  `.mp4`.
 
 ## [0.3.0] - 2026-10-23
 
@@ -331,7 +363,8 @@ video, as a native macOS app plus a headless CLI.
 - **Packaging:** `scripts/package_macos.sh` builds an ad-hoc-signed `TextLayr.app`
   plus `.zip` and `.dmg` release artifacts.
 
-[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.4.0
 [0.3.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.3.0
 [0.2.3]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.3
 [0.2.2]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.2

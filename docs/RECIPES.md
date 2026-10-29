@@ -25,8 +25,9 @@ All examples assume `textlayr` is on your `PATH` (re-run the installer with
    textlayr ep12.mp4 --headless --profile user:podcast-look
    ```
 
-The app and the CLI read the same store (`~/Library/Application Support/textlayr/profiles/`),
-so there is no export step and nothing to keep in sync.
+The app and the CLI read the same store — `~/Library/Application Support/textlayr/profiles/`
+on macOS, `~/.config/textlayr/profiles/` on Linux — so there is no export step
+and nothing to keep in sync.
 
 `--profile` resolves in this order: an existing `.json` path, a built-in id or
 slug (`classic`, `builtin:classic`), a user id (`user:…`), then a display name,
@@ -58,8 +59,9 @@ done
 Profiles are plain JSON, so a show's look can live next to the show:
 
 ```sh
-ls ~/Library/Application\ Support/textlayr/profiles/
-cp ~/Library/Application\ Support/textlayr/profiles/<id>.json profiles/podcast.json
+ls ~/Library/Application\ Support/textlayr/profiles/   # macOS
+ls ~/.config/textlayr/profiles/                        # Linux
+cp ~/.config/textlayr/profiles/<id>.json profiles/podcast.json
 textlayr ep12.mp4 --headless --profile profiles/podcast.json
 ```
 

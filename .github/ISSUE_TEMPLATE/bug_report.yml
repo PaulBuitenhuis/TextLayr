@@ -26,10 +26,11 @@ body:
     validations:
       required: true
   - type: input
-    id: macos
+    id: system
     attributes:
-      label: macOS version and chip
-      placeholder: macOS 15.1, Apple M2
+      label: OS and hardware
+      description: macOS version and chip, or your Linux distro, kernel and CPU.
+      placeholder: macOS 15.1, Apple M2 — or Ubuntu 24.04, Ryzen 5 3600
     validations:
       required: true
   - type: textarea

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Burn word-by-word captions into video, on your own Mac.</b><br>
+  <b>Burn word-by-word captions into video, on your own computer.</b><br>
   Design the look in the app — edit the transcript, restyle, watch the live preview —<br>
   then save it as a profile and run the same pipeline headless over a folder of clips.<br>
   Free, open source and donation-supported. No uploads, no accounts, and no network after the one-time setup download (beyond an optional once-a-day update check).
@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://paulbuitenhuis.github.io/TextLayr/"><img src="https://img.shields.io/badge/website-paulbuitenhuis.github.io%2FTextLayr-2f80ff.svg" alt="Website"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black.svg" alt="Platform: macOS (Apple Silicon)">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black.svg" alt="Platform: macOS (Apple Silicon) and Linux (x86_64)">
   <a href="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml"><img src="https://github.com/PaulBuitenhuis/TextLayr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
@@ -27,7 +27,7 @@
 
 - **Word-by-word captions.** A few words on screen at a time, with the spoken
   word lit up — the karaoke-style look popular on TikTok/Reels/Shorts.
-- **Whisper transcription, offline.** Speech-to-text runs locally on your Mac
+- **Whisper transcription, offline.** Speech-to-text runs locally on your machine
   via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with DTW word
   timings for tight sync.
 - **Review before you burn.** Edit the transcript, tweak the style, and see a
@@ -69,16 +69,25 @@ fetches its own `ffmpeg` and model on first run.
 
 ## Requirements
 
-- **macOS 13 (Ventura) or later on Apple Silicon (arm64)**. Published releases
-  are macOS-only for now. The source also builds on Linux x86_64 for development
-  (CI produces a tarball), but Linux packages are not published yet.
+- **macOS 13 (Ventura) or later on Apple Silicon (arm64)**, or **Linux on
+  x86_64** with glibc 2.35+ (Ubuntu 22.04 or newer). There is no Intel-Mac
+  build and no Linux arm64 build.
+- **A CPU with AVX2 and FMA** on Linux — Intel Haswell (2013) or AMD Excavator
+  (2015) and later. The shipped whisper build leaves AVX-512 out so it runs on
+  those older chips; the app says so plainly instead of crashing if a CPU is
+  older still. macOS builds use native codegen and have no such floor.
 - **No extra installs.** `ffmpeg` + `ffprobe` and a whisper model are fetched on
   first run (~190 MB, or ~530 MB if you pick the larger `small.en` model). If you
-  already have ffmpeg on your `PATH` (e.g. from Homebrew), TextLayr uses it
-  instead of downloading one.
+  already have ffmpeg on your `PATH` (e.g. from Homebrew or your distro), TextLayr
+  uses it instead of downloading one.
 - **About 250 MB of disk** after setup (~600 MB with `small.en`).
+- **The AppImage needs FUSE 2** — `libfuse2` on Ubuntu 22.04, `libfuse2t64` on
+  24.04 and later. The tarball needs nothing beyond glibc.
 
 ## Install
+
+On macOS there are two routes, and they differ only in whether macOS warns you.
+On Linux, skip to [Linux](#linux) — the Gatekeeper material below doesn't apply.
 
 TextLayr is free and open source, so it isn't signed with a paid Apple Developer
 ID and can't be notarized. macOS therefore refuses to open it the way it opens a
@@ -162,28 +171,45 @@ Step-by-step guide with pictures:
 <https://paulbuitenhuis.github.io/TextLayr/#install> — or the printable
 [PDF guide](https://paulbuitenhuis.github.io/TextLayr/assets/install/TextLayr-install-guide.pdf).
 
-### Linux (development only)
+### Linux
 
-Linux builds are **not published yet**: `ci.yml` builds and tests them, and its
-tarball artifact can be downloaded for development, but a public Linux release
-waits for a full desktop pass (portal dialogs, drag-and-drop, AppImage and the
-bundled whisper build's CPU compatibility). When it ships, the tarball will be
-`TextLayr-<version>-linux-x86_64.tar.xz` (plus an AppImage), unpacked and run as
-`./textlayr`.
+Two downloads, same app. Both are unsigned, self-contained builds — there is no
+installer, no system package and no root password.
 
-Build one locally on Linux x86_64 with:
+- **AppImage** —
+  [TextLayr-linux-x86_64.AppImage](https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.AppImage).
+  One file; make it executable and run it:
 
-```sh
-scripts/package_linux.sh
-```
+  ```sh
+  chmod +x TextLayr-linux-x86_64.AppImage
+  ./TextLayr-linux-x86_64.AppImage
+  ```
 
-The first launch downloads a static `ffmpeg` build and a whisper model into
-`~/.local/share/textlayr/`; an `ffmpeg` already on your `PATH` is used instead of
-downloading one. Open a video with **Open video…** or by dragging it onto the
-window. The windowing layer implements drag-and-drop for X11 only, so use the
-picker on Wayland.
+  It needs FUSE 2 (`sudo apt install libfuse2` on Ubuntu 22.04,
+  `libfuse2t64` on 24.04 and later). Without it, run
+  `./TextLayr-linux-x86_64.AppImage --appimage-extract-and-run` instead.
+
+- **Tarball** —
+  [TextLayr-linux-x86_64.tar.xz](https://github.com/PaulBuitenhuis/TextLayr/releases/latest/download/TextLayr-linux-x86_64.tar.xz).
+  Needs nothing beyond glibc 2.35+:
+
+  ```sh
+  tar -xJf TextLayr-linux-x86_64.tar.xz
+  ./TextLayr-<version>-linux-x86_64/textlayr
+  ```
+
+Version-pinned files (`TextLayr-<version>-linux-x86_64…`) are on the
+[releases page](https://github.com/PaulBuitenhuis/TextLayr/releases) next to a
+`SHA256SUMS`. Put the binary wherever you keep your apps — `~/.local/bin`, or a
+folder you unpack the tarball into — and add a `.desktop` entry yourself if you
+want a launcher. The AppImage carries a desktop entry and a hicolor icon, so
+integration tools such as Gearlever or AppImageLauncher can add it to your menu.
+
+Drag-and-drop is implemented for X11 only. On Wayland, use **Open video…**.
 
 ### Uninstall
+
+**macOS**
 
 1. Quit TextLayr and drag **TextLayr.app** to the Trash — from `/Applications`,
    or `~/Applications` if that's where it went.
@@ -196,6 +222,16 @@ picker on Wayland.
 
 The terminal installer can do all of it for you (including preferences):
 `curl -fsSL https://paulbuitenhuis.github.io/TextLayr/install.sh | sh -s -- --uninstall`.
+
+**Linux**
+
+1. Delete the AppImage, or the folder you unpacked the tarball into.
+2. Remove what it wrote: `~/.local/share/textlayr` (ffmpeg and models;
+   ~250 MB, or ~600 MB with `small.en`), `~/.config/textlayr` (preferences and
+   saved profiles) and `~/.cache/textlayr` (the transcript cache).
+   **Settings → Diagnostics → Remove downloaded models and ffmpeg** removes only
+   the downloads and keeps your preferences.
+
 Videos you exported (`<name>_textlayr.mp4`) are never touched.
 
 ### First run
@@ -208,11 +244,14 @@ connection once and downloads:
   (~488 MB, more accurate) is selectable on the same screen.
 
 That is ~190 MB for the default choice, or ~530 MB with `small.en`. These are
-stored in `~/Library/Application Support/textlayr/`, next to your preferences and
-saved style profiles (`profiles/`). The only other thing TextLayr writes is a
-small transcript cache in `~/Library/Caches/textlayr/`. From then on it works
-fully offline, apart from a once-a-day look for a new TextLayr release (you can
-switch that off in **Settings → Updates**).
+stored in `~/Library/Application Support/textlayr/` on macOS and
+`~/.local/share/textlayr/` on Linux, next to your preferences and saved style
+profiles (`profiles/`, which live in the platform config folder — the same place
+on macOS, `~/.config/textlayr/` on Linux). The only other thing TextLayr writes is
+a small transcript cache in `~/Library/Caches/textlayr/` (macOS) or
+`~/.cache/textlayr/` (Linux). From then on it works fully offline, apart from a
+once-a-day look for a new TextLayr release (you can switch that off in
+**Settings → Updates**).
 
 You can manage models from the **Settings** window: switch between installed
 ones, download the other, or remove one TextLayr downloaded (a dev-checkout or
@@ -225,7 +264,8 @@ Prefer the terminal? The GUI install doesn't put `textlayr` on your `PATH` — s
 
 ## Using the app
 
-1. **Drop a video** (or pass a path on the command line).
+1. **Drop a video** (or pass a path on the command line, or use **Open video…**;
+   drag-and-drop is X11-only, so pick on Wayland).
 2. Wait while it extracts audio and transcribes. Progress is shown per phase.
 3. **Review** the transcript: click a chunk to jump the preview to it, edit any
    text, and adjust the style in the right-hand panel. Everything is inline —
@@ -303,6 +343,11 @@ itself. If it can't (e.g. it is running from a quarantined "App Translocation"
 copy or a read-only location), it downloads the disk image and opens it so you
 can drag **TextLayr** into **Applications** by hand.
 
+On Linux nothing replaces the running binary: **Download package** fetches the
+shape you installed — the AppImage when the app is running as one, otherwise the
+tarball — verifies its SHA-256 from the manifest, and shows it in your file
+manager. Swap it in yourself; the running copy stays usable meanwhile.
+
 Automatic checking can be turned off with the **Check automatically** box; the
 check is the only time TextLayr talks to the network after setup.
 
@@ -315,6 +360,11 @@ image, run the binary directly — or re-run the installer with `--cli` to insta
 ```sh
 /Applications/TextLayr.app/Contents/MacOS/TextLayr --version
 ```
+
+On Linux it runs from wherever you put it — the AppImage *is* the executable, and
+the tarball unpacks to a `textlayr` binary — so `./textlayr` and
+`./TextLayr-linux-x86_64.AppImage` run the same CLI. Symlink either into
+`~/.local/bin` to get `textlayr` on your `PATH`.
 
 Built from source (`cargo build --release`), the binary is
 `target/release/textlayr`, so the examples below apply as written.
@@ -381,6 +431,7 @@ In short:
 ```sh
 cargo build --release          # -> target/release/textlayr
 scripts/package_macos.sh       # -> dist/TextLayr.app (+ .zip, .dmg)
+scripts/package_linux.sh       # -> dist/TextLayr-<version>-linux-x86_64/ (+ .tar.xz, .AppImage)
 ```
 
 To exercise the in-app updater without publishing a release, `scripts/serve_updates_local.sh`
@@ -393,7 +444,7 @@ pointed at it (the script prints the exact command).
 `ffprobe` (display dimensions + rotation) → audio extract → whisper
 transcription with DTW word timings → chunking into popups → per-word caption
 PNGs → export: ffmpeg decode → Rust compositing → hardware encode
-(VideoToolbox on macOS; x264 fallback), audio copied.
+(VideoToolbox on macOS, VAAPI on Linux; x264 fallback), audio copied.
 
 Caption states are tight crops of just the caption box, so a few hundred of them
 stay small and the export's memory stays flat. See

@@ -56,11 +56,10 @@ jobs:
             dist/*.dmg
           if-no-files-found: error
 
-  # Linux is built by CI on every push, but is not published yet: the desktop
-  # GUI and the bundled whisper build still need a real Linux pass. Set the
-  # repository variable TEXTLAYR_RELEASE_LINUX=true to publish it; the publish
-  # job includes the artifacts automatically when they exist. A manual dispatch
-  # is a rehearsal and builds Linux even while the variable is unset.
+  # Linux is published from 0.4.0; TEXTLAYR_RELEASE_LINUX=true is set on the
+  # repository, and the publish job includes the artifacts automatically when
+  # they exist. Clearing the variable is a clean macOS-only release. A manual
+  # dispatch is a rehearsal and builds Linux even while the variable is unset.
   build-linux:
     name: build (linux-x86_64)
     if: vars.TEXTLAYR_RELEASE_LINUX == 'true' || github.event_name == 'workflow_dispatch'
