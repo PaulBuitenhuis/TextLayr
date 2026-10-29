@@ -135,13 +135,33 @@ detach_retry "$mountpoint"
 echo "==> compressing"
 rm -f "$out"
 # `hdiutil convert` occasionally fails transiently on CI right after the image
-# is detached. Retry once, and drop -quiet on the retry so a real failure leaves
-# a usable error in the release log.
-if ! hdiutil convert "$rw" -quiet -format UDZO -imagekey zlib-level=9 -o "$out"; then
-    echo "    warning: image compression failed; retrying" >&2
-    sleep 2
+# is detached ("Resource temporarily unavailable"). Retry a few times with a
+# growing pause, and drop -quiet on the last attempt so a real failure leaves a
+# usable error in the release log.
+attempt=0
+compressed=0
+while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
     rm -f "$out"
-    hdiutil convert "$rw" -format UDZO -imagekey zlib-level=9 -o "$out"
+    if [ "$attempt" -lt 3 ]; then
+        if hdiutil convert "$rw" -quiet -format UDZO -imagekey zlib-level=9 -o "$out"; then
+            compressed=1
+            break
+        fi
+    else
+        if hdiutil convert "$rw" -format UDZO -imagekey zlib-level=9 -o "$out"; then
+            compressed=1
+            break
+        fi
+    fi
+    echo "    warning: image compression failed (attempt $attempt)" >&2
+    if [ "$attempt" -lt 3 ]; then
+        sleep $((attempt * 3))
+    fi
+done
+if [ "$compressed" -ne 1 ]; then
+    echo "error: could not compress $out" >&2
+    exit 1
 fi
 
 # Verify the compressed image actually carries the layout.

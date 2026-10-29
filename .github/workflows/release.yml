@@ -129,6 +129,11 @@ jobs:
       (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
+      # The manifest script lives in the repo; without a checkout the publish
+      # job has nothing to run (the rehearsal skips this job, so only a tag
+      # catches it).
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           pattern: dist-*
