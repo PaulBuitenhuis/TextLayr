@@ -1,8 +1,8 @@
 # Contributing to TextLayr
 
-TextLayr is a small, focused project: an offline karaoke caption burner for
-short-form video. It is maintained by a single author, and **unsolicited pull
-requests are closed automatically** — see the
+TextLayr is a small, focused project: it burns word-by-word captions into
+video, offline, on your own machine. It is maintained by a single author, and
+**unsolicited pull requests are closed automatically** — see the
 [contribution policy](#contribution-policy) for why, and for what to send
 instead.
 

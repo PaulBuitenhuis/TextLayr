@@ -473,6 +473,41 @@ fn fps_mode_args(has_fps_mode: bool) -> &'static [&'static str] {
     }
 }
 
+/// Audio codecs we copy into the MP4 untouched: the ones every player and
+/// platform we target reads.
+///
+/// ffmpeg's muxer also accepts Opus, Vorbis and FLAC in MP4 (build-dependent;
+/// older builds need `-strict -2` for Opus), but those combinations are not
+/// reliably playable outside ffmpeg-based players. Everything else is
+/// re-encoded to AAC — a copy that only fails at the muxing step would waste
+/// the whole video encode anyway.
+const MP4_COPYABLE_AUDIO: &[&str] = &["aac", "mp3", "mp2", "ac3", "eac3", "alac"];
+
+/// Whether `codec` can be copied into MP4 untouched.
+fn audio_copyable(codec: Option<&str>) -> bool {
+    codec.is_some_and(|c| MP4_COPYABLE_AUDIO.contains(&c))
+}
+
+/// The encoder's audio arguments: copy when MP4 can carry the codec, else AAC.
+/// A video with no audio stream gets `copy` too — ffmpeg ignores it.
+fn audio_args(info: &VideoInfo) -> &'static [&'static str] {
+    if !info.has_audio || audio_copyable(info.audio_codec.as_deref()) {
+        &["-c:a", "copy"]
+    } else {
+        &["-c:a", "aac", "-b:a", "192k"]
+    }
+}
+
+/// Say so when the audio is being re-encoded, so a lossy step is not silent.
+fn note_audio(info: &VideoInfo) {
+    if info.has_audio && !audio_copyable(info.audio_codec.as_deref()) {
+        eprintln!(
+            "      audio: {} is not MP4-safe — encoding AAC 192k",
+            info.audio_codec.as_deref().unwrap_or("unknown codec")
+        );
+    }
+}
+
 /// Encode `output` with the caption states composited over `input`.
 ///
 /// `on_progress` receives 0.0..=1.0 as the encode advances.
@@ -506,6 +541,7 @@ pub fn export(
         script_path.display(),
         filter_graph_file_option(tools).trim_start_matches('-'),
     );
+    note_audio(info);
 
     let mut cmd = Command::new(&tools.ffmpeg);
     cmd.arg("-hide_banner")
@@ -531,8 +567,7 @@ pub fn export(
         .arg("18")
         .arg("-pix_fmt")
         .arg("yuv420p")
-        .arg("-c:a")
-        .arg("copy")
+        .args(audio_args(info))
         .arg("-movflags")
         .arg("+faststart")
         .arg("-progress")
@@ -706,6 +741,7 @@ pub fn export_pipe(
             Active::VideoToolbox => "videotoolbox",
         },
     );
+    note_audio(info);
 
     // ── decoder: input -> RGBA frames on stdout ───────────────────────────
     let mut dec_cmd = Command::new(&tools.ffmpeg);
@@ -786,15 +822,8 @@ pub fn export_pipe(
         }
     }
     enc_cmd
-        .args([
-            "-c:a",
-            "copy",
-            "-movflags",
-            "+faststart",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-        ])
+        .args(audio_args(info))
+        .args(["-movflags", "+faststart", "-progress", "pipe:1", "-nostats"])
         .arg(output);
     let mut enc = ChildGuard::new(
         enc_cmd
@@ -1048,6 +1077,51 @@ mod tests {
         assert_eq!(fps_mode_args(true), ["-fps_mode", "passthrough"]);
     }
 
+    fn info_with(audio_codec: Option<&str>) -> VideoInfo {
+        VideoInfo {
+            display_width: 64,
+            display_height: 64,
+            duration_secs: 1.0,
+            fps: 30.0,
+            frame_rate: "30/1".into(),
+            has_audio: audio_codec.is_some(),
+            audio_codec: audio_codec.map(str::to_owned),
+            pix_fmt: "yuv420p".into(),
+            color_range: "tv".into(),
+            color_space: "bt709".into(),
+            color_primaries: "bt709".into(),
+            color_transfer: "bt709".into(),
+        }
+    }
+
+    /// MP4 carries these untouched; anything else (`opus`/`vorbis` from a
+    /// `.webm`, FLAC, PCM) makes `-c:a copy` fail only *after* the whole video
+    /// encode, so it is re-encoded to AAC instead.
+    #[test]
+    fn audio_that_mp4_cannot_carry_is_re_encoded_to_aac() {
+        for codec in ["aac", "mp3", "mp2", "ac3", "eac3", "alac"] {
+            assert_eq!(
+                audio_args(&info_with(Some(codec))),
+                ["-c:a", "copy"],
+                "{codec} should be copied"
+            );
+        }
+        for codec in [
+            Some("opus"),
+            Some("vorbis"),
+            Some("flac"),
+            Some("pcm_s16le"),
+        ] {
+            assert_eq!(
+                audio_args(&info_with(codec)),
+                ["-c:a", "aac", "-b:a", "192k"],
+                "{codec:?} should be re-encoded"
+            );
+        }
+        // A silent video has nothing to re-encode (and nothing to warn about).
+        assert_eq!(audio_args(&info_with(None)), ["-c:a", "copy"]);
+    }
+
     #[test]
     fn placement_uses_the_box_anchor() {
         // box_top = 10, box_h = 20, frame = 1000, position = 50%.
@@ -1142,6 +1216,7 @@ mod tests {
             fps: 30.0,
             frame_rate: "30/1".into(),
             has_audio: false,
+            audio_codec: None,
             pix_fmt: "yuv420p".into(),
             color_range: "tv".into(),
             color_space: "bt709".into(),

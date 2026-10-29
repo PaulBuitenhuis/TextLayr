@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
+use crate::cancel::Cancelled;
 use crate::chunk::Chunk;
 use crate::config::Style;
 use crate::model::{FoundModel, Model};
@@ -84,11 +85,16 @@ fn open_input(
 
 /// Probe the input, then produce word-level timings — from cache when the
 /// input file is unchanged and `no_cache` is false.
+///
+/// `cancel` stops the run: checked between the steps and passed into whisper,
+/// which aborts mid-transcription. A cancelled run returns [`Cancelled`] and
+/// leaves no transcript cache entry behind.
 pub fn ingest(
     input: &Path,
     no_cache: bool,
     model: &FoundModel,
     progress: Progress,
+    cancel: Arc<AtomicBool>,
 ) -> Result<Ingest> {
     // Shared with whisper's callback below: the C API wants a `'static` sink,
     // so the caller's closure lives behind a mutex and is invoked in place.
@@ -115,6 +121,9 @@ pub fn ingest(
     }
 
     // Extract 16 kHz mono PCM, then whisper it.
+    if cancel.load(Ordering::Relaxed) {
+        return Err(Cancelled.into());
+    }
     report(IngestProgress::Extracting);
     let tmp = tempfile::tempdir().context("temp dir")?;
     let pcm_path = tmp.path().join("audio.f32le");
@@ -126,7 +135,7 @@ pub fn ingest(
     let model_path = model.path.clone();
     let sink = Arc::clone(&progress);
     let t = Instant::now();
-    let words = transcribe::transcribe(kind, &model_path, &samples, move |pct| {
+    let words = transcribe::transcribe(kind, &model_path, &samples, cancel, move |pct| {
         if let Ok(mut f) = sink.lock() {
             f(IngestProgress::Transcribing(pct));
         }

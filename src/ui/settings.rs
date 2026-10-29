@@ -15,6 +15,7 @@ use super::theme;
 use super::widgets::{human_bytes, reveal_label};
 use super::{
     diagnostic_entry, reveal, App, UpdateUi, DEVELOPER, DEVELOPER_URL, REPO_URL, SUPPORT_URL,
+    TAGLINE,
 };
 
 /// The selected tab in the About window.
@@ -80,7 +81,14 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .fixed_size(egui::vec2(500.0, max_h))
             .show(ctx, |ui| {
-                ui.set_width(476.0);
+                // Take the width the window actually offers, rather than a
+                // hard-coded 476. The window is `fixed_size(500)` *including*
+                // its 12px margin and 1px stroke, so the content box is 474
+                // wide: asking for 476 made the body overflow to the right,
+                // and egui paints the title band from the declared window size
+                // while the body followed the overflow — leaving a 2px sliver
+                // between the title band and the right edge of the window.
+                ui.set_width(ui.available_width());
 
                 // ── tab strip ─────────────────────────────────────────────
                 let labels: Vec<&str> = AboutTab::ALL.iter().map(|t| t.label()).collect();
@@ -134,10 +142,7 @@ impl App {
                                         }
                                     }
                                     ui.add_space(10.0);
-                                    ui.label(
-                                        egui::RichText::new("Offline karaoke caption burner")
-                                            .weak(),
-                                    );
+                                    ui.label(egui::RichText::new(TAGLINE).weak());
                                     ui.add_space(4.0);
                                     ui.label(
                                         egui::RichText::new(format!(
@@ -200,9 +205,10 @@ impl App {
                                             ..Default::default()
                                         };
                                         job.append(
-                                            "TextLayr is free and always will be — a \
-                                             one-person project. If it saved you time, \
-                                             a coffee is always appreciated.",
+                                            "TextLayr is free, and it stays free. There's no \
+                                             company behind it — just me, making it in \
+                                             whatever time I can find. If it saved you some \
+                                             time, a coffee is a nice way to say thanks.",
                                             0.0,
                                             egui::TextFormat {
                                                 font_id: egui::FontId::proportional(13.5),

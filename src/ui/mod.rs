@@ -42,6 +42,9 @@ const DEVELOPER_URL: &str = "https://github.com/PaulBuitenhuis";
 const REPO_URL: &str = "https://github.com/PaulBuitenhuis/TextLayr";
 /// Optional donations page, opened in the user's browser.
 const SUPPORT_URL: &str = "https://ko-fi.com/U6R0290CU2";
+/// The one-line description, shared by the header and the About window. Keep it
+/// identical to the site's headline and the README's first line.
+const TAGLINE: &str = "Word-by-word captions, burned into your video";
 
 /// Where the app is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,9 +123,12 @@ struct ExportPlan {
 
 /// A native picker to run after the current frame.
 ///
-/// egui must not re-enter `self` (or run a nested modal loop) from inside a
-/// draw closure, so panels only record the request and [`App::service_pick`]
-/// opens the dialog once the frame is done.
+/// The panel must not run on the UI thread at all: macOS runs it in a modal
+/// loop that keeps dispatching winit events, so a gesture during the panel
+/// re-enters the egui pass and egui 0.37 panics ("root Ui was already
+/// borrowed") — which aborts, because the panic crosses winit's FFI boundary.
+/// Panels record the request, [`App::service_pick`] spawns the dialog on a
+/// worker, and the choice comes back as a [`Msg`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PickRequest {
     OpenVideo,
@@ -173,9 +179,22 @@ enum UpdateUi {
 
 /// Messages from worker threads.
 enum Msg {
-    Ingest(IngestProgress),
-    IngestOk(Box<pipeline::Ingest>),
-    IngestErr(String),
+    /// Progress from the ingest in `generation` (stale ones are dropped).
+    Ingest {
+        generation: u64,
+        event: IngestProgress,
+    },
+    IngestOk {
+        generation: u64,
+        ingest: Box<pipeline::Ingest>,
+    },
+    IngestErr {
+        generation: u64,
+        error: String,
+    },
+    /// A native panel closed: the chosen path, or `None` if cancelled.
+    PickedVideo(Option<PathBuf>),
+    PickedExport(Option<PathBuf>),
     PreviewFrame {
         generation: u64,
         key: preview::FrameKey,
@@ -224,6 +243,13 @@ pub struct App {
     install: Option<InstallStatus>,
     /// Cancels the in-flight install.
     install_cancel: Option<Arc<AtomicBool>>,
+    /// A native file panel is open on its worker thread; don't open another.
+    pick_busy: bool,
+    /// Cancels the in-flight ingest (whisper aborts on its next callback tick).
+    ingest_cancel: Option<Arc<AtomicBool>>,
+    /// Bumped when an ingest starts or is abandoned, so a late result from a
+    /// cancelled or replaced run cannot be installed.
+    ingest_generation: u64,
     /// Cancels the in-flight export.
     export_cancel: Option<Arc<AtomicBool>>,
     /// The model the in-flight install is fetching (selected on success).
@@ -383,6 +409,9 @@ impl App {
             model_pref,
             install: None,
             install_cancel: None,
+            pick_busy: false,
+            ingest_cancel: None,
+            ingest_generation: 0,
             export_cancel: None,
             install_target: None,
             pending_remove: None,
@@ -685,6 +714,8 @@ impl App {
     // ── workers ───────────────────────────────────────────────────────────
 
     fn start_ingest(&mut self, path: PathBuf) {
+        // A second drop while one is running replaces it; the old worker aborts.
+        self.abort_ingest();
         self.error = None;
         self.warn = None;
         // Refuse to start against a broken environment; the drop screen shows
@@ -703,6 +734,7 @@ impl App {
             model: None,
         });
         self.stage = Stage::Ingest;
+        let generation = self.ingest_generation;
 
         // The model the review will use: resolved during the dependency check.
         let Some(found_model) = self.deps.model.clone() else {
@@ -712,19 +744,53 @@ impl App {
             return;
         };
 
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.ingest_cancel = Some(Arc::clone(&cancel));
         let tx = self.tx.clone();
         let done_tx = tx.clone();
         let sink: Progress = Box::new(move |ev| {
-            let _ = tx.send(Msg::Ingest(ev));
+            let _ = tx.send(Msg::Ingest {
+                generation,
+                event: ev,
+            });
         });
         self.pending += 1;
         std::thread::spawn(move || {
-            let msg = match pipeline::ingest(&path, false, &found_model, sink) {
-                Ok(ing) => Msg::IngestOk(Box::new(ing)),
-                Err(e) => Msg::IngestErr(format!("{e:#}")),
+            let msg = match pipeline::ingest(&path, false, &found_model, sink, cancel) {
+                Ok(ing) => Msg::IngestOk {
+                    generation,
+                    ingest: Box::new(ing),
+                },
+                Err(e) => Msg::IngestErr {
+                    generation,
+                    error: format!("{e:#}"),
+                },
             };
             let _ = done_tx.send(msg);
         });
+    }
+
+    /// Stop tracking any in-flight ingest and invalidate its messages.
+    ///
+    /// The worker notices the flag on whisper's next abort check (or between the
+    /// pipeline steps) and returns; the generation bump means whatever it sends
+    /// afterwards is dropped.
+    fn abort_ingest(&mut self) {
+        if let Some(cancel) = self.ingest_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.ingest_generation = self.ingest_generation.wrapping_add(1);
+    }
+
+    /// Cancel the in-flight ingest and go straight back to the drop screen.
+    /// Whisper can run for minutes, so waiting for the worker is not an option.
+    fn cancel_ingest(&mut self) {
+        self.abort_ingest();
+        self.ingest = None;
+        self.input = None;
+        self.error = None;
+        self.warn = None;
+        self.stage = Stage::Drop;
     }
 
     /// Build the extraction request for the selected popup.
@@ -855,8 +921,30 @@ impl App {
         self.pending_pick = Some(PickRequest::SaveExport);
     }
 
-    /// Run the save panel, then start the export (or ask to replace a file).
-    fn export_after_pick(&mut self) {
+    /// Parameters for the save panel, read before it opens on its worker.
+    fn save_pick_params(&self) -> Option<(Option<String>, Option<PathBuf>)> {
+        let r = self.review.as_ref()?;
+        let suggested = output::default_output(&r.input);
+        let name = suggested
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let dir = self
+            .saved_prefs
+            .last_export_dir
+            .as_ref()
+            .filter(|dir| dir.is_dir())
+            .cloned()
+            .or_else(|| {
+                r.input
+                    .parent()
+                    .filter(|dir| !dir.as_os_str().is_empty())
+                    .map(Path::to_path_buf)
+            });
+        Some((name, dir))
+    }
+
+    /// Start the export for the path the save panel returned.
+    fn export_after_pick(&mut self, picked: PathBuf) {
         let Some(r) = self.review.as_ref() else {
             return;
         };
@@ -866,7 +954,6 @@ impl App {
             return;
         }
         let input = r.input.clone();
-        let suggested = output::default_output(&input);
         // The render pass makes one PNG per caption state; the step row shows
         // the count, and it is the same arithmetic the pipeline does.
         let states: usize = chunks.iter().map(|c| c.state_windows().len()).sum();
@@ -879,32 +966,6 @@ impl App {
             states,
         };
 
-        let mut dialog = rfd::FileDialog::new()
-            .set_title("Save captioned video")
-            .add_filter("MP4 video", &["mp4"]);
-        if let Some(name) = suggested.file_name() {
-            dialog = dialog.set_file_name(name.to_string_lossy());
-        }
-        let start_dir = self
-            .saved_prefs
-            .last_export_dir
-            .as_ref()
-            .filter(|dir| dir.is_dir())
-            .cloned()
-            .or_else(|| {
-                input
-                    .parent()
-                    .filter(|dir| !dir.as_os_str().is_empty())
-                    .map(Path::to_path_buf)
-            });
-        if let Some(dir) = start_dir {
-            dialog = dialog.set_directory(dir);
-        }
-
-        let Some(picked) = dialog.save_file() else {
-            // Dialog cancelled: stay in Review with every edit intact.
-            return;
-        };
         let target = match output::ExportTarget::resolve(&input, Some(&picked), true) {
             Ok(target) => target,
             Err(e) => {
@@ -1002,21 +1063,39 @@ impl App {
         });
     }
 
-    fn service_pick(&mut self) {
+    fn service_pick(&mut self, ctx: &egui::Context) {
         // The overwrite modal owns the interaction while it is open; a stray
-        // Cmd+E must not open a native panel behind it.
-        if self.pending_overwrite.is_some() {
+        // Cmd+E must not open a native panel behind it. Nor may two panels run
+        // at once.
+        if self.pending_overwrite.is_some() || self.pick_busy {
             self.pending_pick = None;
             return;
         }
-        match self.pending_pick.take() {
-            Some(PickRequest::OpenVideo) => {
-                if let Some(path) = pick_video() {
-                    self.start_ingest(path);
-                }
+        let Some(req) = self.pending_pick.take() else {
+            return;
+        };
+        let tx = self.tx.clone();
+        let ctx = ctx.clone();
+        match req {
+            PickRequest::OpenVideo => {
+                self.pick_busy = true;
+                std::thread::spawn(move || {
+                    let picked = pick_video();
+                    let _ = tx.send(Msg::PickedVideo(picked));
+                    ctx.request_repaint();
+                });
             }
-            Some(PickRequest::SaveExport) => self.export_after_pick(),
-            None => {}
+            PickRequest::SaveExport => {
+                let Some((name, dir)) = self.save_pick_params() else {
+                    return;
+                };
+                self.pick_busy = true;
+                std::thread::spawn(move || {
+                    let picked = pick_save(name, dir);
+                    let _ = tx.send(Msg::PickedExport(picked));
+                    ctx.request_repaint();
+                });
+            }
         }
     }
 
@@ -1066,9 +1145,11 @@ impl App {
     }
 
     fn reset_to_drop(&mut self) {
-        // If an export is somehow still in flight, stop it rather than leaving
-        // a worker holding a temp dir and a half-written file.
+        // If an export or ingest is somehow still in flight, stop it rather
+        // than leaving a worker holding a temp dir, a half-written file, or a
+        // multi-minute transcription nobody is waiting for.
         self.cancel_export();
+        self.abort_ingest();
         self.export_cancel = None;
         self.stage = Stage::Drop;
         self.input = None;
@@ -1106,9 +1187,12 @@ impl App {
 
     fn handle(&mut self, msg: Msg) {
         match msg {
-            Msg::Ingest(p) => {
+            Msg::Ingest { generation, event } => {
+                if generation != self.ingest_generation {
+                    return;
+                }
                 if let Some(st) = &mut self.ingest {
-                    match p {
+                    match event {
                         IngestProgress::Tools(_) => st.label = "locating ffmpeg…".into(),
                         IngestProgress::Model(m) => st.model = Some(m),
                         IngestProgress::Probing => st.label = "probing video…".into(),
@@ -1151,8 +1235,12 @@ impl App {
                     }
                 }
             }
-            Msg::IngestOk(ing) => {
+            Msg::IngestOk { generation, ingest } => {
                 self.pending = self.pending.saturating_sub(1);
+                if generation != self.ingest_generation {
+                    return;
+                }
+                self.ingest_cancel = None;
                 let input = self.input.clone().unwrap_or_default();
                 let style = self.current_style();
                 let grouping = self.current_grouping();
@@ -1162,16 +1250,32 @@ impl App {
                 self.frame_cache.clear();
                 self.applied_frame = None;
                 self.requested_frame = None;
-                self.review = Some(ReviewState::new(input, *ing, style, grouping));
+                self.review = Some(ReviewState::new(input, *ingest, style, grouping));
                 self.ingest = None;
                 self.stage = Stage::Review;
                 self.seek_preview();
             }
-            Msg::IngestErr(e) => {
+            Msg::IngestErr { generation, error } => {
                 self.pending = self.pending.saturating_sub(1);
+                if generation != self.ingest_generation {
+                    return;
+                }
+                self.ingest_cancel = None;
                 self.ingest = None;
-                self.error = Some(e);
+                self.error = Some(error);
                 self.stage = Stage::Drop;
+            }
+            Msg::PickedVideo(path) => {
+                self.pick_busy = false;
+                if let Some(path) = path {
+                    self.start_ingest(path);
+                }
+            }
+            Msg::PickedExport(path) => {
+                self.pick_busy = false;
+                if let Some(path) = path {
+                    self.export_after_pick(path);
+                }
             }
             Msg::PreviewFrame {
                 generation,
@@ -1454,7 +1558,7 @@ impl App {
                 ui.add_space(2.0);
                 match &self.stage {
                     Stage::Drop => {
-                        ui.label(egui::RichText::new("offline karaoke caption burner").weak());
+                        ui.label(egui::RichText::new(TAGLINE).weak());
                     }
                     Stage::Ingest => {
                         if let Some(st) = &self.ingest {
@@ -1609,8 +1713,9 @@ impl eframe::App for App {
             }
         }
 
-        // Native dialogs run after the frame, never inside a draw closure.
-        self.service_pick();
+        // Native dialogs run after the frame, on their own thread, never inside
+        // a draw closure or the egui pass.
+        self.service_pick(&ctx);
         self.confirm_overwrite(&ctx);
 
         self.about_window(&ctx);
@@ -1697,11 +1802,29 @@ fn diagnostic_entry(
 }
 
 /// Ask the user for a video with the OS file dialog.
+///
+/// Called on a worker thread (see [`PickRequest`]): on macOS rfd forwards the
+/// panel to the main thread itself, and the modal loop then cannot re-enter
+/// the egui pass.
 fn pick_video() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Choose a video")
         .add_filter("Video", &["mp4", "m4v", "mov", "webm", "mkv", "avi"])
         .pick_file()
+}
+
+/// Ask where to save the export; also on a worker thread.
+fn pick_save(name: Option<String>, dir: Option<PathBuf>) -> Option<PathBuf> {
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Save captioned video")
+        .add_filter("MP4 video", &["mp4"]);
+    if let Some(name) = name {
+        dialog = dialog.set_file_name(name);
+    }
+    if let Some(dir) = dir {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.save_file()
 }
 
 /// Open `path` in the OS default application (e.g. the video's player).

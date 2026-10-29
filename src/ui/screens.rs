@@ -6,6 +6,7 @@
 //! `cancel_export`, ...) stay in `mod.rs` next to `handle`, where the message
 //! flow is readable in one place.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use crate::model::Model;
@@ -13,7 +14,7 @@ use crate::pipeline::ExportPhase;
 
 use super::theme;
 use super::widgets::{
-    centered_block, centred_buttons, column, export_pass, file_label, human_bytes, mmss,
+    centered_block, centred_actions, column, export_pass, file_label, human_bytes, mmss,
     reveal_label, rough_secs, Pass, COLUMN_W,
 };
 use super::{open_file, reveal, App, PickRequest, SUPPORT_URL};
@@ -268,7 +269,11 @@ impl App {
         let Some(st) = &self.ingest else { return };
         let file = file_label(&st.file);
         let label = st.label.clone();
-        centered_block(ui, &file, &label, st.progress);
+        let progress = st.progress;
+        let cancel = self.ingest_cancel.is_some();
+        if centered_block(ui, &file, &label, progress, cancel.then_some("Cancel")) {
+            self.cancel_ingest();
+        }
     }
 
     /// The export in progress: one row per pass, each with its own bar, plus a
@@ -353,23 +358,23 @@ impl App {
             .as_ref()
             .and_then(|r| r.preview.texture().zip(r.preview.image_size()));
 
-        let mut open_video = false;
-        let mut reveal_output = false;
-        let mut new_video = false;
-        let mut support = false;
+        let mut actions = DoneActions::default();
 
         let avail = ui.available_size();
         // Scale the poster to the room we have, so a short window still fits the
         // whole block (there is no scroll area on this screen). Portrait video
         // is capped by height, which is why the budget is height-based.
-        let poster_max_h = ((avail.y - 290.0) * 0.75).clamp(90.0, 340.0);
+        let poster_max_h = ((avail.y - DONE_TAIL_H) * 0.75).clamp(90.0, 340.0);
         let poster_size = poster.map(|(_, (iw, ih))| {
             let aspect = ih as f32 / iw.max(1) as f32;
             let w = COLUMN_W.min(poster_max_h / aspect.max(0.01));
             egui::vec2(w, w * aspect)
         });
 
-        let block = poster_size.map(|s| s.y).unwrap_or(0.0) + 290.0;
+        // Centre the whole block, poster included. `DONE_TAIL_H` is measured by
+        // a test, not guessed: too small and the block hangs low enough to push
+        // the support button into the bottom of the window.
+        let block = poster_size.map(|s| s.y).unwrap_or(0.0) + DONE_TAIL_H;
         let top = ((avail.y - block) * 0.5).max(16.0);
         ui.add_space(top);
 
@@ -408,86 +413,186 @@ impl App {
                     ));
                 }
                 if resp.clicked() {
-                    open_video = true;
+                    actions.open_video = true;
                 }
                 resp.on_hover_text("Open video");
-                ui.add_space(20.0);
+                ui.add_space(POSTER_GAP);
             }
 
-            ui.label(
-                egui::RichText::new("\u{2714}")
-                    .size(15.0)
-                    .color(theme::SUCCESS)
-                    .strong(),
+            done_tail(
+                ui,
+                &mut actions,
+                &DoneFile {
+                    output: &output,
+                    width,
+                    height,
+                    duration_secs,
+                    size,
+                    secs,
+                },
             );
-            ui.add_space(2.0);
-            ui.heading("Export complete");
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new(file_label(&output)).strong())
-                .on_hover_text(output.display().to_string());
-            if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
-                ui.label(
-                    egui::RichText::new(dir.display().to_string())
-                        .weak()
-                        .small(),
-                );
-            }
-            ui.add_space(3.0);
-            ui.label(
-                egui::RichText::new(format!(
-                    "{width}×{height}  ·  {}  ·  {}  ·  exported in {}",
-                    mmss(duration_secs),
-                    human_bytes(size),
-                    rough_secs(secs),
-                ))
-                .weak()
-                .small(),
-            );
-
-            ui.add_space(22.0);
-            if theme::primary_button(ui, true, "Open video").clicked() {
-                open_video = true;
-            }
-            ui.add_space(10.0);
-            // Secondary actions as real buttons, muted against the accent one
-            // above and centred as a pair.
-            let actions = centred_buttons(ui, &[reveal_label(), "New video"]);
-            if actions.first().is_some_and(|r| r.clicked()) {
-                reveal_output = true;
-            }
-            if actions.get(1).is_some_and(|r| r.clicked()) {
-                new_video = true;
-            }
-
-            ui.add_space(24.0);
-            ui.separator();
-            ui.add_space(12.0);
-            ui.label(
-                egui::RichText::new("TextLayr is free and open source — thank you for using it.")
-                    .weak()
-                    .small(),
-            );
-            ui.add_space(8.0);
-            if theme::icon_button(ui, "\u{2615}", theme::COFFEE, "Buy me a coffee").clicked() {
-                support = true;
-            }
         });
 
-        if open_video {
+        if actions.open_video {
             if let Err(e) = open_file(&output) {
                 self.error = Some(format!("could not open video: {e}"));
             }
         }
-        if reveal_output {
+        if actions.reveal_output {
             if let Err(e) = reveal(&output) {
                 self.error = Some(format!("could not open folder: {e}"));
             }
         }
-        if support {
+        if actions.support {
             ui.ctx().open_url(egui::OpenUrl::new_tab(SUPPORT_URL));
         }
-        if new_video {
+        if actions.new_video {
             self.reset_to_drop();
         }
+    }
+}
+
+/// The finished file, as the export-complete screen reports it.
+struct DoneFile<'a> {
+    output: &'a Path,
+    width: u32,
+    height: u32,
+    duration_secs: f64,
+    size: u64,
+    secs: f64,
+}
+
+/// What the export-complete screen's buttons asked for.
+#[derive(Default)]
+struct DoneActions {
+    open_video: bool,
+    reveal_output: bool,
+    new_video: bool,
+    support: bool,
+}
+
+/// Gap between the poster and the text under it.
+const POSTER_GAP: f32 = 20.0;
+
+/// Everything the screen draws under the poster, measured from the poster's
+/// bottom edge: the gap, the item spacing, the tick, the heading, the file
+/// details, the two button rows and the support block.
+///
+/// `screen_done` centres a block of `poster + DONE_TAIL_H` in the window, and
+/// there is no scroll area to absorb a mistake — so
+/// `done_tail_height_is_current` lays it out and fails if this drifts. Update
+/// both together.
+const DONE_TAIL_H: f32 = 365.0;
+
+/// The export-complete screen below the poster: what was made, the buttons,
+/// and the support block.
+fn done_tail(ui: &mut egui::Ui, actions: &mut DoneActions, file: &DoneFile<'_>) {
+    let DoneFile {
+        output,
+        width,
+        height,
+        duration_secs,
+        size,
+        secs,
+    } = *file;
+
+    ui.label(
+        egui::RichText::new("\u{2714}")
+            .size(15.0)
+            .color(theme::SUCCESS)
+            .strong(),
+    );
+    ui.add_space(2.0);
+    ui.heading("Export complete");
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(file_label(output)).strong())
+        .on_hover_text(output.display().to_string());
+    if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        ui.label(
+            egui::RichText::new(dir.display().to_string())
+                .weak()
+                .small(),
+        );
+    }
+    ui.add_space(3.0);
+    ui.label(
+        egui::RichText::new(format!(
+            "{width}×{height}  ·  {}  ·  {}  ·  exported in {}",
+            mmss(duration_secs),
+            human_bytes(size),
+            rough_secs(secs),
+        ))
+        .weak()
+        .small(),
+    );
+
+    ui.add_space(22.0);
+    // The accent button is as wide as the pair under it, so the two rows read
+    // as one block instead of a full-width bar with small buttons beneath.
+    let (open, secondary) = centred_actions(ui, "Open video", &[reveal_label(), "New video"]);
+    actions.open_video |= open.clicked();
+    actions.reveal_output |= secondary.first().is_some_and(|r| r.clicked());
+    actions.new_video |= secondary.get(1).is_some_and(|r| r.clicked());
+
+    ui.add_space(24.0);
+    ui.separator();
+    ui.add_space(12.0);
+    ui.label(
+        egui::RichText::new("TextLayr is free and open source — thank you for using it.")
+            .weak()
+            .small(),
+    );
+    ui.add_space(8.0);
+    actions.support |=
+        theme::icon_button(ui, "\u{2615}", theme::COFFEE, "Buy me a coffee").clicked();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `screen_done` centres a block sized with `DONE_TAIL_H`, and that screen
+    /// has no scroll area: a stale constant hangs the whole block low and
+    /// pushes the support button into the bottom edge. Lay the real tail out
+    /// and compare.
+    #[test]
+    fn done_tail_height_is_current() {
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(900.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run_ui(input, |ui| {
+            let h = column(ui, 900.0, |ui| {
+                let top = ui.cursor().top();
+                // A zero-height stand-in for the poster: the tail must see the
+                // same leading item spacing the real screen gives it.
+                ui.allocate_exact_size(egui::vec2(0.0, 0.0), egui::Sense::hover());
+                ui.add_space(POSTER_GAP);
+                done_tail(
+                    ui,
+                    &mut DoneActions::default(),
+                    &DoneFile {
+                        output: Path::new("/Users/me/Movies/clip_textlayr.mp4"),
+                        width: 1920,
+                        height: 1080,
+                        duration_secs: 15.0,
+                        size: 3_200_000,
+                        secs: 2.0,
+                    },
+                );
+                ui.min_rect().bottom() - top
+            });
+            assert!(
+                (h - DONE_TAIL_H).abs() < 1.0,
+                "the export-complete tail is {h:.1}px but DONE_TAIL_H is {DONE_TAIL_H}; \
+                 update the constant"
+            );
+        });
+        out.drop_without_applying_deltas();
     }
 }

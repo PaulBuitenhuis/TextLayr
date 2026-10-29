@@ -141,6 +141,33 @@ pub(super) fn centred_buttons(ui: &mut egui::Ui, labels: &[&str]) -> Vec<egui::R
     out
 }
 
+/// A centred accent button sized to the row of secondary buttons under it,
+/// then that row.
+///
+/// Sizing the primary action to the pair keeps the two rows reading as one
+/// block; a full-column bar over two small buttons reads as two unrelated
+/// things.
+pub(super) fn centred_actions(
+    ui: &mut egui::Ui,
+    primary: &str,
+    secondary: &[&str],
+) -> (egui::Response, Vec<egui::Response>) {
+    let gap = ui.spacing().item_spacing.x;
+    let widths: Vec<f32> = secondary
+        .iter()
+        .map(|l| theme::button_width(ui, l))
+        .collect();
+    let total: f32 = widths.iter().sum::<f32>() + gap * secondary.len().saturating_sub(1) as f32;
+    let primary = ui
+        .horizontal(|ui| {
+            ui.add_space(((COLUMN_W - total) * 0.5).max(0.0));
+            theme::primary_button_sized(ui, true, total, primary)
+        })
+        .inner;
+    ui.add_space(10.0);
+    (primary, centred_buttons(ui, secondary))
+}
+
 /// How one export pass reads in the step list.
 #[derive(Clone, Copy)]
 pub(super) enum Pass {
@@ -226,8 +253,16 @@ pub(super) fn rough_secs(secs: f64) -> String {
     }
 }
 
-/// The shared ingest/export status block: title, progress (or spinner), label.
-pub(super) fn centered_block(ui: &mut egui::Ui, title: &str, label: &str, progress: Option<f32>) {
+/// The shared ingest status block: title, progress (or spinner), label, and an
+/// optional cancel button. Returns whether the button was clicked.
+pub(super) fn centered_block(
+    ui: &mut egui::Ui,
+    title: &str,
+    label: &str,
+    progress: Option<f32>,
+    cancel: Option<&str>,
+) -> bool {
+    let mut clicked = false;
     centered(ui, 56.0, |ui| {
         ui.heading(title);
         ui.add_space(18.0);
@@ -246,7 +281,14 @@ pub(super) fn centered_block(ui: &mut egui::Ui, title: &str, label: &str, progre
         }
         ui.add_space(12.0);
         ui.label(egui::RichText::new(label).weak());
+        if let Some(text) = cancel {
+            ui.add_space(18.0);
+            if theme::fixed_button(ui, true, 120.0, text).clicked() {
+                clicked = true;
+            }
+        }
     });
+    clicked
 }
 
 pub(super) fn file_label(path: &Path) -> String {

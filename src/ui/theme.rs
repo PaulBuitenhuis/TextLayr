@@ -173,6 +173,19 @@ pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> Response
     })
 }
 
+/// A primary (accent) button of a fixed width, for rows that must line up with
+/// something else.
+pub fn primary_button_sized(ui: &mut egui::Ui, enabled: bool, width: f32, label: &str) -> Response {
+    accent_scope(ui, |ui| {
+        sized_button(
+            ui,
+            enabled,
+            Vec2::new(width, CONTROL_H),
+            RichText::new(label).strong(),
+        )
+    })
+}
+
 /// A secondary (grey) button at the shared control height, sized to its label.
 pub fn button(ui: &mut egui::Ui, label: &str) -> Response {
     button_enabled(ui, true, label)

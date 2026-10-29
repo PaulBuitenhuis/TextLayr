@@ -1,8 +1,8 @@
 [package]
 name = "textlayr"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
-description = "Offline karaoke caption burner for short-form video"
+description = "Word-by-word captions, burned into your video"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/PaulBuitenhuis/TextLayr"

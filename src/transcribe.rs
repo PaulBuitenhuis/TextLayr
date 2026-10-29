@@ -1,12 +1,15 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use whisper_rs::{
     DtwMode, DtwModelPreset, DtwParameters, FullParams, SamplingStrategy, WhisperContext,
     WhisperContextParameters,
 };
 
+use crate::cancel::Cancelled;
 use crate::model::Model;
 
 /// x86-64 CPU features the Linux build of whisper.cpp is compiled against.
@@ -78,14 +81,25 @@ pub struct Word {
 /// `on_progress` receives 0..=1 as whisper advances (whisper reports whole
 /// percent on the inference thread; the sink must be `'static` because that's
 /// what the C callback API demands).
+///
+/// `cancel` stops the run: whisper checks it after each encoder/decoder pass,
+/// so a cancelled transcription returns [`Cancelled`] at the next checkpoint
+/// (a second or two, depending on the machine) and never writes a transcript
+/// cache entry.
 pub fn transcribe(
     kind: Model,
     model: &Path,
     samples: &[f32],
+    cancel: Arc<AtomicBool>,
     on_progress: impl Fn(f32) + Send + 'static,
 ) -> Result<Vec<Word>> {
     if samples.is_empty() {
         bail!("no audio samples to transcribe");
+    }
+    // Checked before the model load: a cancel that lands during setup should
+    // not spend a second loading 466 MB.
+    if cancel.load(Ordering::Relaxed) {
+        return Err(Cancelled.into());
     }
 
     // ggml is compiled for a fixed ISA on Linux; on an older CPU it would
@@ -136,10 +150,31 @@ pub fn transcribe(
     params.set_progress_callback_safe(move |pct| {
         on_progress((pct as f32 / 100.0).clamp(0.0, 1.0));
     });
+    // whisper.cpp polls this during/after each encode and decode pass;
+    // returning `true` aborts the run.
+    //
+    // The closure is boxed on purpose. whisper-rs 0.16's
+    // `set_abort_callback_safe` stores `Box<dyn FnMut() -> bool>` as the user
+    // data but installs `trampoline::<F>` for the *concrete* `F`; the
+    // trampoline then reinterprets the fat pointer as `F` and reads garbage
+    // (for a closure capturing an `Arc`, that garbage is the Arc's strong
+    // count, so the very first poll aborts). Passing `Box<dyn FnMut() -> bool>`
+    // makes `F` match what is stored. Drop the box when the wrapper is fixed.
+    let abort = Arc::clone(&cancel);
+    let abort: Box<dyn FnMut() -> bool> = Box::new(move || abort.load(Ordering::Relaxed));
+    params.set_abort_callback_safe(abort);
 
-    state
-        .full(params, samples)
-        .context("whisper inference failed")?;
+    if cancel.load(Ordering::Relaxed) {
+        return Err(Cancelled.into());
+    }
+    if let Err(e) = state.full(params, samples) {
+        // An abort comes back as a generic whisper error, so the flag is the
+        // only reliable way to tell "the user asked" from a real failure.
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Cancelled.into());
+        }
+        return Err(e).context("whisper inference failed");
+    }
 
     // whisper-rs 0.16 exposes segments/tokens as borrowing handles rather than
     // index-based FFI calls.
@@ -386,6 +421,81 @@ mod tests {
         let path = dir.join("words.json");
         std::fs::write(&path, body).unwrap();
         path
+    }
+
+    /// A cancel that lands before the model load must not spend a second
+    /// loading 466 MB, and it must surface as `Cancelled` rather than as a
+    /// failure about a missing model file.
+    #[test]
+    fn a_pre_set_cancel_stops_before_the_model_load() {
+        let cancel = Arc::new(AtomicBool::new(true));
+        let err = transcribe(
+            Model::BaseEn,
+            std::path::Path::new("/nonexistent-model.bin"),
+            &[0.0; 64],
+            cancel,
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(crate::cancel::is_cancelled(&err));
+    }
+
+    /// `$TEXTLAYR_MODEL` pointing at a real `base.en` model, if the developer
+    /// set it. The two tests below are opt-in because they need one.
+    fn env_model() -> Option<PathBuf> {
+        let path = PathBuf::from(std::env::var_os("TEXTLAYR_MODEL")?);
+        path.is_file().then_some(path)
+    }
+
+    /// A 440 Hz tone; whisper transcribes it to (almost) nothing, which is all
+    /// these tests need.
+    fn tone(secs: usize) -> Vec<f32> {
+        (0..16000 * secs)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 16000.0).sin() * 0.1)
+            .collect()
+    }
+
+    /// The control for the abort test below.
+    ///
+    /// This is the test that catches whisper-rs 0.16's abort trampoline bug: a
+    /// mis-typed callback aborts the *first* poll, so a plain run fails with
+    /// `-6` within half a second instead of producing words.
+    #[test]
+    #[ignore = "needs $TEXTLAYR_MODEL pointing at a real base.en model"]
+    fn an_uncancelled_run_completes() {
+        let Some(model) = env_model() else { return };
+        let words = transcribe(
+            Model::BaseEn,
+            &model,
+            &tone(5),
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .expect("an uncancelled run must not fail");
+        assert!(words.len() <= 20, "unexpected transcript: {words:?}");
+    }
+
+    /// A cancel mid-run must stop whisper promptly and surface `Cancelled`.
+    #[test]
+    #[ignore = "needs $TEXTLAYR_MODEL pointing at a real base.en model"]
+    fn abort_mid_run_returns_cancelled() {
+        let Some(model) = env_model() else { return };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&cancel);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+            flag.store(true, Ordering::Relaxed);
+        });
+
+        let start = std::time::Instant::now();
+        let err = transcribe(Model::BaseEn, &model, &tone(300), cancel, |_| {})
+            .expect_err("a cancelled run must not return words");
+        assert!(crate::cancel::is_cancelled(&err), "not Cancelled: {err:#}");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "cancel took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]

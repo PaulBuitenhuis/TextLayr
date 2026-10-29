@@ -6,6 +6,44 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
+### Added
+
+- **Cancel a running transcription.** The ingest screen now has a **Cancel**
+  button: it returns to the drop screen immediately and whisper stops at its
+  next internal checkpoint, so a long model run no longer has to finish before
+  you can pick another video.
+
+### Changed
+
+- **The export-complete screen is properly centred, and its buttons line up.**
+  The block was sized with a stale height, which pushed it down and left the
+  support button near the bottom edge. **Open video** is now the same width as
+  the two buttons beneath it instead of spanning the whole column.
+
+- **The one-line description matches the website.** "Offline karaoke caption
+  burner" is now "Word-by-word captions, burned into your video", in the header
+  and in About.
+
+### Fixed
+
+- **The Settings title bar no longer stops short of the window edge.** The body
+  asked for 2px more width than the window's content box, so the window grew
+  while the title band stayed put, leaving a thin gap beside the close button.
+
+- **Opening a video or choosing an export path no longer crashes the app.** The
+  native file panel ran inside the egui frame, so any input event during the
+  panel re-entered the frame and aborted the process (most often on the first
+  file you opened after launch). The panel now runs on its own thread and its
+  result comes back as a normal message.
+
+- **Exports re-encode audio that is not safe to copy into MP4.** AAC, MP3/MP2,
+  AC-3/E-AC-3 and ALAC still pass through untouched; Opus, Vorbis, FLAC and PCM
+  (typically a `.webm` or `.mkv` source) are encoded to AAC 192k instead, so the
+  export no longer fails at the muxing step or produces a file players cannot
+  open.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
@@ -363,7 +401,8 @@ video, as a native macOS app plus a headless CLI.
 - **Packaging:** `scripts/package_macos.sh` builds an ad-hoc-signed `TextLayr.app`
   plus `.zip` and `.dmg` release artifacts.
 
-[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/PaulBuitenhuis/TextLayr/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.4.1
 [0.4.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.4.0
 [0.3.0]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.3.0
 [0.2.3]: https://github.com/PaulBuitenhuis/TextLayr/releases/tag/v0.2.3

@@ -1110,6 +1110,7 @@ mod tests {
                     fps: 30.0,
                     frame_rate: "30/1".to_string(),
                     has_audio: true,
+                    audio_codec: Some("aac".to_string()),
                     pix_fmt: "yuv420p".to_string(),
                     color_range: "tv".to_string(),
                     color_space: "bt709".to_string(),

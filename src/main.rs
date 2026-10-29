@@ -473,6 +473,8 @@ fn run_cli(args: &Args) -> Result<()> {
             args.no_cache,
             found_model.as_ref().context("model discovery failed")?,
             progress,
+            // The CLI has no cancel button; Ctrl-C kills the process outright.
+            Arc::new(AtomicBool::new(false)),
         )
         .context("ingest failed")?,
     };

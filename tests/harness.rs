@@ -284,6 +284,97 @@ fn a_transcript_run_exports_without_a_model() {
     assert!(kinds.contains(&"audio"), "streams: {kinds:?}");
 }
 
+/// A 2 s `.webm` with VP9 video and Opus audio — a codec pair MP4 cannot carry
+/// as-is. `None` when this ffmpeg build has no VP9/Opus encoder.
+fn synth_webm(tools: &Fftools, dir: &Path) -> Option<PathBuf> {
+    let out = dir.join("clip.webm");
+    let status = Command::new(&tools.ffmpeg)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x203040:s=320x568:r=30:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2",
+            "-c:v",
+            "libvpx-vp9",
+            "-b:v",
+            "200k",
+            "-c:a",
+            "libopus",
+            "-shortest",
+        ])
+        .arg(&out)
+        .status()
+        .expect("could not spawn the synthesizing ffmpeg");
+    status.success().then_some(out)
+}
+
+/// `-c:a copy` into MP4 is not portable for Opus/Vorbis (older ffmpeg refuses
+/// it outright), and a failure there lands *after* the whole video encode. The
+/// exporter must notice the probed codec and re-encode to AAC instead.
+#[test]
+fn webm_audio_is_re_encoded_for_mp4() {
+    let Some(tools) = real_tools() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let Some(clip) = synth_webm(&tools, work.path()) else {
+        eprintln!("skipping: this ffmpeg has no libvpx-vp9/libopus encoder");
+        return;
+    };
+    let output = work.path().join("out.mp4");
+
+    let out = Command::new(BIN)
+        .arg(&clip)
+        .args(["--headless", "--transcript"])
+        .arg(fixture_transcript())
+        .arg("-o")
+        .arg(&output)
+        .args(["--encoder", "x264"])
+        .env(
+            "TEXTLAYR_FFTOOLS",
+            manifest_dir().join("tests/fixtures/fftools/pass"),
+        )
+        .env("TEXTLAYR_REAL_FFMPEG", &tools.ffmpeg)
+        .env("TEXTLAYR_REAL_FFPROBE", &tools.ffprobe)
+        .env("TEXTLAYR_FONTS", fonts_dir())
+        .output()
+        .expect("run the CLI");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "export failed: {stderr}");
+    assert!(
+        stderr.contains("encoding AAC 192k"),
+        "the re-encode should be reported: {stderr}"
+    );
+
+    let probe = Command::new(&tools.ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output)
+        .output()
+        .expect("run ffprobe on the export");
+    assert!(probe.status.success(), "ffprobe rejected the export");
+    assert_eq!(
+        String::from_utf8_lossy(&probe.stdout).trim(),
+        "aac",
+        "the exported audio should be AAC"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // F1: the destination is chosen, validated and never clobbered by accident.
 // ---------------------------------------------------------------------------

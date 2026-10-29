@@ -1,4 +1,4 @@
-//! TextLayr — offline karaoke caption burner for short-form video.
+//! TextLayr — word-by-word captions, burned into your video.
 //!
 //! The library holds the whole pipeline (probe → transcribe → chunk → render
 //! → export), the shared [`pipeline`] entry points, and the egui front-end
@@ -6,6 +6,7 @@
 //! the GUI.
 
 pub mod audio;
+pub mod cancel;
 pub mod chunk;
 pub mod config;
 pub mod deps;

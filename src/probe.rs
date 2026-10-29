@@ -30,6 +30,10 @@ pub struct VideoInfo {
     /// the raw-pipe export's `-framerate` so durations match the source.
     pub frame_rate: String,
     pub has_audio: bool,
+    /// The first audio stream's codec name ("aac", "opus", "vorbis", …), or
+    /// `None` when there is no audio or ffprobe did not say. The exporter
+    /// decides from this whether the audio can be copied into MP4.
+    pub audio_codec: Option<String>,
     pub pix_fmt: String,
     /// Color tags from the source stream, verbatim from ffprobe
     /// ("pc"/"tv", "bt709", …). "unknown" when the stream doesn't say —
@@ -214,6 +218,19 @@ fn rotation_of(stream: &serde_json::Value) -> i64 {
         .unwrap_or(0)
 }
 
+/// Parse the `-select_streams a:0 -show_entries stream=codec_name` output.
+///
+/// With `a:0` selected, any output at all means an audio stream exists; the
+/// codec name is `None` when ffprobe writes `N/A` for it.
+fn parse_audio_line(line: &str) -> (bool, Option<String>) {
+    let first = line.lines().next().unwrap_or("").trim();
+    if first.is_empty() {
+        return (false, None);
+    }
+    let codec = (first != "N/A").then(|| first.to_owned());
+    (true, codec)
+}
+
 /// Probe a video file with ffprobe and return display-oriented properties.
 pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
     let mut out = run_probe(tools, input, PROBE_ENTRIES)?;
@@ -315,7 +332,7 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
     let color_primaries = color("color_primaries");
     let color_transfer = color("color_transfer");
 
-    // --- audio presence (separate quick query) ---
+    // --- audio presence and codec (separate quick query) ---
     let mut aquery = Command::new(&tools.ffprobe);
     aquery
         .arg("-v")
@@ -323,16 +340,17 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         .arg("-select_streams")
         .arg("a:0")
         .arg("-show_entries")
-        .arg("stream=codec_type")
+        .arg("stream=codec_name")
         .arg("-of")
         .arg("csv=p=0")
         .arg(input);
     let aout = process::output_with_timeout(&mut aquery, process::PROBE_TIMEOUT)
         .context("failed to run ffprobe audio query")?;
-    let has_audio = aout.status.success()
-        && String::from_utf8_lossy(&aout.stdout)
-            .trim()
-            .starts_with("audio");
+    let (has_audio, audio_codec) = if aout.status.success() {
+        parse_audio_line(&String::from_utf8_lossy(&aout.stdout))
+    } else {
+        (false, None)
+    };
 
     Ok(VideoInfo {
         display_width,
@@ -341,6 +359,7 @@ pub fn probe(tools: &Fftools, input: &Path) -> Result<VideoInfo> {
         fps,
         frame_rate,
         has_audio,
+        audio_codec,
         pix_fmt,
         color_range,
         color_space,
@@ -447,6 +466,16 @@ mod tests {
             rotation_of(&serde_json::json!({"tags": {"rotate": "x"}})),
             0
         );
+    }
+
+    #[test]
+    fn the_audio_query_reports_the_codec() {
+        assert_eq!(parse_audio_line("aac\n"), (true, Some("aac".to_string())));
+        // ffprobe writes `N/A` when the stream has no codec name.
+        assert_eq!(parse_audio_line("N/A\n"), (true, None));
+        // No audio stream at all: the query prints nothing.
+        assert_eq!(parse_audio_line(""), (false, None));
+        assert_eq!(parse_audio_line("\n"), (false, None));
     }
 
     #[test]
